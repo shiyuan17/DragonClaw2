@@ -1,5 +1,8 @@
 # DragonClaw - 开发任务总表 (AI 开发规范版)
 
+## Phase 5.11: 旧 logo 切换为新 logo 引用
+- [ ] 前端所有旧 `logo.jpg` 展示位统一切换到新的 DragonClaw 龙形 logo，并移除默认 Vite favicon 引用
+
 ## Phase 5.10: DragonClaw 主控制界面整页克隆
 - [ ] 默认首页切换到整页克隆工作台，旧 `dashboard` 与 legacy 顶部 Tab 壳继续保留待后续迁移/删除
 
