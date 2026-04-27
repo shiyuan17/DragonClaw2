@@ -1,7 +1,7 @@
 # DragonClaw - 开发任务总表 (AI 开发规范版)
 
-## Phase 5.10: 主控制界面高仿迁移
-- [ ] 将 `dashboard` 标签页替换为参考 DragonClaw 工作台结构的 React 控制台页面，并保留现有功能入口
+## Phase 5.10: DragonClaw 主控制界面整页克隆
+- [ ] 默认首页切换到整页克隆工作台，旧 `dashboard` 与 legacy 顶部 Tab 壳继续保留待后续迁移/删除
 
 ## Phase 5.8: 引导流程静默自动启动
 - [ ] 引导流程在环境/配置就绪后自动启动 OpenClaw 服务，且不自动打开 OpenClaw 页面
