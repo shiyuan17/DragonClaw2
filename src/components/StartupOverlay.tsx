@@ -11,7 +11,7 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2 } from "lucide-react";
-import logo from "../assets/logo.jpg";
+import logo from "../assets/dragonclaw-logo.png";
 
 interface StartupOverlayProps {
     show: boolean;
@@ -29,7 +29,7 @@ export function StartupOverlay({ show }: StartupOverlayProps) {
                     transition={{ duration: 0.3 }}
                 >
                     <div className="startup-overlay-content">
-                        <img src={logo} alt="OpenClaw" className="startup-overlay-logo" />
+                        <img src={logo} alt="DragonClaw" className="startup-overlay-logo" />
                         <Loader2 className="startup-overlay-spinner" size={28} strokeWidth={1.5} />
                         <div className="startup-overlay-text">正在启动 OpenClaw 服务...</div>
                         <div className="startup-overlay-hint">服务就绪后将自动打开浏览器</div>
