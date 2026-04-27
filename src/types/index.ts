@@ -11,6 +11,9 @@
 // ===== App State =====
 export type AppPhase = "checking" | "initializing" | "workspace" | "launching" | "ready";
 export type TabId = "dashboard" | "models" | "agents" | "analytics" | "settings";
+export type HomeView = "workspace-clone" | "legacy-tabs";
+export type WorkspaceMenuKey = "chat" | "schedule" | "knowledge" | "employees" | "skills" | "tasks";
+export type WorkspaceEntityType = "agents" | "channels" | "teams";
 
 // ===== Data Models =====
 export interface LogEntry {
