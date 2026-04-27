@@ -1,0 +1,65 @@
+import {
+  BookOpen,
+  Bot,
+  CalendarClock,
+  ChevronDown,
+  ChevronRight,
+  Clock3,
+  Cpu,
+  Globe,
+  Info,
+  Languages,
+  LayoutDashboard,
+  MessageCircle,
+  MoreHorizontal,
+  NotebookText,
+  Palette,
+  PanelRightOpen,
+  Paperclip,
+  Radio,
+  Search,
+  Settings2,
+  Sparkles,
+  SquareTerminal,
+  Users,
+  Volume2,
+  WandSparkles,
+  X,
+  type LucideProps,
+} from "lucide-react";
+
+const ICON_MAP = {
+  "book-open": BookOpen,
+  bot: Bot,
+  "calendar-clock": CalendarClock,
+  chevron: ChevronDown,
+  "chevron-right": ChevronRight,
+  clock: Clock3,
+  cpu: Cpu,
+  globe: Globe,
+  info: Info,
+  languages: Languages,
+  "layout-dashboard": LayoutDashboard,
+  "message-circle": MessageCircle,
+  more: MoreHorizontal,
+  notebook: NotebookText,
+  palette: Palette,
+  panel: PanelRightOpen,
+  paperclip: Paperclip,
+  radio: Radio,
+  search: Search,
+  settings: Settings2,
+  sparkles: Sparkles,
+  terminal: SquareTerminal,
+  users: Users,
+  voice: Volume2,
+  wand: WandSparkles,
+  x: X,
+};
+
+export type WorkspaceCloneIconName = keyof typeof ICON_MAP;
+
+export function WorkspaceCloneIcon({ name, ...props }: { name: WorkspaceCloneIconName } & LucideProps) {
+  const Icon = ICON_MAP[name];
+  return <Icon {...props} />;
+}
