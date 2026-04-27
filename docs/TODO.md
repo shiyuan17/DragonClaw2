@@ -228,3 +228,5 @@
 - [ ] CI 自动生成 Release Notes
 ## Phase 5.12: 聊天工作区全套 UI 克隆迁移
 - [ ] 在 `workspace-clone` 的 `聊天` 菜单内补齐 DragonClaw 聊天工作区全套界面骨架，保留纯前端假交互，不迁移真实功能
+## Phase 5.13: 按截图优化聊天工作区界面
+- [ ] 默认首页 `workspace-clone` 的 `聊天` 工作区按截图收敛为轻量三栏布局，并补齐右侧 Agent 详情抽屉；其他菜单与 legacy 页面保持保留
