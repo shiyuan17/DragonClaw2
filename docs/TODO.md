@@ -226,3 +226,5 @@
 - [x] GitHub Issue + PR 模板
 - [ ] GitHub Discussions
 - [ ] CI 自动生成 Release Notes
+## Phase 5.12: 聊天工作区全套 UI 克隆迁移
+- [ ] 在 `workspace-clone` 的 `聊天` 菜单内补齐 DragonClaw 聊天工作区全套界面骨架，保留纯前端假交互，不迁移真实功能
