@@ -1,8 +1,8 @@
-// Copyright (C) 2026 ZsTs119
+// Copyright (C) 2026 shiyuan
 // SPDX-License-Identifier: GPL-3.0-only
-// This file is part of OpenClaw Launcher. See LICENSE for details.
+// This file is part of DragonClaw. See LICENSE for details.
 /**
- * Shared TypeScript type definitions for OpenClaw Launcher
+ * Shared TypeScript type definitions for DragonClaw
  *
  * These types are the contract between the Tauri backend and
  * React frontend. Do NOT modify without updating both sides.

@@ -1,6 +1,6 @@
-// Copyright (C) 2026 ZsTs119
+// Copyright (C) 2026 shiyuan
 // SPDX-License-Identifier: GPL-3.0-only
-// This file is part of OpenClaw Launcher. See LICENSE for details.
+// This file is part of DragonClaw. See LICENSE for details.
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::io::{BufRead, BufReader};
@@ -290,7 +290,7 @@ async fn start_service_impl(
     let run_script = openclaw_dir.join("scripts").join("run-node.mjs");
 
     // Auth token for web UI — injected via env var (also set in openclaw.json)
-    let token = "openclaw-launcher-local";
+    let token = "dragonclaw-local";
 
     let mut cmd = Command::new(&node_bin);
     cmd.arg(&run_script)
@@ -342,7 +342,7 @@ async fn start_service_impl(
                                 "level": "success",
                                 "message": "🌐 正在打开浏览器..."
                             }));
-                            let _ = open::that(format!("http://localhost:{}?token=openclaw-launcher-local", open_port));
+                            let _ = open::that(format!("http://localhost:{}?token=dragonclaw-local", open_port));
                         });
                     }
 

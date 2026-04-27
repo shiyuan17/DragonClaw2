@@ -1,6 +1,6 @@
-// Copyright (C) 2026 ZsTs119
+// Copyright (C) 2026 shiyuan
 // SPDX-License-Identifier: GPL-3.0-only
-// This file is part of OpenClaw Launcher. See LICENSE for details.
+// This file is part of DragonClaw. See LICENSE for details.
 /**
  * SetupWizard Component
  *
@@ -53,7 +53,7 @@ export function SetupWizard({
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.6, ease: "easeOut" }}
                 >
-                    <div className="startup-logo">OpenClaw Launcher</div>
+                    <div className="startup-logo">DragonClaw</div>
                     <div className="startup-version">v{appVersion}</div>
                     <div className="startup-progress-bar">
                         <motion.div

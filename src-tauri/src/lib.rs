@@ -1,6 +1,6 @@
-// Copyright (C) 2026 ZsTs119
+// Copyright (C) 2026 shiyuan
 // SPDX-License-Identifier: GPL-3.0-only
-// This file is part of OpenClaw Launcher. See LICENSE for details.
+// This file is part of DragonClaw. See LICENSE for details.
 mod agents;
 mod config;
 mod diagnostics;
@@ -39,7 +39,7 @@ pub fn run() {
 
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("OpenClaw Launcher")
+                .tooltip("DragonClaw")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| {
@@ -55,7 +55,7 @@ pub fn run() {
                             // Open the gateway in default browser using actual service port
                             let state = app.state::<service::ServiceState>();
                             let port = *state.port.lock().unwrap();
-                            let _ = open::that(format!("http://localhost:{}?token=openclaw-launcher-local", port));
+                            let _ = open::that(format!("http://localhost:{}?token=dragonclaw-local", port));
                         }
                         "restart" => {
                             // Show the window first so user sees the restart progress

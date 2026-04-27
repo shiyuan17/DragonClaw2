@@ -1,6 +1,6 @@
-// Copyright (C) 2026 ZsTs119
+// Copyright (C) 2026 shiyuan
 // SPDX-License-Identifier: GPL-3.0-only
-// This file is part of OpenClaw Launcher. See LICENSE for details.
+// This file is part of DragonClaw. See LICENSE for details.
 /**
  * useSetup Hook
  *

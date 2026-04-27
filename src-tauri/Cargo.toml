@@ -1,0 +1,36 @@
+[package]
+name = "dragonclaw"
+version = "0.1.0"
+description = "One-click installer & launcher for OpenClaw AI coding assistant"
+authors = ["shiyuan <1213423761@qq.com>"]
+edition = "2021"
+homepage = "https://github.com/shiyuan17/DragonClaw2/security"
+repository = "https://github.com/shiyuan17/DragonClaw2/security"
+license = "MIT"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "openclaw_launcher_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["stream"] }
+tokio = { version = "1", features = ["full"] }
+zip = "2"
+dirs = "6"
+futures-util = "0.3"
+open = "5"
+regex-lite = "0.1"
+

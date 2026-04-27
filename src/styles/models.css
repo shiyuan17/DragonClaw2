@@ -1,0 +1,436 @@
+/* Copyright (C) 2026 shiyuan — GPL-3.0-only */
+/* ===== Models Page ===== */
+.models-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.page-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 0;
+}
+
+.page-desc {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin-top: -8px;
+}
+
+/* Category tabs */
+.category-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.category-btn {
+  padding: 8px 18px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+  -webkit-app-region: no-drag;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Pre-allocate bold width to prevent layout shift */
+.category-btn::after {
+  content: attr(data-text);
+  font-weight: 600;
+  visibility: hidden;
+  height: 0;
+  overflow: hidden;
+  display: block;
+  pointer-events: none;
+}
+
+.category-btn:hover {
+  border-color: var(--accent-active-border);
+  color: var(--text-primary);
+}
+
+.category-btn.active {
+  border-color: var(--accent-active-border);
+  background: var(--accent-active);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* Provider list */
+.provider-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.provider-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.provider-card:hover {
+  border-color: var(--accent-active-border);
+  background: var(--bg-card-hover);
+}
+
+.provider-card.selected {
+  border-color: var(--accent-active-border);
+  background: var(--accent-active);
+  box-shadow: 0 0 0 1px var(--accent-active-border);
+}
+
+.provider-card.active-provider {
+  border-color: var(--accent-active-border);
+  background: var(--accent-active);
+  box-shadow: 0 0 0 1px var(--accent-active-border);
+}
+
+.provider-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.provider-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.provider-desc {
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+.provider-models {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.model-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  background: var(--accent-active);
+  color: var(--text-primary);
+  border-radius: 12px;
+}
+
+.badge-free {
+  font-size: 11px;
+  padding: 2px 8px;
+  background: var(--accent-active);
+  color: var(--accent-success);
+  border-radius: 12px;
+  font-weight: 600;
+}
+
+.badge-free-sm {
+  font-size: 10px;
+  padding: 1px 6px;
+  background: var(--accent-active);
+  color: var(--accent-success);
+  border-radius: 8px;
+  margin-left: 6px;
+}
+
+/* Config panel */
+.config-panel,
+.custom-config {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.config-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.form-group label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.input-field {
+  padding: 10px 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.input-field:focus {
+  border-color: var(--accent-active-border);
+}
+
+.input-field::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.6;
+}
+
+.model-select-list {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.model-select-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border-radius: 16px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+  -webkit-app-region: no-drag;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Pre-allocate bold width to prevent layout shift */
+.model-select-btn::after {
+  content: attr(data-text);
+  font-weight: 600;
+  visibility: hidden;
+  height: 0;
+  overflow: hidden;
+  display: block;
+  pointer-events: none;
+}
+
+.model-select-btn:hover {
+  border-color: var(--accent-active-border);
+}
+
+.model-select-btn.active {
+  border-color: var(--accent-active-border);
+  background: var(--accent-active);
+  color: var(--accent-success);
+  font-weight: 600;
+}
+
+.config-status {
+  font-size: 13px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-active);
+  border: 1px solid var(--accent-active-border);
+}
+
+/* Custom model input */
+.model-custom-toggle {
+  border-style: dashed;
+  color: var(--text-secondary);
+  gap: 2px;
+}
+
+.model-custom-toggle:hover {
+  color: var(--text-primary);
+}
+
+.model-custom-input-row {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.model-custom-input {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 12px;
+  box-sizing: border-box;
+}
+
+/* ===== Saved Provider Cards (AI Engine Redesign) ===== */
+.provider-active-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgba(96, 165, 250, 0.06);
+  border: 1px solid rgba(96, 165, 250, 0.15);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.provider-active-hint strong {
+  color: var(--accent-blue);
+}
+
+.provider-cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.provider-saved-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+
+.provider-saved-card:hover {
+  border-color: var(--accent-blue);
+}
+
+.provider-saved-card.active {
+  border-color: rgba(96, 165, 250, 0.4);
+  background: linear-gradient(135deg, var(--bg-card), rgba(96, 165, 250, 0.04));
+}
+
+.provider-saved-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
+}
+
+.provider-saved-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-blue);
+  flex-shrink: 0;
+}
+
+.provider-saved-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.provider-saved-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.provider-saved-url {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.provider-saved-meta {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.provider-saved-expand {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.provider-saved-models {
+  border-top: 1px solid var(--border);
+  padding: 12px 16px;
+}
+
+.provider-model-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+/* Pending selection (clicked but not confirmed) */
+.model-select-btn.pending {
+  border-color: var(--accent-active-border);
+  background: var(--accent-active);
+  box-shadow: 0 0 0 1px var(--accent-active-border);
+}
+
+.provider-saved-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+/* Model chip wrapper with delete button */
+.model-chip-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.model-chip-delete {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: all 0.15s;
+  padding: 0;
+  margin: 0;
+  line-height: 0;
+  font-size: 0;
+  box-sizing: border-box;
+  z-index: 1;
+}
+
+.model-chip-wrapper:hover .model-chip-delete {
+  opacity: 1;
+}
+
+.model-chip-delete:hover {
+  background: var(--accent-danger, #ef4444);
+  border-color: var(--accent-danger, #ef4444);
+  color: white;
+}
