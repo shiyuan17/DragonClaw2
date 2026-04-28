@@ -238,3 +238,9 @@
 - [ ] 在 `workspace-clone` 首页外壳内接入真实 OpenClaw 网关聊天，首页静默启动服务并把“数字员工”切为真实 Agent 会话入口
 - [ ] Phase 5.15.1: 修复首页聊天 `gateway token mismatch`，统一从 `~/.openclaw/openclaw.json` 动态读取 `gateway.auth.token`，并同步首页/legacy 控制台入口
 - [ ] Phase 5.15.2: 修复 `workspace-clone` 首页乱码，并恢复聊天消息区域滚动
+- [ ] Phase 5.15.2: 收窄首页左侧主菜单栏，并压缩聊天顶部高度与分割线视觉重量
+- [ ] Phase 5.15.2: 按参考图收敛首页左侧侧边栏的菜单排布、品牌水印与底部操作区
+- [ ] Phase 5.15.2: 恢复首页聊天消息正文的文本选择能力，支持直接框选复制
+- [ ] Phase 5.15.3: 重构 `workspace-clone` 顶部标题栏与聊天会话头部，并新增应用内仿标题栏
+- [ ] Phase 5.15.3: 将右侧抽屉升级为会话边栏，迁入模型、记忆、技能库、命令、工具权限主入口
+- [ ] Phase 5.15.3: 弱化 composer 旧入口并保留 overlay 作为二级详情容器
