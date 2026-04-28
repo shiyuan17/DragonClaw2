@@ -237,3 +237,4 @@
 ## Phase 5.15: 首页聊天接入内置 OpenClaw
 - [ ] 在 `workspace-clone` 首页外壳内接入真实 OpenClaw 网关聊天，首页静默启动服务并把“数字员工”切为真实 Agent 会话入口
 - [ ] Phase 5.15.1: 修复首页聊天 `gateway token mismatch`，统一从 `~/.openclaw/openclaw.json` 动态读取 `gateway.auth.token`，并同步首页/legacy 控制台入口
+- [ ] Phase 5.15.2: 修复 `workspace-clone` 首页乱码，并恢复聊天消息区域滚动
