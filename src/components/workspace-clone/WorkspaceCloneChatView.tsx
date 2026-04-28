@@ -69,6 +69,7 @@ export function WorkspaceCloneChatView({
   const hasMessages = messages.length > 0;
   const showDisconnectedState = !chatEnabled || !running || connectionStatus === "error";
   const showConnectingState = running && connectionStatus === "connecting" && !hasMessages;
+  const showMissingTokenState = Boolean(connectionError?.includes("本地网关 token"));
 
   return (
     <div className={`workspace-clone__chat-layout ${utilityPanel ? "drawer-open" : ""}`}>
@@ -81,12 +82,20 @@ export function WorkspaceCloneChatView({
               </div>
               <div className="workspace-clone__empty-state-copy">
                 <strong>
-                  {!chatEnabled ? "频道和团队暂未接入真实会话" : running ? "首页聊天暂时连不上 OpenClaw" : "服务未启动"}
+                  {!chatEnabled
+                    ? "当前仅首页聊天接入数字员工"
+                    : !running
+                      ? "服务尚未启动"
+                      : showMissingTokenState
+                        ? "本地网关 token 未同步"
+                        : "首页聊天暂时无法连接 OpenClaw"}
                 </strong>
                 <p>
                   {!chatEnabled
-                    ? "本期只有“数字员工”标签会切到真实 Agent 主会话，频道和团队先继续保留占位。"
-                    : connectionError || (running ? "请稍等服务恢复，或在右侧操作中重新打开控制台检查状态。" : "启动服务后，这里会接入真实 Agent 会话与聊天记录。")}
+                    ? "当前版本只将“数字员工”页签接入真实 Agent 会话，其他分区暂时保留展示骨架。"
+                    : connectionError || (running
+                      ? "正在等待本地网关握手完成，你也可以先打开控制台确认 OpenClaw 状态。"
+                      : "启动服务后，这里会自动接入当前 Agent 的主会话。")}
                 </p>
               </div>
               <div className="workspace-clone__empty-state-actions">
@@ -113,42 +122,49 @@ export function WorkspaceCloneChatView({
               </div>
               <div className="workspace-clone__empty-state-copy">
                 <strong>正在连接首页聊天</strong>
-                <p>OpenClaw 网关就绪后，这里会自动拉取 Agent 列表和主会话历史。</p>
+                <p>OpenClaw 网关就绪后，这里会自动拉取真实 Agent 列表和主会话历史。</p>
               </div>
             </section>
           ) : hasMessages ? (
-            <div className="workspace-clone__message-list">
-              {messages.map((message) => (
-                <article
-                  key={message.id}
-                  className={[
-                    "workspace-clone__message",
-                    "workspace-clone__message--chat",
-                    `is-${message.role}`,
-                    message.status ? `is-${message.status}` : "",
-                  ].join(" ").trim()}
-                >
-                  <div className="workspace-clone__message-marker">{message.author}</div>
-                  <div className="workspace-clone__message-content">
-                    <p>{message.text}</p>
-                    <span>
-                      {message.status === "streaming"
-                        ? "生成中..."
-                        : message.status === "pending"
-                          ? "发送中..."
-                          : message.time}
-                    </span>
-                  </div>
-                </article>
-              ))}
+            <div className="workspace-clone__message-scroll">
+              <div className="workspace-clone__message-list">
+                {messages.map((message) => (
+                  <article
+                    key={message.id}
+                    className={[
+                      "workspace-clone__message",
+                      "workspace-clone__message--chat",
+                      `is-${message.role}`,
+                      message.status ? `is-${message.status}` : "",
+                    ].join(" ").trim()}
+                  >
+                    <div className="workspace-clone__message-marker">{message.author}</div>
+                    <div className="workspace-clone__message-content">
+                      <p>{message.text}</p>
+                      <span>
+                        {message.status === "streaming"
+                          ? "思考中..."
+                          : message.status === "pending"
+                            ? "发送中..."
+                            : message.time}
+                      </span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+              <div className="workspace-clone__canvas-fill" />
             </div>
           ) : (
             <section className="workspace-clone__welcome-state">
               <article className="workspace-clone__message workspace-clone__message--minimal">
-                <div className="workspace-clone__message-marker">{selectedEntity?.avatarLabel || "主"}</div>
+                <div className="workspace-clone__message-marker">{selectedEntity?.avatarLabel || "A"}</div>
                 <div className="workspace-clone__message-content">
-                  <p>{historyLoading ? "正在同步当前 Agent 的会话记录..." : "我已经连上首页聊天入口，随时可以帮你拆解任务、生成方案或继续当前主会话。"}</p>
-                  <span>{isGenerating ? "生成中..." : "主会话已就绪"}</span>
+                  <p>
+                    {historyLoading
+                      ? "正在同步 Agent 会话记录..."
+                      : "你可以直接给当前数字员工安排任务、询问问题，或者从下方卡片快速进入常用工作流。"}
+                  </p>
+                  <span>{isGenerating ? "思考中..." : "试着发起第一条消息"}</span>
                 </div>
               </article>
 
@@ -178,8 +194,6 @@ export function WorkspaceCloneChatView({
               </div>
             </section>
           )}
-
-          {hasMessages && <div className="workspace-clone__canvas-fill" />}
         </div>
       </div>
 

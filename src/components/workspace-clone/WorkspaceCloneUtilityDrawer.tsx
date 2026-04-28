@@ -69,10 +69,10 @@ export function WorkspaceCloneUtilityDrawer({
           <>
             <section className="workspace-clone__drawer-card workspace-clone__drawer-card--hero">
               <div className={`workspace-clone__entity-avatar is-${selectedEntity?.accent || "main"} workspace-clone__entity-avatar--drawer`}>
-                {selectedEntity?.avatarLabel || "主"}
+                {selectedEntity?.avatarLabel || "A"}
               </div>
               <div className="workspace-clone__drawer-identity">
-                <strong>{selectedEntity?.name || "主Agent"}</strong>
+                <strong>{selectedEntity?.name || "main"}</strong>
                 <small>{selectedEntity?.subtitle || "待命中"}</small>
               </div>
             </section>

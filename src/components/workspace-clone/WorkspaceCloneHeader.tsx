@@ -49,7 +49,7 @@ export function WorkspaceCloneHeader({
               ))}
             </span>
           ) : (
-            selectedEntity?.avatarLabel || "主"
+            selectedEntity?.avatarLabel || "A"
           )}
         </button>
 

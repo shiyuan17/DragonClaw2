@@ -27,11 +27,36 @@ export const WORKSPACE_TYPE_TABS: WorkspaceTypeTab[] = [
 ];
 
 export const WORKSPACE_HOME_SUGGESTIONS = [
-  { id: "task", title: "定时任务", description: "把周期任务拆解、提醒和摘要整理成可直接发送的自动化任务。", icon: "calendar-clock" },
-  { id: "docs", title: "文件整理", description: "识别文件内容、提取关键信息，并按规则归档命名。", icon: "book-open" },
-  { id: "social", title: "社交媒体", description: "围绕平台搜索、内容生成、账号监控和发布动作组织任务。", icon: "message-circle" },
-  { id: "local", title: "本地生活", description: "把本地活动、服务预约和商品筛选整理成可执行的生活助手任务。", icon: "radio" },
-  { id: "study", title: "教育学习", description: "围绕课程设计、练习反馈与资料摘要生成学习任务。", icon: "layout-dashboard" },
+  {
+    id: "task",
+    title: "定时任务",
+    description: "把周期性任务拆解、提醒和摘要整理成可以直接发送的自动化任务。",
+    icon: "calendar-clock",
+  },
+  {
+    id: "docs",
+    title: "文件整理",
+    description: "识别文件内容、提取关键信息，并按规则完成归档和命名。",
+    icon: "book-open",
+  },
+  {
+    id: "social",
+    title: "社交媒体",
+    description: "围绕平台搜索、内容生成、账号监控和发布动作组织任务。",
+    icon: "message-circle",
+  },
+  {
+    id: "local",
+    title: "本地生活",
+    description: "把本地活动、服务预约和商品筛选整理成可执行的生活助手任务。",
+    icon: "radio",
+  },
+  {
+    id: "study",
+    title: "教育学习",
+    description: "围绕课程设计、练习反馈与资料摘要，生成可跟进的学习任务。",
+    icon: "layout-dashboard",
+  },
 ];
 
 export function buildWorkspaceEntities(
@@ -44,24 +69,24 @@ export function buildWorkspaceEntities(
       {
         id: "main",
         entityType: "agents",
-        name: "主Agent",
+        name: "main",
         subtitle: running ? "工作中" : "待命中",
         status: running ? "busy" : "offline",
-        avatarLabel: "主",
+        avatarLabel: "M",
         accent: "main",
-        currentWork: running ? "等待新的任务请求" : "服务未启动，当前仅展示聊天首页界面。",
+        currentWork: running ? "等待新的任务请求" : "服务尚未启动，当前仅展示首页聊天界面。",
         recentOutput: `${currentModelName} / ${currentProviderName}`,
       },
       {
         id: "ops",
         entityType: "agents",
         name: "运营协作 Agent",
-        subtitle: "工作中",
+        subtitle: "在线",
         status: "online",
         avatarLabel: "运",
         accent: "ops",
         currentWork: "整理渠道欢迎语与交接说明。",
-        recentOutput: "当前仅作为目录占位，不进入默认首页视觉。",
+        recentOutput: "当前仅作为目录占位，不进入默认首页视图。",
       },
       {
         id: "product",
@@ -72,7 +97,7 @@ export function buildWorkspaceEntities(
         avatarLabel: "策",
         accent: "product",
         currentWork: "等待下一轮界面和功能迁移任务。",
-        recentOutput: "当前仅作为目录占位，不进入默认首页视觉。",
+        recentOutput: "当前仅作为目录占位，不进入默认首页视图。",
       },
     ],
     channels: [
@@ -106,11 +131,11 @@ export function buildWorkspaceEntities(
         name: "增长工作室",
         subtitle: "3 名成员",
         status: "online",
-        avatarLabel: "增",
+        avatarLabel: "团",
         accent: "team",
-        memberLabels: ["运", "策", "内"],
+        memberLabels: ["运", "策", "执"],
         currentWork: "评审聊天首页视觉方向。",
-        recentOutput: "默认首页以图 1 为唯一主参考。",
+        recentOutput: "默认首页以图 1 作为唯一主参考。",
       },
     ],
   };
@@ -120,16 +145,31 @@ export const WORKSPACE_MESSAGES: WorkspaceMessage[] = [
   {
     id: "assistant-1",
     role: "assistant",
-    author: "主",
-    text: "我是主智能体，已准备好协助你拆解与执行任务。",
+    author: "M",
+    text: "我是主 Agent，已经准备好协助你拆解和执行任务。",
     time: "23:45",
   },
 ];
 
 export const WORKSPACE_HISTORY: WorkspaceHistoryItem[] = [
-  { id: "h-1", title: "首页视觉收敛", subtitle: "以图 1 作为默认态基准继续调整聊天首页。", time: "今天 09:10" },
-  { id: "h-2", title: "频道绑定弹窗", subtitle: "保留微信、飞书和手动配置三段结构。", time: "今天 08:42" },
-  { id: "h-3", title: "聊天工作区壳层", subtitle: "目录区、聊天区和输入区已完成初版接线。", time: "昨天 21:30" },
+  {
+    id: "h-1",
+    title: "首页视觉收敛",
+    subtitle: "以图 1 作为默认状态基准，继续调整首页聊天布局。",
+    time: "今天 09:10",
+  },
+  {
+    id: "h-2",
+    title: "频道绑定弹窗",
+    subtitle: "保留微信、飞书和手动配置三段式结构。",
+    time: "今天 08:42",
+  },
+  {
+    id: "h-3",
+    title: "聊天工作区壳层",
+    subtitle: "目录区、聊天区和输入区已经完成首版接线。",
+    time: "昨天 21:30",
+  },
 ];
 
 export const WORKSPACE_SCHEDULES: WorkspaceScheduleItem[] = [
@@ -144,7 +184,7 @@ export const WORKSPACE_WORKBENCH: WorkspaceWorkbenchItem[] = [
 ];
 
 export const WORKSPACE_MEMORY_ITEMS: WorkspaceResourceItem[] = [
-  { id: "m-1", title: "首页记忆", subtitle: "记录聊天首页默认态以图 1 为准。", tag: "Focus" },
+  { id: "m-1", title: "首页记忆", subtitle: "记录聊天首页默认状态以图 1 为准。", tag: "Focus" },
   { id: "m-2", title: "频道说明", subtitle: "后续绑定接入时需要的提示文案与说明块。", tag: "Pinned" },
 ];
 
@@ -156,17 +196,17 @@ export const WORKSPACE_SKILL_ITEMS: WorkspaceResourceItem[] = [
 
 export const WORKSPACE_COMMAND_ITEMS: WorkspaceResourceItem[] = [
   { id: "cmd-1", title: "/summary", subtitle: "快速总结当前工作区内容。", tag: "Command" },
-  { id: "cmd-2", title: "/handoff", subtitle: "生成交接说明与后续行动项。", tag: "Command" },
-  { id: "cmd-3", title: "/review-ui", subtitle: "列出当前首页与截图的差距。", tag: "Command" },
+  { id: "cmd-2", title: "/handoff", subtitle: "生成交接说明和后续行动项。", tag: "Command" },
+  { id: "cmd-3", title: "/review-ui", subtitle: "列出当前首页与截图之间的差距。", tag: "Command" },
 ];
 
 export const WORKSPACE_CHANNEL_ITEMS: WorkspaceResourceItem[] = [
-  { id: "ch-1", title: "微信服务号 / 默认账号", subtitle: "已为主Agent 预留绑定入口。", tag: "已绑定" },
+  { id: "ch-1", title: "微信服务号 / 默认账号", subtitle: "已为 main Agent 预留绑定入口。", tag: "已绑定" },
   { id: "ch-2", title: "飞书租户 / 华东区", subtitle: "等待二维码接入与成员映射。", tag: "待接入" },
 ];
 
 export const WORKSPACE_TOOLS: WorkspaceToolItem[] = [
-  { id: "tool-1", title: "浏览器检查", description: "查看本地页面与控制台渲染状态。", enabled: true },
+  { id: "tool-1", title: "浏览器检查", description: "查看本地页面与控制台诊断状态。", enabled: true },
   { id: "tool-2", title: "文档导出", description: "整理阶段说明与交付备注。", enabled: true },
   { id: "tool-3", title: "频道调试", description: "预留后续接入频道命令时的诊断能力。", enabled: false },
 ];

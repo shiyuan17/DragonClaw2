@@ -60,7 +60,7 @@ export function WorkspaceCloneOverlayStack({
       <Modal show={showAgentInfo} onClose={onCloseAgentInfo} title="Agent 信息" maxWidth={560}>
         <div className="workspace-clone__dialog-body">
           <div className="workspace-clone__dialog-copy">
-            <strong>{selectedEntity?.name || "主Agent"}</strong>
+            <strong>{selectedEntity?.name || "main"}</strong>
             <p>{selectedEntity?.subtitle || "当前只保留 Agent 信息弹层的视觉骨架与字段布局。"}</p>
           </div>
           <div className="workspace-clone__info-grid">

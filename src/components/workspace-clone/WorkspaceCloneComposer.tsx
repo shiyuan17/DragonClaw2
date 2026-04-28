@@ -44,16 +44,16 @@ export function WorkspaceCloneComposer({
   const canMention = useMemo(() => Boolean(selectedEntityName), [selectedEntityName]);
   const canSend = chatEnabled && running && connectionStatus === "connected" && !sending && !isGenerating;
   const statusText = !chatEnabled
-    ? "本期仅接入数字员工"
+    ? "当前仅接入数字员工"
     : !running
-    ? "服务未启动"
-    : connectionStatus === "connected"
-      ? isGenerating
-        ? "回复生成中"
-        : "会话已连接"
-      : connectionStatus === "connecting"
-        ? "连接中"
-        : "连接异常";
+      ? "服务尚未启动"
+      : connectionStatus === "connected"
+        ? isGenerating
+          ? "回复生成中"
+          : "会话已连接"
+        : connectionStatus === "connecting"
+          ? "连接中"
+          : "连接异常";
 
   const handleSubmit = async () => {
     if (!canSend) {
@@ -88,25 +88,55 @@ export function WorkspaceCloneComposer({
             <button type="button" title="附件" disabled>
               <WorkspaceCloneIcon name="paperclip" size={15} strokeWidth={1.9} />
             </button>
-            <button type="button" title="Slash Command" onClick={() => setState({ modal: null, suggestion: state.suggestion === "slash" ? null : "slash" })} disabled={!chatEnabled}>
+            <button
+              type="button"
+              title="Slash Command"
+              onClick={() => setState({ modal: null, suggestion: state.suggestion === "slash" ? null : "slash" })}
+              disabled={!chatEnabled}
+            >
               <WorkspaceCloneIcon name="wand" size={15} strokeWidth={1.9} />
             </button>
-            <button type="button" title="邮件绑定" onClick={() => setState({ modal: state.modal === "email-binding" ? null : "email-binding", suggestion: null })} disabled={!chatEnabled}>
+            <button
+              type="button"
+              title="邮件绑定"
+              onClick={() => setState({ modal: state.modal === "email-binding" ? null : "email-binding", suggestion: null })}
+              disabled={!chatEnabled}
+            >
               <WorkspaceCloneIcon name="globe" size={15} strokeWidth={1.9} />
             </button>
-            <button type="button" title="Mention" onClick={() => setState({ modal: null, suggestion: canMention ? "mention" : null })} disabled={!chatEnabled}>
+            <button
+              type="button"
+              title="Mention"
+              onClick={() => setState({ modal: null, suggestion: canMention ? "mention" : null })}
+              disabled={!chatEnabled}
+            >
               <WorkspaceCloneIcon name="users" size={15} strokeWidth={1.9} />
             </button>
           </div>
 
           <div className="workspace-clone__composer-pills">
-            <button type="button" className="workspace-clone__composer-pill" onClick={() => setState({ modal: state.modal === "knowledge" ? null : "knowledge", suggestion: null })} disabled={!chatEnabled}>
+            <button
+              type="button"
+              className="workspace-clone__composer-pill"
+              onClick={() => setState({ modal: state.modal === "knowledge" ? null : "knowledge", suggestion: null })}
+              disabled={!chatEnabled}
+            >
               知识库
             </button>
-            <button type="button" className="workspace-clone__composer-pill" onClick={() => onOpenRelatedResource("skills")} disabled={!chatEnabled}>
+            <button
+              type="button"
+              className="workspace-clone__composer-pill"
+              onClick={() => onOpenRelatedResource("skills")}
+              disabled={!chatEnabled}
+            >
               技能
             </button>
-            <button type="button" className="workspace-clone__composer-pill" onClick={() => onOpenRelatedResource("model")} disabled={!chatEnabled}>
+            <button
+              type="button"
+              className="workspace-clone__composer-pill"
+              onClick={() => onOpenRelatedResource("model")}
+              disabled={!chatEnabled}
+            >
               模型 astroncoding...
             </button>
           </div>
@@ -161,7 +191,7 @@ export function WorkspaceCloneComposer({
             )}
             {state.suggestion === "mention" && (
               <>
-                <button type="button">@{selectedEntityName || "主Agent"}</button>
+                <button type="button">@{selectedEntityName || "main"}</button>
                 <button type="button">@运营协作 Agent</button>
                 <button type="button">@增长工作室</button>
               </>

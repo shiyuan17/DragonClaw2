@@ -48,13 +48,13 @@ export function WorkspaceCloneChannelBindingModal({
               <div className="workspace-clone__binding-field">
                 <label>目标接待 Agent</label>
                 <button type="button" className="workspace-clone__binding-select">
-                  <span>主Agent</span>
+                  <span>main</span>
                   <WorkspaceCloneIcon name="chevron" size={14} strokeWidth={1.9} />
                 </button>
               </div>
               <div className="workspace-clone__binding-note">
                 <strong>状态说明</strong>
-                <small>这里只保留二维码区域、状态标签和映射入口，不调用真实后端命令。</small>
+                <small>这里仅保留二维码区域、状态标签和映射入口，不调用真实后端命令。</small>
               </div>
             </div>
           </div>
@@ -103,7 +103,7 @@ export function WorkspaceCloneChannelBindingModal({
             </div>
             <div className="workspace-clone__binding-field">
               <label>接待 Agent</label>
-              <input value="主Agent / 运营协作 Agent" readOnly />
+              <input value="main / 运营协作 Agent" readOnly />
             </div>
           </div>
         )}
