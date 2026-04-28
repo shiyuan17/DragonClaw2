@@ -7,7 +7,7 @@ interface WorkspaceCloneHeaderProps {
   activeUtilityPanel: WorkspaceUtilityPanel;
   onToggleUtilityPanel: (panel: Exclude<WorkspaceUtilityPanel, null>) => void;
   onOpenAgentInfo: () => void;
-  onOpenSettingsPreview: () => void;
+  onOpenSessionPanel: () => void;
   onOpenWorkbench: () => void;
   onOpenMemberManagement: () => void;
 }
@@ -17,7 +17,7 @@ export function WorkspaceCloneHeader({
   activeUtilityPanel,
   onToggleUtilityPanel,
   onOpenAgentInfo,
-  onOpenSettingsPreview,
+  onOpenSessionPanel,
   onOpenWorkbench,
   onOpenMemberManagement,
 }: WorkspaceCloneHeaderProps) {
@@ -53,8 +53,8 @@ export function WorkspaceCloneHeader({
           )}
         </button>
 
-        <div>
-          <h2>{selectedEntity?.name || "请选择对象"}</h2>
+        <div className="workspace-clone__header-copy">
+          <h2>{selectedEntity?.name || "请选择会话"}</h2>
           <p>{selectedEntity?.subtitle || "待命中"}</p>
         </div>
       </div>
@@ -87,12 +87,12 @@ export function WorkspaceCloneHeader({
               <WorkspaceCloneIcon name="info" size={15} strokeWidth={1.9} />
             </button>
             <button
-              className={`workspace-clone__icon-btn ${activeUtilityPanel === "settings" ? "is-active" : ""}`}
+              className={`workspace-clone__icon-btn workspace-clone__icon-btn--primary ${activeUtilityPanel === "session" ? "is-active" : ""}`}
               type="button"
-              title="打开详情抽屉"
-              onClick={onOpenSettingsPreview}
+              title="会话菜单"
+              onClick={onOpenSessionPanel}
             >
-              <WorkspaceCloneIcon name="panel" size={15} strokeWidth={1.9} />
+              <WorkspaceCloneIcon name="sparkles" size={15} strokeWidth={1.9} />
             </button>
           </>
         )}
@@ -110,7 +110,7 @@ export function WorkspaceCloneHeader({
           {moreOpen && (
             <div className="workspace-clone__more-menu">
               {[
-                { key: "history", label: "历史记录", icon: "clock" },
+                { key: "history", label: "历史会话", icon: "clock" },
                 { key: "logs", label: "运行日志", icon: "notebook" },
                 { key: "schedule", label: "定时任务", icon: "calendar-clock" },
               ].map((item) => (

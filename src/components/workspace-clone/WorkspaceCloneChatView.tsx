@@ -5,7 +5,11 @@ import type {
   WorkspaceGatewayStatus,
   WorkspaceHistoryItem,
   WorkspaceMessage,
+  WorkspaceRelatedResource,
+  WorkspaceResourceItem,
   WorkspaceScheduleItem,
+  WorkspaceSessionSectionKey,
+  WorkspaceToolItem,
   WorkspaceUtilityPanel,
   WorkspaceWorkbenchItem,
 } from "./workspaceCloneTypes";
@@ -20,16 +24,24 @@ interface WorkspaceCloneChatViewProps {
   historyLoading: boolean;
   isGenerating: boolean;
   utilityPanel: WorkspaceUtilityPanel;
+  activeSessionSection: WorkspaceSessionSectionKey;
   historyItems: WorkspaceHistoryItem[];
   logs: Array<{ id: string; title: string; subtitle: string }>;
   schedules: WorkspaceScheduleItem[];
   workbenchItems: WorkspaceWorkbenchItem[];
+  memoryItems: WorkspaceResourceItem[];
+  skillItems: WorkspaceResourceItem[];
+  commandItems: WorkspaceResourceItem[];
+  channelItems: WorkspaceResourceItem[];
+  toolItems: WorkspaceToolItem[];
   currentModelName: string;
   currentProviderName: string;
   workspacePath: string;
   running: boolean;
   loading: boolean;
   onCloseUtilityPanel: () => void;
+  onSelectSessionSection: (section: WorkspaceSessionSectionKey) => void;
+  onOpenRelatedResource: (resource: WorkspaceRelatedResource) => void;
   onOpenSettingsTextPreview: () => void;
   onStart: () => void;
   onStop: () => void;
@@ -48,16 +60,24 @@ export function WorkspaceCloneChatView({
   historyLoading,
   isGenerating,
   utilityPanel,
+  activeSessionSection,
   historyItems,
   logs,
   schedules,
   workbenchItems,
+  memoryItems,
+  skillItems,
+  commandItems,
+  channelItems,
+  toolItems,
   currentModelName,
   currentProviderName,
   workspacePath,
   running,
   loading,
   onCloseUtilityPanel,
+  onSelectSessionSection,
+  onOpenRelatedResource,
   onOpenSettingsTextPreview,
   onStart,
   onStop,
@@ -92,7 +112,7 @@ export function WorkspaceCloneChatView({
                 </strong>
                 <p>
                   {!chatEnabled
-                    ? "当前版本只将“数字员工”页签接入真实 Agent 会话，其他分区暂时保留展示骨架。"
+                    ? "当前版本只把“数字员工”页签接入真实 Agent 会话，其它区域仍保留工作台骨架。"
                     : connectionError || (running
                       ? "正在等待本地网关握手完成，你也可以先打开控制台确认 OpenClaw 状态。"
                       : "启动服务后，这里会自动接入当前 Agent 的主会话。")}
@@ -162,7 +182,7 @@ export function WorkspaceCloneChatView({
                   <p>
                     {historyLoading
                       ? "正在同步 Agent 会话记录..."
-                      : "你可以直接给当前数字员工安排任务、询问问题，或者从下方卡片快速进入常用工作流。"}
+                      : "你可以直接给当前数字员工安排任务、提问，或从下方卡片快速进入常用工作流。"}
                   </p>
                   <span>{isGenerating ? "思考中..." : "试着发起第一条消息"}</span>
                 </div>
@@ -200,16 +220,24 @@ export function WorkspaceCloneChatView({
       <WorkspaceCloneUtilityDrawer
         panel={utilityPanel}
         selectedEntity={selectedEntity}
+        activeSessionSection={activeSessionSection}
         historyItems={historyItems}
         logs={logs}
         schedules={schedules}
         workbenchItems={workbenchItems}
+        memoryItems={memoryItems}
+        skillItems={skillItems}
+        commandItems={commandItems}
+        channelItems={channelItems}
+        toolItems={toolItems}
         currentModelName={currentModelName}
         currentProviderName={currentProviderName}
         workspacePath={workspacePath}
         running={running}
         loading={loading}
         onClose={onCloseUtilityPanel}
+        onSelectSessionSection={onSelectSessionSection}
+        onOpenRelatedResource={onOpenRelatedResource}
         onOpenSettingsTextPreview={onOpenSettingsTextPreview}
         onOpenModelSwitch={onOpenModelSwitch}
         onOpenProviderConfig={onOpenProviderConfig}

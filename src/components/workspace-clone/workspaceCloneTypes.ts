@@ -1,7 +1,8 @@
 import type { WorkspaceEntityType, WorkspaceMenuKey } from "../../types";
 
-export type WorkspaceUtilityPanel = "history" | "logs" | "settings" | "schedule" | "workbench" | null;
-export type WorkspaceRelatedResource = "model" | "memory" | "skills" | "commands" | "tools" | "channel" | "schedule" | null;
+export type WorkspaceUtilityPanel = "session" | "history" | "logs" | "schedule" | "workbench" | null;
+export type WorkspaceSessionSectionKey = "model" | "memory" | "skills" | "commands" | "tools" | "channel" | "schedule";
+export type WorkspaceRelatedResource = WorkspaceSessionSectionKey | null;
 export type WorkspaceSidebarAdminPanel = "theme" | "language" | null;
 export type WorkspaceComposerModal = "knowledge" | "knowledge-delete" | "slash-command" | "email-binding" | null;
 export type WorkspaceSuggestionMode = "slash" | "mention" | null;

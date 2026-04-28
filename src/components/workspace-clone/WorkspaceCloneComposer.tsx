@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import type {
   WorkspaceComposerModal,
   WorkspaceGatewayStatus,
-  WorkspaceRelatedResource,
+  WorkspaceSessionSectionKey,
   WorkspaceSuggestionMode,
 } from "./workspaceCloneTypes";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
@@ -12,10 +12,11 @@ interface WorkspaceCloneComposerProps {
   chatEnabled: boolean;
   connectionStatus: WorkspaceGatewayStatus;
   selectedEntityName: string | null;
+  currentModelName: string;
   sending: boolean;
   isGenerating: boolean;
   resettingSession: boolean;
-  onOpenRelatedResource: (target: WorkspaceRelatedResource) => void;
+  onOpenSessionSection: (target: WorkspaceSessionSectionKey) => void;
   onSend: (value: string) => Promise<boolean>;
   onAbort: () => Promise<boolean>;
   onResetSession: () => Promise<boolean>;
@@ -26,15 +27,21 @@ interface WorkspaceCloneComposerState {
   suggestion: WorkspaceSuggestionMode;
 }
 
+function formatModelLabel(modelName: string) {
+  if (!modelName) return "模型";
+  return modelName.length > 16 ? `${modelName.slice(0, 16)}...` : modelName;
+}
+
 export function WorkspaceCloneComposer({
   running,
   chatEnabled,
   connectionStatus,
   selectedEntityName,
+  currentModelName,
   sending,
   isGenerating,
   resettingSession,
-  onOpenRelatedResource,
+  onOpenSessionSection,
   onSend,
   onAbort,
   onResetSession,
@@ -85,8 +92,13 @@ export function WorkspaceCloneComposer({
 
         <div className="workspace-clone__composer-bottom">
           <div className="workspace-clone__composer-tools">
-            <button type="button" title="附件" disabled>
-              <WorkspaceCloneIcon name="paperclip" size={15} strokeWidth={1.9} />
+            <button
+              type="button"
+              title="知识库"
+              onClick={() => setState({ modal: state.modal === "knowledge" ? null : "knowledge", suggestion: null })}
+              disabled={!chatEnabled}
+            >
+              <WorkspaceCloneIcon name="book-open" size={15} strokeWidth={1.9} />
             </button>
             <button
               type="button"
@@ -117,27 +129,35 @@ export function WorkspaceCloneComposer({
           <div className="workspace-clone__composer-pills">
             <button
               type="button"
-              className="workspace-clone__composer-pill"
-              onClick={() => setState({ modal: state.modal === "knowledge" ? null : "knowledge", suggestion: null })}
+              className="workspace-clone__composer-pill workspace-clone__composer-pill--muted"
+              onClick={() => onOpenSessionSection("memory")}
               disabled={!chatEnabled}
             >
-              知识库
+              记忆
+            </button>
+            <button
+              type="button"
+              className="workspace-clone__composer-pill workspace-clone__composer-pill--muted"
+              onClick={() => onOpenSessionSection("skills")}
+              disabled={!chatEnabled}
+            >
+              技能库
+            </button>
+            <button
+              type="button"
+              className="workspace-clone__composer-pill workspace-clone__composer-pill--muted"
+              onClick={() => onOpenSessionSection("commands")}
+              disabled={!chatEnabled}
+            >
+              命令
             </button>
             <button
               type="button"
               className="workspace-clone__composer-pill"
-              onClick={() => onOpenRelatedResource("skills")}
+              onClick={() => onOpenSessionSection("model")}
               disabled={!chatEnabled}
             >
-              技能
-            </button>
-            <button
-              type="button"
-              className="workspace-clone__composer-pill"
-              onClick={() => onOpenRelatedResource("model")}
-              disabled={!chatEnabled}
-            >
-              模型 astroncoding...
+              模型 {formatModelLabel(currentModelName)}
             </button>
           </div>
 

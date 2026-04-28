@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { motion } from "framer-motion";
+import logo from "../../assets/dragonclaw-logo.png";
 import type { LogEntry, WorkspaceEntityType, WorkspaceMenuKey } from "../../types";
 import { useWorkspaceGatewayChat } from "../../hooks/useWorkspaceGatewayChat";
 import { formatUptime } from "../../utils/log-humanizer";
@@ -33,6 +34,7 @@ import type {
   DirectoryContextMenuState,
   WorkspaceEntity,
   WorkspaceRelatedResource,
+  WorkspaceSessionSectionKey,
   WorkspaceSidebarAdminPanel,
   WorkspaceUtilityPanel,
 } from "./workspaceCloneTypes";
@@ -57,12 +59,12 @@ export interface WorkspaceClonePageProps {
 const COMPACT_COPY: Record<Exclude<WorkspaceMenuKey, "chat">, { title: string; description: string; bullets: string[] }> = {
   schedule: {
     title: "定时任务工作区骨架",
-    description: "这里先保留定时任务栏目的结构和信息节奏，后续再逐步迁移真实调度能力。",
+    description: "这里先保留定时任务栏目结构与信息节奏，后续再逐步迁移真实调度能力。",
     bullets: ["后续迁移任务列表、启停状态和调度设置。", "当前仅保留标题、说明卡片和状态占位。"],
   },
   knowledge: {
     title: "知识库管理工作区骨架",
-    description: "先保留知识类工作区的分区结构，为后续资料树、上传区和知识面板预留接线位置。",
+    description: "先保留知识类工作区的分区结构，为后续资料树、上传区和知识面板预留接口位置。",
     bullets: ["占位卡片模拟知识源、文档集和索引状态。", "本次不接入任何真实文档或后端命令。"],
   },
   employees: {
@@ -181,6 +183,7 @@ export function WorkspaceClonePage({
   const [isDirectoryCollapsed, setIsDirectoryCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [utilityPanel, setUtilityPanel] = useState<WorkspaceUtilityPanel>(null);
+  const [activeSessionSection, setActiveSessionSection] = useState<WorkspaceSessionSectionKey>("model");
   const [adminOpen, setAdminOpen] = useState(false);
   const [adminPanel, setAdminPanel] = useState<WorkspaceSidebarAdminPanel>(null);
   const [contextMenu, setContextMenu] = useState<DirectoryContextMenuState>(null);
@@ -200,6 +203,7 @@ export function WorkspaceClonePage({
     () => buildWorkspaceEntities(currentModelName, currentProviderName, running),
     [currentModelName, currentProviderName, running],
   );
+
   const gatewayAgentEntities = useMemo(
     () =>
       homepageChat.agents.length > 0
@@ -228,6 +232,7 @@ export function WorkspaceClonePage({
       staticEntitiesByType.agents,
     ],
   );
+
   const entitiesByType = useMemo(
     () => ({
       ...staticEntitiesByType,
@@ -235,6 +240,7 @@ export function WorkspaceClonePage({
     }),
     [gatewayAgentEntities, staticEntitiesByType],
   );
+
   const chatEnabled = activeType === "agents";
 
   const filteredEntities = useMemo(() => {
@@ -273,6 +279,7 @@ export function WorkspaceClonePage({
       setAdminOpen(false);
       setAdminPanel(null);
     };
+
     const handleWindowResize = () => {
       setContextMenu(null);
     };
@@ -302,6 +309,21 @@ export function WorkspaceClonePage({
       channelName: entity.name,
       view: entity.id === "feishu" ? "feishu" : "wechat",
     });
+  };
+
+  const toggleUtilityPanel = (panel: Exclude<WorkspaceUtilityPanel, null>) => {
+    setUtilityPanel((current) => current === panel ? null : panel);
+  };
+
+  const openSessionPanel = (section: WorkspaceSessionSectionKey = activeSessionSection) => {
+    setActiveSessionSection(section);
+    setUtilityPanel("session");
+  };
+
+  const handleOpenRelatedResource = (resource: WorkspaceRelatedResource) => {
+    if (!resource) return;
+    setActiveSessionSection(resource);
+    setRelatedResource(resource);
   };
 
   const renderCompactWorkspace = () => {
@@ -345,163 +367,204 @@ export function WorkspaceClonePage({
   };
 
   return (
-    <motion.main
+    <motion.section
       key="workspace-clone-home"
-      className={[
-        "workspace-clone",
-        isSidebarCollapsed ? "workspace-clone--sidebar-collapsed" : "",
-        isDirectoryCollapsed ? "workspace-clone--directory-collapsed" : "",
-      ].join(" ").trim()}
+      className="workspace-clone-shell"
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
       transition={{ duration: 0.2 }}
     >
-      <WorkspaceCloneSidebar
-        menuItems={WORKSPACE_MENU_ITEMS}
-        activeMenu={activeMenu}
-        isCollapsed={isSidebarCollapsed}
-        adminOpen={adminOpen}
-        adminPanel={adminPanel}
-        onSelectMenu={(key) => {
-          setActiveMenu(key);
-          setAdminOpen(false);
-          setAdminPanel(null);
-        }}
-        onToggleCollapsed={() => setIsSidebarCollapsed((value) => !value)}
-        onToggleAdmin={() => {
-          setAdminOpen((value) => !value);
-          setAdminPanel(null);
-        }}
-        onSelectAdminPanel={(panel) => {
-          setAdminOpen(true);
-          setAdminPanel(panel);
-        }}
-      />
+      <div className="workspace-clone__appbar">
+        <div className="workspace-clone__appbar-brand">
+          <img src={logo} alt="DragonClaw" className="workspace-clone__appbar-logo" />
+          <div className="workspace-clone__appbar-copy">
+            <strong>DRAGONCLAW</strong>
+            <span>Workspace Console</span>
+          </div>
+        </div>
 
-      {activeMenu === "chat" && (
-        <WorkspaceCloneDirectory
-          typeTabs={WORKSPACE_TYPE_TABS}
-          activeType={activeType}
-          entities={filteredEntities}
-          selectedEntityId={selectedEntity?.id || ""}
-          isCollapsed={isDirectoryCollapsed}
-          searchQuery={searchQuery}
-          contextMenu={contextMenu}
-          channelBindingModal={channelBindingModal}
-          onToggleCollapsed={() => setIsDirectoryCollapsed((value) => !value)}
-          onSelectType={setActiveType}
-          onSelectEntity={(entityId) => {
-            setSelectedEntityId(entityId);
-            if (activeType === "agents") {
-              homepageChat.selectAgent(entityId);
-            }
+        <div className="workspace-clone__appbar-drag" />
+
+        <div className="workspace-clone__appbar-right">
+          <span className={`workspace-clone__appbar-status ${running ? "is-running" : "is-idle"}`}>
+            <span className="workspace-clone__appbar-status-dot" />
+            {running ? "运行中" : "未启动"}
+          </span>
+          <span className="workspace-clone__appbar-provider">{currentProviderName || "Provider"}</span>
+          <div className="workspace-clone__window-controls" aria-hidden="true">
+            <span className="workspace-clone__window-btn">−</span>
+            <span className="workspace-clone__window-btn">□</span>
+            <span className="workspace-clone__window-btn">×</span>
+          </div>
+        </div>
+      </div>
+
+      <main
+        className={[
+          "workspace-clone",
+          isSidebarCollapsed ? "workspace-clone--sidebar-collapsed" : "",
+          isDirectoryCollapsed ? "workspace-clone--directory-collapsed" : "",
+        ].join(" ").trim()}
+      >
+        <WorkspaceCloneSidebar
+          menuItems={WORKSPACE_MENU_ITEMS}
+          activeMenu={activeMenu}
+          isCollapsed={isSidebarCollapsed}
+          adminOpen={adminOpen}
+          adminPanel={adminPanel}
+          onSelectMenu={(key) => {
+            setActiveMenu(key);
+            setAdminOpen(false);
+            setAdminPanel(null);
           }}
-          onSearchChange={setSearchQuery}
-          onOpenContextMenu={(event, entity) => {
-            event.stopPropagation();
-            setContextMenu({
-              kind: entity.entityType === "channels" ? "channel" : entity.entityType === "teams" ? "team" : "agent",
-              entityId: entity.id,
-              title: entity.name,
-              x: event.clientX,
-              y: event.clientY,
-              configured: entity.status !== "offline",
-            });
+          onToggleCollapsed={() => setIsSidebarCollapsed((value) => !value)}
+          onToggleAdmin={() => {
+            setAdminOpen((value) => !value);
+            setAdminPanel(null);
           }}
-          onCloseContextMenu={() => setContextMenu(null)}
-          onOpenChannelBindingModal={(entity) => openChannelBindingModal(entity.id)}
-          onCloseChannelBindingModal={() => setChannelBindingModal((prev) => ({ ...prev, open: false }))}
-          onSelectChannelBindingView={(view) => setChannelBindingModal((prev) => ({ ...prev, view }))}
+          onSelectAdminPanel={(panel) => {
+            setAdminOpen(true);
+            setAdminPanel(panel);
+          }}
         />
-      )}
 
-      <section className={`workspace-clone__workspace ${activeMenu !== "chat" ? "is-compact" : ""}`}>
-        {activeMenu === "chat" ? (
-          <>
-            <div className="workspace-clone__top">
-              <WorkspaceCloneHeader
+        {activeMenu === "chat" && (
+          <WorkspaceCloneDirectory
+            typeTabs={WORKSPACE_TYPE_TABS}
+            activeType={activeType}
+            entities={filteredEntities}
+            selectedEntityId={selectedEntity?.id || ""}
+            isCollapsed={isDirectoryCollapsed}
+            searchQuery={searchQuery}
+            contextMenu={contextMenu}
+            channelBindingModal={channelBindingModal}
+            onToggleCollapsed={() => setIsDirectoryCollapsed((value) => !value)}
+            onSelectType={setActiveType}
+            onSelectEntity={(entityId) => {
+              setSelectedEntityId(entityId);
+              if (activeType === "agents") {
+                homepageChat.selectAgent(entityId);
+              }
+            }}
+            onSearchChange={setSearchQuery}
+            onOpenContextMenu={(event, entity) => {
+              event.stopPropagation();
+              setContextMenu({
+                kind: entity.entityType === "channels" ? "channel" : entity.entityType === "teams" ? "team" : "agent",
+                entityId: entity.id,
+                title: entity.name,
+                x: event.clientX,
+                y: event.clientY,
+                configured: entity.status !== "offline",
+              });
+            }}
+            onCloseContextMenu={() => setContextMenu(null)}
+            onOpenChannelBindingModal={(entity) => openChannelBindingModal(entity.id)}
+            onCloseChannelBindingModal={() => setChannelBindingModal((prev) => ({ ...prev, open: false }))}
+            onSelectChannelBindingView={(view) => setChannelBindingModal((prev) => ({ ...prev, view }))}
+          />
+        )}
+
+        <section className={`workspace-clone__workspace ${activeMenu !== "chat" ? "is-compact" : ""}`}>
+          {activeMenu === "chat" ? (
+            <>
+              <div className="workspace-clone__top">
+                <WorkspaceCloneHeader
+                  selectedEntity={selectedEntity}
+                  activeUtilityPanel={utilityPanel}
+                  onToggleUtilityPanel={toggleUtilityPanel}
+                  onOpenAgentInfo={() => setShowAgentInfo(true)}
+                  onOpenSessionPanel={() => toggleUtilityPanel("session")}
+                  onOpenWorkbench={() => toggleUtilityPanel("workbench")}
+                  onOpenMemberManagement={() => {
+                    openSessionPanel("channel");
+                    setRelatedResource("channel");
+                  }}
+                />
+              </div>
+
+              <WorkspaceCloneChatView
                 selectedEntity={selectedEntity}
-                activeUtilityPanel={utilityPanel}
-                onToggleUtilityPanel={(panel) => setUtilityPanel((current) => current === panel ? null : panel)}
-                onOpenAgentInfo={() => setShowAgentInfo(true)}
-                onOpenSettingsPreview={() => setUtilityPanel((current) => current === "settings" ? null : "settings")}
-                onOpenWorkbench={() => setUtilityPanel((current) => current === "workbench" ? null : "workbench")}
-                onOpenMemberManagement={() => setRelatedResource("channel")}
+                chatEnabled={chatEnabled}
+                messages={chatEnabled ? homepageChat.messages : []}
+                connectionStatus={homepageChat.status}
+                connectionError={homepageChat.error}
+                historyLoading={homepageChat.historyLoading}
+                isGenerating={homepageChat.isGenerating}
+                utilityPanel={utilityPanel}
+                activeSessionSection={activeSessionSection}
+                historyItems={chatEnabled ? homepageChat.historyItems : WORKSPACE_HISTORY}
+                logs={derivedLogs}
+                schedules={WORKSPACE_SCHEDULES}
+                workbenchItems={WORKSPACE_WORKBENCH}
+                memoryItems={WORKSPACE_MEMORY_ITEMS}
+                skillItems={WORKSPACE_SKILL_ITEMS}
+                commandItems={WORKSPACE_COMMAND_ITEMS}
+                channelItems={WORKSPACE_CHANNEL_ITEMS}
+                toolItems={WORKSPACE_TOOLS}
+                currentModelName={currentModelName}
+                currentProviderName={currentProviderName}
+                workspacePath={workspacePath}
+                running={running}
+                loading={loading}
+                onCloseUtilityPanel={() => setUtilityPanel(null)}
+                onSelectSessionSection={setActiveSessionSection}
+                onOpenRelatedResource={handleOpenRelatedResource}
+                onOpenSettingsTextPreview={() => setShowSettingsTextPreview(true)}
+                onStart={handleStart}
+                onStop={handleStop}
+                onOpenConsole={() => {
+                  if (consoleUrl) {
+                    void invoke("open_url", { url: consoleUrl });
+                  }
+                }}
+                onOpenModelSwitch={() => setShowModelSwitchModal(true)}
+                onOpenProviderConfig={() => setShowKeyModal(true)}
+                onOpenLogs={() => toggleUtilityPanel("logs")}
               />
-            </div>
 
-            <WorkspaceCloneChatView
-              selectedEntity={selectedEntity}
-              chatEnabled={chatEnabled}
-              messages={chatEnabled ? homepageChat.messages : []}
-              connectionStatus={homepageChat.status}
-              connectionError={homepageChat.error}
-              historyLoading={homepageChat.historyLoading}
-              isGenerating={homepageChat.isGenerating}
-              utilityPanel={utilityPanel}
-              historyItems={chatEnabled ? homepageChat.historyItems : WORKSPACE_HISTORY}
-              logs={derivedLogs}
-              schedules={WORKSPACE_SCHEDULES}
-              workbenchItems={WORKSPACE_WORKBENCH}
-              currentModelName={currentModelName}
-              currentProviderName={currentProviderName}
-              workspacePath={workspacePath}
-              running={running}
-              loading={loading}
-              onCloseUtilityPanel={() => setUtilityPanel(null)}
-              onOpenSettingsTextPreview={() => setShowSettingsTextPreview(true)}
-              onStart={handleStart}
-              onStop={handleStop}
-              onOpenConsole={() => {
-                if (consoleUrl) {
-                  void invoke("open_url", { url: consoleUrl });
-                }
-              }}
-              onOpenModelSwitch={() => setShowModelSwitchModal(true)}
-              onOpenProviderConfig={() => setShowKeyModal(true)}
-              onOpenLogs={() => setUtilityPanel("logs")}
-            />
+              <WorkspaceCloneComposer
+                running={running}
+                chatEnabled={chatEnabled}
+                connectionStatus={homepageChat.status}
+                selectedEntityName={selectedEntity?.name || null}
+                currentModelName={currentModelName}
+                sending={homepageChat.sending}
+                isGenerating={homepageChat.isGenerating}
+                resettingSession={homepageChat.resettingSession}
+                onOpenSessionSection={openSessionPanel}
+                onSend={homepageChat.sendMessage}
+                onAbort={homepageChat.abortMessage}
+                onResetSession={homepageChat.resetSession}
+              />
+            </>
+          ) : renderCompactWorkspace()}
+        </section>
 
-            <WorkspaceCloneComposer
-              running={running}
-              chatEnabled={chatEnabled}
-              connectionStatus={homepageChat.status}
-              selectedEntityName={selectedEntity?.name || null}
-              sending={homepageChat.sending}
-              isGenerating={homepageChat.isGenerating}
-              resettingSession={homepageChat.resettingSession}
-              onOpenRelatedResource={setRelatedResource}
-              onSend={homepageChat.sendMessage}
-              onAbort={homepageChat.abortMessage}
-              onResetSession={homepageChat.resetSession}
-            />
-          </>
-        ) : renderCompactWorkspace()}
-      </section>
-
-      <WorkspaceCloneOverlayStack
-        selectedEntity={selectedEntity}
-        showAgentInfo={showAgentInfo}
-        showRuntimeLogDetail={showRuntimeLogDetail}
-        showSettingsTextPreview={showSettingsTextPreview}
-        relatedResource={relatedResource}
-        memoryItems={WORKSPACE_MEMORY_ITEMS}
-        skillItems={WORKSPACE_SKILL_ITEMS}
-        commandItems={WORKSPACE_COMMAND_ITEMS}
-        channelItems={WORKSPACE_CHANNEL_ITEMS}
-        toolItems={WORKSPACE_TOOLS}
-        scheduleItems={WORKSPACE_SCHEDULES.map((item) => ({
-          id: item.id,
-          title: item.title,
-          subtitle: item.subtitle,
-          tag: item.enabled ? "已启用" : "未启用",
-        }))}
-        onCloseAgentInfo={() => setShowAgentInfo(false)}
-        onCloseRuntimeLogDetail={() => setShowRuntimeLogDetail(false)}
-        onCloseSettingsTextPreview={() => setShowSettingsTextPreview(false)}
-        onCloseRelatedResource={() => setRelatedResource(null)}
-      />
-    </motion.main>
+        <WorkspaceCloneOverlayStack
+          selectedEntity={selectedEntity}
+          showAgentInfo={showAgentInfo}
+          showRuntimeLogDetail={showRuntimeLogDetail}
+          showSettingsTextPreview={showSettingsTextPreview}
+          relatedResource={relatedResource}
+          memoryItems={WORKSPACE_MEMORY_ITEMS}
+          skillItems={WORKSPACE_SKILL_ITEMS}
+          commandItems={WORKSPACE_COMMAND_ITEMS}
+          channelItems={WORKSPACE_CHANNEL_ITEMS}
+          toolItems={WORKSPACE_TOOLS}
+          scheduleItems={WORKSPACE_SCHEDULES.map((item) => ({
+            id: item.id,
+            title: item.title,
+            subtitle: item.subtitle,
+            tag: item.enabled ? "已启用" : "未启用",
+          }))}
+          onCloseAgentInfo={() => setShowAgentInfo(false)}
+          onCloseRuntimeLogDetail={() => setShowRuntimeLogDetail(false)}
+          onCloseSettingsTextPreview={() => setShowSettingsTextPreview(false)}
+          onCloseRelatedResource={() => setRelatedResource(null)}
+        />
+      </main>
+    </motion.section>
   );
 }
