@@ -1,11 +1,24 @@
 import { useMemo, useState } from "react";
-import type { WorkspaceComposerModal, WorkspaceRelatedResource, WorkspaceSuggestionMode } from "./workspaceCloneTypes";
+import type {
+  WorkspaceComposerModal,
+  WorkspaceGatewayStatus,
+  WorkspaceRelatedResource,
+  WorkspaceSuggestionMode,
+} from "./workspaceCloneTypes";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
 
 interface WorkspaceCloneComposerProps {
   running: boolean;
+  chatEnabled: boolean;
+  connectionStatus: WorkspaceGatewayStatus;
   selectedEntityName: string | null;
+  sending: boolean;
+  isGenerating: boolean;
+  resettingSession: boolean;
   onOpenRelatedResource: (target: WorkspaceRelatedResource) => void;
+  onSend: (value: string) => Promise<boolean>;
+  onAbort: () => Promise<boolean>;
+  onResetSession: () => Promise<boolean>;
 }
 
 interface WorkspaceCloneComposerState {
@@ -15,64 +28,125 @@ interface WorkspaceCloneComposerState {
 
 export function WorkspaceCloneComposer({
   running,
+  chatEnabled,
+  connectionStatus,
   selectedEntityName,
+  sending,
+  isGenerating,
+  resettingSession,
   onOpenRelatedResource,
+  onSend,
+  onAbort,
+  onResetSession,
 }: WorkspaceCloneComposerProps) {
   const [inputValue, setInputValue] = useState("");
   const [state, setState] = useState<WorkspaceCloneComposerState>({ modal: null, suggestion: null });
   const canMention = useMemo(() => Boolean(selectedEntityName), [selectedEntityName]);
+  const canSend = chatEnabled && running && connectionStatus === "connected" && !sending && !isGenerating;
+  const statusText = !chatEnabled
+    ? "本期仅接入数字员工"
+    : !running
+    ? "服务未启动"
+    : connectionStatus === "connected"
+      ? isGenerating
+        ? "回复生成中"
+        : "会话已连接"
+      : connectionStatus === "connecting"
+        ? "连接中"
+        : "连接异常";
+
+  const handleSubmit = async () => {
+    if (!canSend) {
+      return;
+    }
+
+    const success = await onSend(inputValue);
+    if (success) {
+      setInputValue("");
+      setState((current) => ({ ...current, suggestion: null }));
+    }
+  };
 
   return (
     <div className="workspace-clone__composer">
       <div className="workspace-clone__input-shell">
-        <div className="workspace-clone__input-placeholder">发送给{selectedEntityName || "主Agent"}</div>
-
         <textarea
           value={inputValue}
           onChange={(event) => setInputValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              void handleSubmit();
+            }
+          }}
           placeholder="输入你的任务、问题或想法"
+          disabled={!chatEnabled || !running || connectionStatus !== "connected" || isGenerating}
         />
 
         <div className="workspace-clone__composer-bottom">
           <div className="workspace-clone__composer-tools">
-            <button type="button" title="附件">
+            <button type="button" title="附件" disabled>
               <WorkspaceCloneIcon name="paperclip" size={15} strokeWidth={1.9} />
             </button>
-            <button type="button" title="Slash Command" onClick={() => setState({ modal: null, suggestion: state.suggestion === "slash" ? null : "slash" })}>
+            <button type="button" title="Slash Command" onClick={() => setState({ modal: null, suggestion: state.suggestion === "slash" ? null : "slash" })} disabled={!chatEnabled}>
               <WorkspaceCloneIcon name="wand" size={15} strokeWidth={1.9} />
             </button>
-            <button type="button" title="邮件绑定" onClick={() => setState({ modal: state.modal === "email-binding" ? null : "email-binding", suggestion: null })}>
+            <button type="button" title="邮件绑定" onClick={() => setState({ modal: state.modal === "email-binding" ? null : "email-binding", suggestion: null })} disabled={!chatEnabled}>
               <WorkspaceCloneIcon name="globe" size={15} strokeWidth={1.9} />
             </button>
-            <button type="button" title="Mention" onClick={() => setState({ modal: null, suggestion: canMention ? "mention" : null })}>
+            <button type="button" title="Mention" onClick={() => setState({ modal: null, suggestion: canMention ? "mention" : null })} disabled={!chatEnabled}>
               <WorkspaceCloneIcon name="users" size={15} strokeWidth={1.9} />
             </button>
           </div>
 
           <div className="workspace-clone__composer-pills">
-            <button type="button" className="workspace-clone__composer-pill" onClick={() => setState({ modal: state.modal === "knowledge" ? null : "knowledge", suggestion: null })}>
+            <button type="button" className="workspace-clone__composer-pill" onClick={() => setState({ modal: state.modal === "knowledge" ? null : "knowledge", suggestion: null })} disabled={!chatEnabled}>
               知识库
             </button>
-            <button type="button" className="workspace-clone__composer-pill" onClick={() => onOpenRelatedResource("skills")}>
+            <button type="button" className="workspace-clone__composer-pill" onClick={() => onOpenRelatedResource("skills")} disabled={!chatEnabled}>
               技能
             </button>
-            <button type="button" className="workspace-clone__composer-pill" onClick={() => onOpenRelatedResource("model")}>
+            <button type="button" className="workspace-clone__composer-pill" onClick={() => onOpenRelatedResource("model")} disabled={!chatEnabled}>
               模型 astroncoding...
             </button>
           </div>
 
-          <span className={`workspace-clone__composer-status ${running ? "is-online" : "is-idle"}`}>
-            {running ? "服务运行中" : "服务未启动"}
+          <span className={`workspace-clone__composer-status ${running && connectionStatus === "connected" ? "is-online" : "is-idle"}`}>
+            {statusText}
           </span>
 
           <div className="workspace-clone__composer-actions">
-            <button type="button" className="workspace-clone__composer-action-text">新对话</button>
-            <button type="button" className="workspace-clone__composer-icon-round" title="语音">
+            <button
+              type="button"
+              className="workspace-clone__composer-action-text"
+              onClick={() => void onResetSession()}
+              disabled={!chatEnabled || !running || connectionStatus !== "connected" || resettingSession}
+            >
+              {resettingSession ? "重置中..." : "新对话"}
+            </button>
+            <button type="button" className="workspace-clone__composer-icon-round" title="语音" disabled>
               <WorkspaceCloneIcon name="voice" size={15} strokeWidth={1.9} />
             </button>
-            <button type="button" className="workspace-clone__composer-icon-round workspace-clone__composer-send" title="发送">
-              <WorkspaceCloneIcon name="chevron-right" size={16} strokeWidth={2.1} />
-            </button>
+            {isGenerating ? (
+              <button
+                type="button"
+                className="workspace-clone__composer-icon-round workspace-clone__composer-stop"
+                title="停止生成"
+                onClick={() => void onAbort()}
+              >
+                <WorkspaceCloneIcon name="x" size={15} strokeWidth={2.1} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="workspace-clone__composer-icon-round workspace-clone__composer-send"
+                title="发送"
+                onClick={() => void handleSubmit()}
+                disabled={!canSend || !inputValue.trim()}
+              >
+                <WorkspaceCloneIcon name="chevron-right" size={16} strokeWidth={2.1} />
+              </button>
+            )}
           </div>
         </div>
 

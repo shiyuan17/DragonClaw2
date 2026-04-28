@@ -86,7 +86,7 @@ export function useConfig({ addLog, running, setRunning, setStartingUp }: UseCon
                     await invoke("stop_service");
                     setRunning(false);
                     await new Promise(r => setTimeout(r, 1000));
-                    await invoke("start_service");
+                    await invoke("start_service_silent");
                     setRunning(true);
                     addLog("success", "[OK] 服务已重启，新配置生效");
                 } catch (err) {
@@ -124,7 +124,7 @@ export function useConfig({ addLog, running, setRunning, setStartingUp }: UseCon
                     await invoke("stop_service");
                     setRunning(false);
                     await new Promise(r => setTimeout(r, 1000));
-                    await invoke("start_service");
+                    await invoke("start_service_silent");
                     setRunning(true);
                     // Don't clear startingUp here — useService event listener
                     // clears it when service emits "started on" / "ready on"

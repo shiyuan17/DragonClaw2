@@ -41,6 +41,7 @@ export interface WorkspaceMessage {
   meta?: string;
   time: string;
   thinking?: string[];
+  status?: "pending" | "streaming" | "error";
 }
 
 export interface WorkspaceHistoryItem {
@@ -94,4 +95,63 @@ export interface ChannelBindingModalState {
   channelId: string;
   channelName: string;
   view: ChannelBindingView;
+}
+
+export type WorkspaceGatewayStatus = "idle" | "connecting" | "connected" | "error";
+
+export interface WorkspaceGatewayAgentIdentity {
+  name?: string;
+  theme?: string;
+  emoji?: string;
+  avatar?: string;
+  avatarUrl?: string;
+}
+
+export interface WorkspaceGatewayAgentRow {
+  id: string;
+  name?: string;
+  identity?: WorkspaceGatewayAgentIdentity;
+}
+
+export interface WorkspaceGatewayAgentsListResult {
+  defaultId: string;
+  mainKey: string;
+  scope: string;
+  agents: WorkspaceGatewayAgentRow[];
+}
+
+export interface WorkspaceGatewaySessionRow {
+  key: string;
+  kind: "direct" | "group" | "global" | "unknown";
+  label?: string;
+  displayName?: string;
+  surface?: string;
+  subject?: string;
+  room?: string;
+  space?: string;
+  updatedAt: number | null;
+  sessionId?: string;
+  systemSent?: boolean;
+  abortedLastRun?: boolean;
+  thinkingLevel?: string;
+  verboseLevel?: string;
+  reasoningLevel?: string;
+  elevatedLevel?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  model?: string;
+  modelProvider?: string;
+  contextTokens?: number;
+}
+
+export interface WorkspaceGatewaySessionsListResult {
+  ts: number;
+  path: string;
+  count: number;
+  defaults: {
+    model: string | null;
+    contextTokens: number | null;
+  };
+  sessions: WorkspaceGatewaySessionRow[];
 }

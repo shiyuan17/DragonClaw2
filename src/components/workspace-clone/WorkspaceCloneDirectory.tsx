@@ -47,7 +47,7 @@ export function WorkspaceCloneDirectory({
   onCloseChannelBindingModal,
   onSelectChannelBindingView,
 }: WorkspaceCloneDirectoryProps) {
-  const visibleEntities = activeType === "agents" && !searchQuery ? entities.slice(0, 1) : entities.slice(0, 3);
+  const visibleEntities = activeType === "agents" ? entities : entities.slice(0, 3);
   const emptyLabel = activeType === "channels" ? "暂无频道结果" : activeType === "teams" ? "暂无团队结果" : "暂无数字员工结果";
 
   return (

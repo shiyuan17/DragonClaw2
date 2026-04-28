@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { motion } from "framer-motion";
 import type { LogEntry, WorkspaceEntityType, WorkspaceMenuKey } from "../../types";
+import { useWorkspaceGatewayChat } from "../../hooks/useWorkspaceGatewayChat";
 import { formatUptime } from "../../utils/log-humanizer";
 import {
   buildWorkspaceEntities,
@@ -14,13 +15,13 @@ import {
   WORKSPACE_HISTORY,
   WORKSPACE_MEMORY_ITEMS,
   WORKSPACE_MENU_ITEMS,
-  WORKSPACE_MESSAGES,
   WORKSPACE_SCHEDULES,
   WORKSPACE_SKILL_ITEMS,
   WORKSPACE_TOOLS,
   WORKSPACE_TYPE_TABS,
   WORKSPACE_WORKBENCH,
 } from "./workspaceCloneData";
+import { formatAgentAvatar } from "./workspaceCloneGateway";
 import { WorkspaceCloneChatView } from "./WorkspaceCloneChatView";
 import { WorkspaceCloneComposer } from "./WorkspaceCloneComposer";
 import { WorkspaceCloneDirectory } from "./WorkspaceCloneDirectory";
@@ -30,6 +31,7 @@ import { WorkspaceCloneSidebar } from "./WorkspaceCloneSidebar";
 import type {
   ChannelBindingModalState,
   DirectoryContextMenuState,
+  WorkspaceEntity,
   WorkspaceRelatedResource,
   WorkspaceSidebarAdminPanel,
   WorkspaceUtilityPanel,
@@ -78,6 +80,82 @@ const COMPACT_COPY: Record<Exclude<WorkspaceMenuKey, "chat">, { title: string; d
   },
 };
 
+function formatRecentLabel(timestamp?: number | null) {
+  if (!timestamp) {
+    return "主会话";
+  }
+
+  const date = new Date(timestamp);
+  return `最近活跃 ${new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date)}`;
+}
+
+function buildGatewayAgentEntities(params: {
+  agents: NonNullable<ReturnType<typeof useWorkspaceGatewayChat>["agents"]>;
+  selectedAgentId: string;
+  currentSessionKey: string;
+  currentMainSession: ReturnType<typeof useWorkspaceGatewayChat>["currentMainSession"];
+  sessionsResult: ReturnType<typeof useWorkspaceGatewayChat>["sessionsResult"];
+  running: boolean;
+  isGenerating: boolean;
+  currentModelName: string;
+  currentProviderName: string;
+}) {
+  const {
+    agents,
+    selectedAgentId,
+    currentSessionKey,
+    currentMainSession,
+    sessionsResult,
+    running,
+    isGenerating,
+    currentModelName,
+    currentProviderName,
+  } = params;
+
+  return agents.map<WorkspaceEntity>((agent) => {
+    const sessionKey = `agent:${agent.id}:main`;
+    const mainSession = sessionsResult?.sessions.find((session) => session.key === sessionKey) ?? null;
+    const modelLabel =
+      [mainSession?.modelProvider || currentProviderName, mainSession?.model || currentModelName]
+        .filter(Boolean)
+        .join(" / ") || "OpenClaw 主会话";
+
+    return {
+      id: agent.id,
+      entityType: "agents",
+      name: agent.identity?.name?.trim() || agent.name?.trim() || agent.id,
+      subtitle:
+        !running
+          ? "待命中"
+          : isGenerating && currentSessionKey === sessionKey
+            ? "生成中"
+            : formatRecentLabel(mainSession?.updatedAt),
+      status:
+        !running
+          ? "offline"
+          : isGenerating && currentSessionKey === sessionKey
+            ? "busy"
+            : agent.id === selectedAgentId && currentMainSession?.abortedLastRun
+              ? "busy"
+              : "online",
+      avatarLabel: formatAgentAvatar(agent),
+      accent: agent.id,
+      currentWork:
+        !running
+          ? "服务未启动，首页聊天暂不可用。"
+          : isGenerating && currentSessionKey === sessionKey
+            ? "正在生成当前主会话回复。"
+            : "首页已接入当前 Agent 的主会话。",
+      recentOutput: modelLabel,
+    };
+  });
+}
+
 export function WorkspaceClonePage({
   running,
   loading,
@@ -112,11 +190,48 @@ export function WorkspaceClonePage({
   const [showRuntimeLogDetail, setShowRuntimeLogDetail] = useState(false);
   const [showSettingsTextPreview, setShowSettingsTextPreview] = useState(false);
   const [relatedResource, setRelatedResource] = useState<WorkspaceRelatedResource>(null);
+  const homepageChat = useWorkspaceGatewayChat({ running, servicePort });
 
-  const entitiesByType = useMemo(
+  const staticEntitiesByType = useMemo(
     () => buildWorkspaceEntities(currentModelName, currentProviderName, running),
     [currentModelName, currentProviderName, running],
   );
+  const gatewayAgentEntities = useMemo(
+    () =>
+      homepageChat.agents.length > 0
+        ? buildGatewayAgentEntities({
+            agents: homepageChat.agents,
+            selectedAgentId: homepageChat.selectedAgentId,
+            currentSessionKey: homepageChat.currentSessionKey,
+            currentMainSession: homepageChat.currentMainSession,
+            sessionsResult: homepageChat.sessionsResult,
+            running,
+            isGenerating: homepageChat.isGenerating,
+            currentModelName,
+            currentProviderName,
+          })
+        : staticEntitiesByType.agents,
+    [
+      currentModelName,
+      currentProviderName,
+      homepageChat.agents,
+      homepageChat.currentMainSession,
+      homepageChat.currentSessionKey,
+      homepageChat.isGenerating,
+      homepageChat.selectedAgentId,
+      homepageChat.sessionsResult,
+      running,
+      staticEntitiesByType.agents,
+    ],
+  );
+  const entitiesByType = useMemo(
+    () => ({
+      ...staticEntitiesByType,
+      agents: gatewayAgentEntities,
+    }),
+    [gatewayAgentEntities, staticEntitiesByType],
+  );
+  const chatEnabled = activeType === "agents";
 
   const filteredEntities = useMemo(() => {
     const source = entitiesByType[activeType];
@@ -126,11 +241,16 @@ export function WorkspaceClonePage({
   }, [activeType, entitiesByType, searchQuery]);
 
   useEffect(() => {
+    if (activeType === "agents" && homepageChat.selectedAgentId && selectedEntityId !== homepageChat.selectedAgentId) {
+      setSelectedEntityId(homepageChat.selectedAgentId);
+      return;
+    }
+
     const nextEntity = filteredEntities[0];
     if (!filteredEntities.some((entity) => entity.id === selectedEntityId)) {
       setSelectedEntityId(nextEntity?.id || "");
     }
-  }, [filteredEntities, selectedEntityId]);
+  }, [activeType, filteredEntities, homepageChat.selectedAgentId, selectedEntityId]);
 
   useEffect(() => {
     if (activeMenu !== "chat") {
@@ -267,7 +387,12 @@ export function WorkspaceClonePage({
           channelBindingModal={channelBindingModal}
           onToggleCollapsed={() => setIsDirectoryCollapsed((value) => !value)}
           onSelectType={setActiveType}
-          onSelectEntity={setSelectedEntityId}
+          onSelectEntity={(entityId) => {
+            setSelectedEntityId(entityId);
+            if (activeType === "agents") {
+              homepageChat.selectAgent(entityId);
+            }
+          }}
           onSearchChange={setSearchQuery}
           onOpenContextMenu={(event, entity) => {
             event.stopPropagation();
@@ -304,9 +429,14 @@ export function WorkspaceClonePage({
 
             <WorkspaceCloneChatView
               selectedEntity={selectedEntity}
-              messages={WORKSPACE_MESSAGES}
+              chatEnabled={chatEnabled}
+              messages={chatEnabled ? homepageChat.messages : []}
+              connectionStatus={homepageChat.status}
+              connectionError={homepageChat.error}
+              historyLoading={homepageChat.historyLoading}
+              isGenerating={homepageChat.isGenerating}
               utilityPanel={utilityPanel}
-              historyItems={WORKSPACE_HISTORY}
+              historyItems={chatEnabled ? homepageChat.historyItems : WORKSPACE_HISTORY}
               logs={derivedLogs}
               schedules={WORKSPACE_SCHEDULES}
               workbenchItems={WORKSPACE_WORKBENCH}
@@ -327,8 +457,16 @@ export function WorkspaceClonePage({
 
             <WorkspaceCloneComposer
               running={running}
+              chatEnabled={chatEnabled}
+              connectionStatus={homepageChat.status}
               selectedEntityName={selectedEntity?.name || null}
+              sending={homepageChat.sending}
+              isGenerating={homepageChat.isGenerating}
+              resettingSession={homepageChat.resettingSession}
               onOpenRelatedResource={setRelatedResource}
+              onSend={homepageChat.sendMessage}
+              onAbort={homepageChat.abortMessage}
+              onResetSession={homepageChat.resetSession}
             />
           </>
         ) : renderCompactWorkspace()}

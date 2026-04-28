@@ -100,7 +100,7 @@ export function useService({
         setLoading(true);
         setStartingUp(true);
         try {
-            await invoke("start_service");
+            await invoke("start_service_silent");
             setRunning(true);
         } catch (err) {
             addLog("error", `启动失败: ${err}`);
@@ -153,7 +153,7 @@ export function useService({
                 await new Promise(r => setTimeout(r, 1500));
             }
             addLog("info", "正在重新启动服务...");
-            await invoke("start_service");
+            await invoke("start_service_silent");
             setRunning(true);
             addLog("success", "[OK] 连接修复完成，服务已重启");
         } catch (err) {
