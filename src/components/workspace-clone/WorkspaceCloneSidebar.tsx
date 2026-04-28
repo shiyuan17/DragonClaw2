@@ -1,3 +1,4 @@
+import logo from "../../assets/dragonclaw-logo.png";
 import type { WorkspaceMenuKey } from "../../types";
 import type { WorkspaceMenuItem, WorkspaceSidebarAdminPanel } from "./workspaceCloneTypes";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
@@ -34,30 +35,42 @@ export function WorkspaceCloneSidebar({
           onClick={onToggleCollapsed}
           title={isCollapsed ? "展开侧栏" : "收起侧栏"}
         >
-          <WorkspaceCloneIcon name="layout-dashboard" size={15} strokeWidth={1.9} />
+          <WorkspaceCloneIcon name="panel" size={14} strokeWidth={1.9} />
         </button>
       </div>
 
       <div className="workspace-clone__sidebar-menu">
-        {menuItems.map((item) => (
-          <button
-            key={item.key}
-            className={`workspace-clone__menu-item ${activeMenu === item.key ? "is-active" : ""} ${isCollapsed ? "is-collapsed" : ""}`}
-            type="button"
-            title={item.label}
-            onClick={() => onSelectMenu(item.key)}
-          >
-            <WorkspaceCloneIcon name={item.icon as Parameters<typeof WorkspaceCloneIcon>[0]["name"]} size={16} strokeWidth={1.9} />
-            {!isCollapsed && <span>{item.label}</span>}
-          </button>
-        ))}
+        {menuItems.map((item) => {
+          const isMuted = item.key === "tasks";
+          return (
+            <button
+              key={item.key}
+              className={[
+                "workspace-clone__menu-item",
+                activeMenu === item.key ? "is-active" : "",
+                isCollapsed ? "is-collapsed" : "",
+                isMuted ? "is-muted" : "",
+              ].join(" ").trim()}
+              type="button"
+              title={item.label}
+              onClick={() => onSelectMenu(item.key)}
+            >
+              <WorkspaceCloneIcon
+                name={item.icon as Parameters<typeof WorkspaceCloneIcon>[0]["name"]}
+                size={17}
+                strokeWidth={1.9}
+              />
+              {!isCollapsed && <span>{item.label}</span>}
+            </button>
+          );
+        })}
       </div>
 
       <div className="workspace-clone__sidebar-fill">
         <button className={`workspace-clone__brand-watermark ${isCollapsed ? "is-collapsed" : ""}`} type="button">
           <span className="workspace-clone__brand-logo">
-            <span className="workspace-clone__brand-initial">D</span>
             {!isCollapsed && <span className="workspace-clone__brand-badge">Beta</span>}
+            <img src={logo} alt="DragonClaw" className="workspace-clone__brand-mark" />
           </span>
           {!isCollapsed && (
             <span className="workspace-clone__brand-meta">
@@ -144,11 +157,13 @@ export function WorkspaceCloneSidebar({
         )}
 
         <button className={`workspace-clone__profile-switch ${isCollapsed ? "is-collapsed" : ""}`} type="button" onClick={onToggleAdmin}>
-          <span className="workspace-clone__avatar-wrap">管</span>
+          <span className="workspace-clone__avatar-wrap">
+            <WorkspaceCloneIcon name="settings" size={12} strokeWidth={2} />
+          </span>
           {!isCollapsed && (
             <>
               <span>管理员</span>
-              <WorkspaceCloneIcon name="chevron" size={12} strokeWidth={2} className={adminOpen ? "workspace-clone__chevron-rotated" : ""} />
+              <WorkspaceCloneIcon name="chevron-right" size={12} strokeWidth={2} className={adminOpen ? "workspace-clone__chevron-rotated" : ""} />
             </>
           )}
         </button>
