@@ -247,3 +247,4 @@
 - [x] Phase 5.15.4: 为 `workspace-clone` 新增独立模型配置弹窗，并接管模型相关点击入口
 - [x] Phase 5.15.4: 同步 DragonClaw 模型厂商列表到 workspace 模型弹窗私有数据源
 - [x] Phase 5.15.4: 新增 workspace 专用模型配置保存/删除命令并打通 openclaw.json 持久化
+- [ ] Phase 5.15.5: 为 `workspace-clone` 聊天右侧会话边栏接入 Agent 记忆弹窗，并支持按当前 Agent 读写固定记忆文件
