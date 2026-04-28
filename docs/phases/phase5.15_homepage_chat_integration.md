@@ -116,3 +116,32 @@
 - 团队真实会话映射
 - 附件、语音、知识库、Slash Command 的真实功能接入
 - 更多首页聊天能力与 OpenClaw 原生控制台的功能补齐
+## Phase 5.15.1：gateway token 同步修复
+
+### 背景
+
+首页聊天已经切到 OpenClaw 网关协议，但如果 Launcher 前端握手使用的 token 与 `~/.openclaw/openclaw.json` 中 `gateway.auth.token` 不一致，就会出现：
+
+- 首页聊天 WebSocket 握手失败
+- 控制台可以打开但首页无法聊天
+- 网关报错 `unauthorized: gateway token mismatch`
+
+### 修复目标
+
+- 以后端真实配置中的 `gateway.auth.token` 作为 Launcher 前端唯一来源
+- 不再在首页聊天或控制台 URL 中硬编码 `dragonclaw-local`
+- 保持现有 Tauri `invoke()` 命令名和参数不变，只扩展 `get_current_config()` 返回结构
+
+### 实施约束
+
+- `get_current_config()` 新增 `gateway_token` 返回字段，前端类型同步扩展
+- `save_api_config()`、缺失配置补齐逻辑与默认网关配置共用同一个后端常量
+- 默认 token 统一为 `openclaw-launcher-local`
+- `migrate_gateway_config()` 只补缺失字段，不主动改写用户已有 token
+- 首页聊天、legacy dashboard 和其他控制台入口统一使用动态 token
+
+### 验收补充
+
+- 当本地配置 token 为 `openclaw-launcher-local` 时，首页聊天与“打开控制台”都能直接工作
+- 当 token 缺失时，首页要明确提示“本地网关 token 缺失或未同步”
+- 保存 Provider、切换模型、重置配置后，前端不会再把 token 状态覆盖丢失
