@@ -17,6 +17,7 @@ interface WorkspaceCloneComposerProps {
   isGenerating: boolean;
   resettingSession: boolean;
   onOpenSessionSection: (target: WorkspaceSessionSectionKey) => void;
+  onOpenMemoryModal: () => void;
   onOpenModelConfig: () => void;
   onSend: (value: string) => Promise<boolean>;
   onAbort: () => Promise<boolean>;
@@ -43,6 +44,7 @@ export function WorkspaceCloneComposer({
   isGenerating,
   resettingSession,
   onOpenSessionSection,
+  onOpenMemoryModal,
   onOpenModelConfig,
   onSend,
   onAbort,
@@ -132,7 +134,7 @@ export function WorkspaceCloneComposer({
             <button
               type="button"
               className="workspace-clone__composer-pill workspace-clone__composer-pill--muted"
-              onClick={() => onOpenSessionSection("memory")}
+              onClick={onOpenMemoryModal}
               disabled={!chatEnabled}
             >
               记忆

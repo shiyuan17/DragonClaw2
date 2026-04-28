@@ -273,6 +273,10 @@ export function WorkspaceCloneUtilityDrawer({
                       onSelectSessionSection(card.key);
                       if (card.key === "model") {
                         onOpenModelConfig();
+                        return;
+                      }
+                      if (card.key === "memory") {
+                        onOpenRelatedResource("memory");
                       }
                     }}
                   >

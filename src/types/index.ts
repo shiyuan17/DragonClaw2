@@ -45,6 +45,22 @@ export interface SkillInfo {
     path: string;
 }
 
+export interface MemoryFileSnapshotItem {
+    id: string;
+    title: string;
+    summary: string;
+    source_path: string;
+    relative_path: string;
+    updated_at_ms: number;
+    content: string;
+    exists: boolean;
+}
+
+export interface MemoryFileSnapshotResponse {
+    source_path: string;
+    items: MemoryFileSnapshotItem[];
+}
+
 export interface SavedProvider {
     name: string;
     display_name?: string | null;

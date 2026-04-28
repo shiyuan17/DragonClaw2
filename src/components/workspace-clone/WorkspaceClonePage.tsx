@@ -13,7 +13,6 @@ import {
   WORKSPACE_CHANNEL_ITEMS,
   WORKSPACE_COMMAND_ITEMS,
   WORKSPACE_HISTORY,
-  WORKSPACE_MEMORY_ITEMS,
   WORKSPACE_MENU_ITEMS,
   WORKSPACE_SCHEDULES,
   WORKSPACE_SKILL_ITEMS,
@@ -22,6 +21,13 @@ import {
   WORKSPACE_WORKBENCH,
 } from "./workspaceCloneData";
 import { formatAgentAvatar } from "./workspaceCloneGateway";
+import {
+  buildWorkspaceMemoryResourceItems,
+  createWorkspaceFallbackMemoryFiles,
+  loadWorkspaceMemorySnapshot,
+  normalizeWorkspaceMemoryFile,
+  saveWorkspaceMemoryFile,
+} from "./workspaceCloneMemory";
 import { WorkspaceCloneChatView } from "./WorkspaceCloneChatView";
 import { WorkspaceCloneComposer } from "./WorkspaceCloneComposer";
 import { WorkspaceCloneDirectory } from "./WorkspaceCloneDirectory";
@@ -33,6 +39,7 @@ import type {
   ChannelBindingModalState,
   DirectoryContextMenuState,
   WorkspaceEntity,
+  WorkspaceMemoryFile,
   WorkspaceRelatedResource,
   WorkspaceSessionSectionKey,
   WorkspaceSidebarAdminPanel,
@@ -220,11 +227,20 @@ export function WorkspaceClonePage({
     view: "wechat",
   });
   const [showAgentInfo, setShowAgentInfo] = useState(false);
+  const [showMemoryModal, setShowMemoryModal] = useState(false);
   const [showRuntimeLogDetail, setShowRuntimeLogDetail] = useState(false);
   const [showSettingsTextPreview, setShowSettingsTextPreview] = useState(false);
   const [relatedResource, setRelatedResource] = useState<WorkspaceRelatedResource>(null);
   const [isModelConfigOpen, setIsModelConfigOpen] = useState(false);
   const [savedProviders, setSavedProviders] = useState<SavedProvider[]>([]);
+  const [memoryFiles, setMemoryFiles] = useState<WorkspaceMemoryFile[]>(createWorkspaceFallbackMemoryFiles);
+  const [memorySearch, setMemorySearch] = useState("");
+  const [selectedMemoryFileId, setSelectedMemoryFileId] = useState("agents.md");
+  const [memoryDraftContent, setMemoryDraftContent] = useState("");
+  const [memoryLoading, setMemoryLoading] = useState(false);
+  const [memorySaving, setMemorySaving] = useState(false);
+  const [memoryNotice, setMemoryNotice] = useState("");
+  const [memoryError, setMemoryError] = useState("");
   const homepageChat = useWorkspaceGatewayChat({ running, servicePort, gatewayToken });
 
   const refreshSavedProviders = useCallback(async () => {
@@ -320,6 +336,12 @@ export function WorkspaceClonePage({
       setContextMenu(null);
       setRelatedResource(null);
       setShowAgentInfo(false);
+      setShowMemoryModal(false);
+      setMemorySearch("");
+      setMemoryLoading(false);
+      setMemorySaving(false);
+      setMemoryNotice("");
+      setMemoryError("");
       setShowRuntimeLogDetail(false);
       setShowSettingsTextPreview(false);
     }
@@ -349,8 +371,130 @@ export function WorkspaceClonePage({
     [activeType, entitiesByType, filteredEntities, selectedEntityId],
   );
 
+  const currentMemoryAgentId = useMemo(
+    () => activeType === "agents" ? (selectedEntity?.id || selectedEntityId || homepageChat.selectedAgentId || "main") : null,
+    [activeType, homepageChat.selectedAgentId, selectedEntity?.id, selectedEntityId],
+  );
+
+  const activeMemoryFile = useMemo(
+    () => memoryFiles.find((file) => file.id === selectedMemoryFileId) ?? memoryFiles[0] ?? null,
+    [memoryFiles, selectedMemoryFileId],
+  );
+
+  const clearMemoryStatus = useCallback(() => {
+    setMemoryNotice("");
+    setMemoryError("");
+  }, []);
+
+  const refreshMemoryFiles = useCallback(async (options?: {
+    showLoading?: boolean;
+    preferredId?: string;
+  }) => {
+    const showLoading = options?.showLoading ?? false;
+    const preferredId = options?.preferredId;
+
+    if (!currentMemoryAgentId) {
+      const fallbackFiles = createWorkspaceFallbackMemoryFiles();
+      setMemoryFiles(fallbackFiles);
+      setSelectedMemoryFileId(fallbackFiles[0]?.id || "");
+      setMemoryDraftContent(fallbackFiles[0]?.content || "");
+      return;
+    }
+
+    if (showLoading) {
+      setMemoryLoading(true);
+    }
+
+    try {
+      const snapshot = await loadWorkspaceMemorySnapshot(currentMemoryAgentId);
+      const nextFiles = snapshot.items.length > 0
+        ? snapshot.items.map((item) => normalizeWorkspaceMemoryFile(item))
+        : createWorkspaceFallbackMemoryFiles();
+      const nextSelectedId =
+        preferredId && nextFiles.some((file) => file.id === preferredId)
+          ? preferredId
+          : nextFiles.some((file) => file.id === selectedMemoryFileId)
+            ? selectedMemoryFileId
+            : nextFiles[0]?.id || "";
+      const nextActiveFile = nextFiles.find((file) => file.id === nextSelectedId) ?? nextFiles[0] ?? null;
+
+      setMemoryFiles(nextFiles);
+      setSelectedMemoryFileId(nextSelectedId);
+      setMemoryDraftContent(nextActiveFile?.content || "");
+      setMemoryError("");
+    } catch (memoryLoadError) {
+      setMemoryError(memoryLoadError instanceof Error ? memoryLoadError.message : "读取记忆文件失败");
+      if (memoryFiles.length === 0) {
+        const fallbackFiles = createWorkspaceFallbackMemoryFiles();
+        setMemoryFiles(fallbackFiles);
+        setSelectedMemoryFileId(fallbackFiles[0]?.id || "");
+        setMemoryDraftContent(fallbackFiles[0]?.content || "");
+      }
+    } finally {
+      if (showLoading) {
+        setMemoryLoading(false);
+      }
+    }
+  }, [currentMemoryAgentId, memoryFiles.length, selectedMemoryFileId]);
+
+  const openMemoryModal = useCallback(() => {
+    setActiveSessionSection("memory");
+    setShowMemoryModal(true);
+    clearMemoryStatus();
+    void refreshMemoryFiles({
+      showLoading: true,
+      preferredId: selectedMemoryFileId || undefined,
+    });
+  }, [clearMemoryStatus, refreshMemoryFiles, selectedMemoryFileId]);
+
+  const closeMemoryModal = useCallback(() => {
+    setShowMemoryModal(false);
+    setMemorySearch("");
+    setMemoryLoading(false);
+    setMemorySaving(false);
+    clearMemoryStatus();
+  }, [clearMemoryStatus]);
+
+  const handleSelectMemoryFile = useCallback((fileId: string) => {
+    setSelectedMemoryFileId(fileId);
+    const nextFile = memoryFiles.find((file) => file.id === fileId);
+    setMemoryDraftContent(nextFile?.content || "");
+  }, [memoryFiles]);
+
+  const handleSaveMemoryFile = useCallback(async () => {
+    if (!activeMemoryFile || !currentMemoryAgentId) {
+      setMemoryError("请先选择一个记忆文件");
+      return;
+    }
+
+    clearMemoryStatus();
+    setMemorySaving(true);
+
+    try {
+      await saveWorkspaceMemoryFile({
+        sourcePath: activeMemoryFile.sourcePath,
+        content: memoryDraftContent,
+        agentId: currentMemoryAgentId,
+      });
+      setMemoryNotice(`记忆文件已保存：${activeMemoryFile.displayName}`);
+      await refreshMemoryFiles({ preferredId: activeMemoryFile.id });
+    } catch (memorySaveError) {
+      setMemoryError(memorySaveError instanceof Error ? memorySaveError.message : "保存记忆文件失败");
+    } finally {
+      setMemorySaving(false);
+    }
+  }, [activeMemoryFile, clearMemoryStatus, currentMemoryAgentId, memoryDraftContent, refreshMemoryFiles]);
+
+  useEffect(() => {
+    if (!currentMemoryAgentId) {
+      return;
+    }
+    void refreshMemoryFiles({ preferredId: selectedMemoryFileId || undefined });
+  }, [currentMemoryAgentId, refreshMemoryFiles, selectedMemoryFileId]);
+
   const uptimeLabel = running ? formatUptime(uptime) : "未启动";
   const derivedLogs = useMemo(() => buildWorkspaceLogs(logs), [logs]);
+  const memoryResourceItems = useMemo(() => buildWorkspaceMemoryResourceItems(memoryFiles), [memoryFiles]);
   const openModelConfigModal = () => setIsModelConfigOpen(true);
 
   const openChannelBindingModal = (entityId: string) => {
@@ -375,6 +519,10 @@ export function WorkspaceClonePage({
 
   const handleOpenRelatedResource = (resource: WorkspaceRelatedResource) => {
     if (!resource) return;
+    if (resource === "memory") {
+      openMemoryModal();
+      return;
+    }
     setActiveSessionSection(resource);
     setRelatedResource(resource);
   };
@@ -526,7 +674,7 @@ export function WorkspaceClonePage({
                 logs={derivedLogs}
                 schedules={WORKSPACE_SCHEDULES}
                 workbenchItems={WORKSPACE_WORKBENCH}
-                memoryItems={WORKSPACE_MEMORY_ITEMS}
+                memoryItems={memoryResourceItems}
                 skillItems={WORKSPACE_SKILL_ITEMS}
                 commandItems={WORKSPACE_COMMAND_ITEMS}
                 channelItems={WORKSPACE_CHANNEL_ITEMS}
@@ -561,6 +709,7 @@ export function WorkspaceClonePage({
                 isGenerating={homepageChat.isGenerating}
                 resettingSession={homepageChat.resettingSession}
                 onOpenSessionSection={openSessionPanel}
+                onOpenMemoryModal={openMemoryModal}
                 onOpenModelConfig={openModelConfigModal}
                 onSend={homepageChat.sendMessage}
                 onAbort={homepageChat.abortMessage}
@@ -573,10 +722,19 @@ export function WorkspaceClonePage({
         <WorkspaceCloneOverlayStack
           selectedEntity={selectedEntity}
           showAgentInfo={showAgentInfo}
+          showMemoryModal={showMemoryModal}
           showRuntimeLogDetail={showRuntimeLogDetail}
           showSettingsTextPreview={showSettingsTextPreview}
           relatedResource={relatedResource}
-          memoryItems={WORKSPACE_MEMORY_ITEMS}
+          memoryFiles={memoryFiles}
+          memorySearch={memorySearch}
+          selectedMemoryFileId={selectedMemoryFileId}
+          memoryDraftContent={memoryDraftContent}
+          memoryLoading={memoryLoading}
+          memorySaving={memorySaving}
+          memoryNotice={memoryNotice}
+          memoryError={memoryError}
+          memoryItems={memoryResourceItems}
           skillItems={WORKSPACE_SKILL_ITEMS}
           commandItems={WORKSPACE_COMMAND_ITEMS}
           channelItems={WORKSPACE_CHANNEL_ITEMS}
@@ -588,6 +746,20 @@ export function WorkspaceClonePage({
             tag: item.enabled ? "已启用" : "未启用",
           }))}
           onCloseAgentInfo={() => setShowAgentInfo(false)}
+          onCloseMemoryModal={closeMemoryModal}
+          onRefreshMemoryModal={() => {
+            clearMemoryStatus();
+            void refreshMemoryFiles({
+              showLoading: true,
+              preferredId: selectedMemoryFileId || undefined,
+            });
+          }}
+          onUpdateMemorySearch={setMemorySearch}
+          onSelectMemoryFile={handleSelectMemoryFile}
+          onUpdateMemoryDraftContent={setMemoryDraftContent}
+          onSaveMemoryFile={() => {
+            void handleSaveMemoryFile();
+          }}
           onCloseRuntimeLogDetail={() => setShowRuntimeLogDetail(false)}
           onCloseSettingsTextPreview={() => setShowSettingsTextPreview(false)}
           onCloseRelatedResource={() => setRelatedResource(null)}

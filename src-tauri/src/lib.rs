@@ -7,6 +7,7 @@ mod diagnostics;
 mod download;
 mod environment;
 mod installer;
+mod memory;
 mod paths;
 mod provider_mgr;
 mod providers;
@@ -146,6 +147,8 @@ pub fn run() {
             config::save_api_config,
             config::set_default_model,
             config::reset_config,
+            memory::load_memory_file_snapshot,
+            memory::save_source_file,
             // Diagnostics
             diagnostics::export_diagnostics_zip,
             // Agent management

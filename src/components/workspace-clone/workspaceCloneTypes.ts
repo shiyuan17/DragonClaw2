@@ -75,6 +75,19 @@ export interface WorkspaceResourceItem {
   tag?: string;
 }
 
+export interface WorkspaceMemoryFile {
+  id: string;
+  title: string;
+  summary: string;
+  sourcePath: string;
+  relativePath: string;
+  updatedAtMs: number;
+  content: string;
+  exists: boolean;
+  displayName: string;
+  isFocus: boolean;
+}
+
 export interface WorkspaceToolItem {
   id: string;
   title: string;
