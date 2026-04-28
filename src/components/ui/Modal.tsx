@@ -17,29 +17,41 @@ import type { ReactNode } from "react";
 interface ModalProps {
     /** Whether the modal is visible */
     show: boolean;
-    /** Called when the overlay is clicked (optional — omit to disable overlay close) */
+    /** Called when the overlay is clicked (optional - omit to disable overlay close) */
     onClose?: () => void;
     /** Modal title (displayed at top) */
     title?: string;
     /** Maximum width of the modal box (default: 480px) */
     maxWidth?: number;
+    /** Optional extra class for the overlay */
+    overlayClassName?: string;
+    /** Optional extra class for the modal box */
+    contentClassName?: string;
     /** Modal content */
     children: ReactNode;
 }
 
-export function Modal({ show, onClose, title, maxWidth = 480, children }: ModalProps) {
+export function Modal({
+    show,
+    onClose,
+    title,
+    maxWidth = 480,
+    overlayClassName = "",
+    contentClassName = "",
+    children,
+}: ModalProps) {
     return (
         <AnimatePresence>
             {show && (
                 <motion.div
-                    className="modal-overlay"
+                    className={["modal-overlay", overlayClassName].join(" ").trim()}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     onClick={onClose}
                 >
                     <motion.div
-                        className="modal-box"
+                        className={["modal-box", contentClassName].join(" ").trim()}
                         style={{ maxWidth }}
                         onClick={(e) => e.stopPropagation()}
                         initial={{ scale: 0.95, opacity: 0 }}

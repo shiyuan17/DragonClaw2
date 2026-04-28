@@ -31,7 +31,7 @@ fn default_gateway_config() -> serde_json::Value {
     })
 }
 
-fn ensure_gateway_config(config: &mut serde_json::Value) {
+pub(crate) fn ensure_gateway_config(config: &mut serde_json::Value) {
     if !config.get("gateway").map(|value| value.is_object()).unwrap_or(false) {
         config["gateway"] = default_gateway_config();
         return;
@@ -74,6 +74,23 @@ fn ensure_gateway_config(config: &mut serde_json::Value) {
         control_ui_obj
             .entry("dangerouslyDisableDeviceAuth".to_string())
             .or_insert_with(|| serde_json::json!(true));
+    }
+}
+
+pub(crate) fn ensure_default_workspace(config: &mut serde_json::Value) {
+    if config.get("agents").is_none() {
+        config["agents"] = serde_json::json!({});
+    }
+    if config["agents"].get("defaults").is_none() {
+        config["agents"]["defaults"] = serde_json::json!({});
+    }
+    if config["agents"]["defaults"].get("workspace").is_none() {
+        let workspace = dirs::document_dir()
+            .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join("Documents"))
+            .join("OpenClaw-Projects");
+        let _ = std::fs::create_dir_all(&workspace);
+        config["agents"]["defaults"]["workspace"] =
+            serde_json::Value::String(workspace.to_string_lossy().to_string());
     }
 }
 
@@ -261,16 +278,8 @@ pub fn save_api_config(
         }
     }
 
-    if config["agents"]["defaults"].get("workspace").is_none() {
-        let workspace = dirs::document_dir()
-            .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join("Documents"))
-            .join("OpenClaw-Projects");
-        let _ = std::fs::create_dir_all(&workspace);
-        config["agents"]["defaults"]["workspace"] =
-            serde_json::Value::String(workspace.to_string_lossy().to_string());
-    }
-
     ensure_gateway_config(&mut config);
+    ensure_default_workspace(&mut config);
 
     let output = serde_json::to_string_pretty(&config)
         .map_err(|e| format!("搴忓垪鍖栧け璐? {}", e))?;

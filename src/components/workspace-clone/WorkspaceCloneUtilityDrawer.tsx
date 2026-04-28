@@ -33,8 +33,7 @@ interface WorkspaceCloneUtilityDrawerProps {
   onSelectSessionSection: (section: WorkspaceSessionSectionKey) => void;
   onOpenRelatedResource: (resource: WorkspaceRelatedResource) => void;
   onOpenSettingsTextPreview: () => void;
-  onOpenModelSwitch: () => void;
-  onOpenProviderConfig: () => void;
+  onOpenModelConfig: () => void;
   onStart: () => void;
   onStop: () => void;
   onOpenConsole: () => void;
@@ -96,8 +95,7 @@ export function WorkspaceCloneUtilityDrawer({
   onSelectSessionSection,
   onOpenRelatedResource,
   onOpenSettingsTextPreview,
-  onOpenModelSwitch,
-  onOpenProviderConfig,
+  onOpenModelConfig,
   onStart,
   onStop,
   onOpenConsole,
@@ -161,10 +159,10 @@ export function WorkspaceCloneUtilityDrawer({
           </div>
 
           <div className="workspace-clone__session-actions">
-            <button type="button" className="workspace-clone__composer-pill" onClick={onOpenModelSwitch}>
+            <button type="button" className="workspace-clone__composer-pill" onClick={onOpenModelConfig}>
               切换模型
             </button>
-            <button type="button" className="workspace-clone__composer-pill" onClick={onOpenProviderConfig}>
+            <button type="button" className="workspace-clone__composer-pill" onClick={onOpenModelConfig}>
               配置 Provider
             </button>
           </div>
@@ -271,7 +269,12 @@ export function WorkspaceCloneUtilityDrawer({
                     key={card.key}
                     type="button"
                     className={`workspace-clone__session-tile ${activeSessionSection === card.key ? "is-active" : ""}`}
-                    onClick={() => onSelectSessionSection(card.key)}
+                    onClick={() => {
+                      onSelectSessionSection(card.key);
+                      if (card.key === "model") {
+                        onOpenModelConfig();
+                      }
+                    }}
                   >
                     <span className="workspace-clone__session-tile-icon">
                       <WorkspaceCloneIcon name={card.icon} size={15} strokeWidth={1.9} />

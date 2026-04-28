@@ -46,8 +46,7 @@ interface WorkspaceCloneChatViewProps {
   onStart: () => void;
   onStop: () => void;
   onOpenConsole: () => void;
-  onOpenModelSwitch: () => void;
-  onOpenProviderConfig: () => void;
+  onOpenModelConfig: () => void;
   onOpenLogs: () => void;
 }
 
@@ -82,8 +81,7 @@ export function WorkspaceCloneChatView({
   onStart,
   onStop,
   onOpenConsole,
-  onOpenModelSwitch,
-  onOpenProviderConfig,
+  onOpenModelConfig,
   onOpenLogs,
 }: WorkspaceCloneChatViewProps) {
   const hasMessages = messages.length > 0;
@@ -239,8 +237,7 @@ export function WorkspaceCloneChatView({
         onSelectSessionSection={onSelectSessionSection}
         onOpenRelatedResource={onOpenRelatedResource}
         onOpenSettingsTextPreview={onOpenSettingsTextPreview}
-        onOpenModelSwitch={onOpenModelSwitch}
-        onOpenProviderConfig={onOpenProviderConfig}
+        onOpenModelConfig={onOpenModelConfig}
         onStart={onStart}
         onStop={onStop}
         onOpenConsole={onOpenConsole}

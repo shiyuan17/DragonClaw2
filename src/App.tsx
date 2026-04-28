@@ -74,9 +74,12 @@ function App() {
     setShowModelSwitchModal,
     infoModalTitle,
     setInfoModalTitle,
+    refreshCurrentConfig,
     checkApiKey,
     handleSaveConfig,
     handleSetModel,
+    handleUpsertSavedProviderConfig,
+    handleDeleteSavedProviderConfig,
     handleOpenRegister,
     handleReset,
     confirmReset,
@@ -267,12 +270,17 @@ function App() {
           uptime={uptime}
           currentModelName={currentModelName}
           currentProviderName={currentProviderName}
+          currentConfig={currentConfig}
+          configVersion={configVersion}
+          providers={providers}
           workspacePath={workspacePath}
           logs={logs}
           handleStart={handleStart}
           handleStop={handleStop}
-          setShowKeyModal={setShowKeyModal}
-          setShowModelSwitchModal={setShowModelSwitchModal}
+          refreshCurrentConfig={refreshCurrentConfig}
+          handleSetModel={handleSetModel}
+          handleUpsertSavedProviderConfig={handleUpsertSavedProviderConfig}
+          handleDeleteSavedProviderConfig={handleDeleteSavedProviderConfig}
         />
       ) : (
         <LegacyHomeShell

@@ -7,6 +7,7 @@ export type WorkspaceSidebarAdminPanel = "theme" | "language" | null;
 export type WorkspaceComposerModal = "knowledge" | "knowledge-delete" | "slash-command" | "email-binding" | null;
 export type WorkspaceSuggestionMode = "slash" | "mention" | null;
 export type ChannelBindingView = "wechat" | "feishu" | "manual";
+export type WorkspaceModelProviderApi = "openai-completions" | "anthropic-messages";
 
 export interface WorkspaceMenuItem {
   key: WorkspaceMenuKey;
@@ -79,6 +80,39 @@ export interface WorkspaceToolItem {
   title: string;
   description: string;
   enabled: boolean;
+}
+
+export interface WorkspaceModelVendorPreset {
+  id: string;
+  label: string;
+  displayName: string;
+  baseUrl: string;
+  apiType: WorkspaceModelProviderApi;
+  modelOptions: string[];
+  defaultModel: string;
+}
+
+export interface WorkspaceModelConfigDraft {
+  providerKey: string;
+  vendorPresetId: string;
+  providerDisplayName: string;
+  providerBaseUrl: string;
+  providerApi: WorkspaceModelProviderApi;
+  modelId: string;
+  modelOptions: string[];
+  apiKey: string;
+  apiKeyConfigured: boolean;
+}
+
+export interface WorkspaceSavedProviderCard {
+  providerKey: string;
+  displayName: string;
+  baseUrl: string;
+  apiType: WorkspaceModelProviderApi;
+  modelId: string;
+  modelOptions: string[];
+  hasApiKey: boolean;
+  isActive: boolean;
 }
 
 export type DirectoryContextMenuState = {

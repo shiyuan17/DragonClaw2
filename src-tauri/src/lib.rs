@@ -161,6 +161,8 @@ pub fn run() {
             provider_mgr::delete_provider,
             provider_mgr::remove_model_from_provider,
             provider_mgr::add_model_to_provider,
+            provider_mgr::upsert_saved_provider_config,
+            provider_mgr::delete_saved_provider_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

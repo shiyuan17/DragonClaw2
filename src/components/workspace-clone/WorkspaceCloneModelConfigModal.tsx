@@ -1,0 +1,607 @@
+import { useEffect, useMemo, useState } from "react";
+import { Modal } from "../ui/Modal";
+import type { CurrentConfig, ProviderInfo, SavedProvider } from "../../types";
+import type {
+  WorkspaceModelConfigDraft,
+  WorkspaceModelProviderApi,
+  WorkspaceSavedProviderCard,
+} from "./workspaceCloneTypes";
+import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
+import {
+  WORKSPACE_MODEL_VENDOR_PRESETS,
+  getWorkspaceModelVendorPreset,
+} from "./workspaceModelVendorPresets";
+
+interface WorkspaceCloneModelConfigModalProps {
+  show: boolean;
+  savedProviders: SavedProvider[];
+  currentConfig: CurrentConfig | null;
+  providers: ProviderInfo[];
+  onClose: () => void;
+  onRefreshSavedProviders: () => Promise<void>;
+  onRefreshCurrentConfig: () => Promise<CurrentConfig>;
+  onSetModel: (modelId: string) => Promise<void>;
+  onUpsertSavedProviderConfig: (payload: {
+    providerKey: string;
+    displayName?: string | null;
+    baseUrl: string;
+    api: string;
+    apiKey: string;
+    modelId: string;
+    modelOptions?: string[];
+  }) => Promise<string>;
+  onDeleteSavedProviderConfig: (providerKey: string) => Promise<string>;
+}
+
+function normalizeBaseUrl(value: string) {
+  return value.trim().replace(/\/+$/, "").toLowerCase();
+}
+
+function slugifyProviderKey(value: string) {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return normalized || "custom-provider";
+}
+
+function buildUniqueProviderKey(baseKey: string, existingKeys: string[]) {
+  if (!existingKeys.includes(baseKey)) {
+    return baseKey;
+  }
+
+  let index = 2;
+  while (existingKeys.includes(`${baseKey}-${index}`)) {
+    index += 1;
+  }
+  return `${baseKey}-${index}`;
+}
+
+function getPrimaryProviderKey(currentConfig: CurrentConfig | null) {
+  return currentConfig?.provider || "";
+}
+
+function getPrimaryModelId(currentConfig: CurrentConfig | null) {
+  const primary = currentConfig?.model || "";
+  if (!primary) return "";
+  return primary.includes("/") ? primary.split("/").slice(1).join("/") : primary;
+}
+
+function resolvePresetId(savedProvider: SavedProvider) {
+  const byName = WORKSPACE_MODEL_VENDOR_PRESETS.find((item) => item.id === savedProvider.name);
+  if (byName) return byName.id;
+
+  const providerBaseUrl = normalizeBaseUrl(savedProvider.base_url);
+  const byBaseUrl = WORKSPACE_MODEL_VENDOR_PRESETS.find((item) => normalizeBaseUrl(item.baseUrl) === providerBaseUrl);
+  return byBaseUrl?.id || "custom";
+}
+
+function createDraftFromPreset(presetId: string): WorkspaceModelConfigDraft {
+  const preset = getWorkspaceModelVendorPreset(presetId);
+
+  return {
+    providerKey: preset.id === "custom" ? "" : preset.id,
+    vendorPresetId: preset.id,
+    providerDisplayName: preset.displayName,
+    providerBaseUrl: preset.baseUrl,
+    providerApi: preset.apiType,
+    modelId: preset.defaultModel,
+    modelOptions: [...preset.modelOptions],
+    apiKey: "",
+    apiKeyConfigured: false,
+  };
+}
+
+function createDraftFromSavedProvider(
+  savedProvider: SavedProvider,
+  currentConfig: CurrentConfig | null,
+): WorkspaceModelConfigDraft {
+  const presetId = resolvePresetId(savedProvider);
+  const preset = getWorkspaceModelVendorPreset(presetId);
+  const currentModelId =
+    currentConfig?.provider === savedProvider.name
+      ? getPrimaryModelId(currentConfig)
+      : "";
+  const firstModelId = currentModelId || savedProvider.models[0]?.id || preset.defaultModel;
+
+  return {
+    providerKey: savedProvider.name,
+    vendorPresetId: presetId,
+    providerDisplayName: savedProvider.display_name || preset.displayName || savedProvider.name,
+    providerBaseUrl: savedProvider.base_url || preset.baseUrl,
+    providerApi: (savedProvider.api as WorkspaceModelProviderApi | null) || preset.apiType,
+    modelId: firstModelId,
+    modelOptions: savedProvider.models.map((item) => item.id),
+    apiKey: "",
+    apiKeyConfigured: savedProvider.has_api_key,
+  };
+}
+
+function resolveProviderLabel(savedProvider: SavedProvider, providers: ProviderInfo[]) {
+  if (savedProvider.display_name?.trim()) {
+    return savedProvider.display_name.trim();
+  }
+  const preset = WORKSPACE_MODEL_VENDOR_PRESETS.find((item) => item.id === savedProvider.name);
+  if (preset) {
+    return preset.displayName;
+  }
+  return providers.find((item) => item.id === savedProvider.name)?.name || savedProvider.name;
+}
+
+function buildSavedProviderCards(
+  savedProviders: SavedProvider[],
+  currentConfig: CurrentConfig | null,
+  providers: ProviderInfo[],
+): WorkspaceSavedProviderCard[] {
+  const primaryProviderKey = getPrimaryProviderKey(currentConfig);
+  const primaryModelId = getPrimaryModelId(currentConfig);
+  const normalizedCurrentBaseUrl = normalizeBaseUrl(currentConfig?.base_url || "");
+  const providersWithModels = savedProviders.filter((savedProvider) => savedProvider.models.length > 0);
+  const hasPrimaryProviderCard = providersWithModels.some((savedProvider) => savedProvider.name === primaryProviderKey);
+  const fallbackActiveProviderKey =
+    hasPrimaryProviderCard || !primaryModelId
+      ? ""
+      : (
+          providersWithModels.find(
+            (savedProvider) =>
+              normalizeBaseUrl(savedProvider.base_url) === normalizedCurrentBaseUrl &&
+              savedProvider.models.some((model) => model.id === primaryModelId),
+          ) ??
+          providersWithModels.find((savedProvider) => savedProvider.models.some((model) => model.id === primaryModelId))
+        )?.name || "";
+
+  return providersWithModels.map((savedProvider) => {
+    const firstModelId = savedProvider.models[0]?.id || "";
+    const isActive = primaryProviderKey === savedProvider.name || fallbackActiveProviderKey === savedProvider.name;
+    const activeModelId = isActive ? primaryModelId || firstModelId : firstModelId;
+
+    return {
+      providerKey: savedProvider.name,
+      displayName: resolveProviderLabel(savedProvider, providers),
+      baseUrl: savedProvider.base_url,
+      apiType: (savedProvider.api as WorkspaceModelProviderApi | null) || "openai-completions",
+      modelId: activeModelId,
+      modelOptions: savedProvider.models.map((item) => item.id),
+      hasApiKey: savedProvider.has_api_key,
+      isActive,
+    };
+  });
+}
+
+export function WorkspaceCloneModelConfigModal({
+  show,
+  savedProviders,
+  currentConfig,
+  providers,
+  onClose,
+  onRefreshSavedProviders,
+  onRefreshCurrentConfig,
+  onSetModel,
+  onUpsertSavedProviderConfig,
+  onDeleteSavedProviderConfig,
+}: WorkspaceCloneModelConfigModalProps) {
+  const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
+  const [selectedVendorPresetId, setSelectedVendorPresetId] = useState("custom");
+  const [draft, setDraft] = useState<WorkspaceModelConfigDraft>(createDraftFromPreset("custom"));
+  const [deletePendingProviderId, setDeletePendingProviderId] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [switchingProviderId, setSwitchingProviderId] = useState<string | null>(null);
+
+  const cards = useMemo(
+    () => buildSavedProviderCards(savedProviders, currentConfig, providers),
+    [currentConfig, providers, savedProviders],
+  );
+
+  const selectedPreset = useMemo(
+    () => getWorkspaceModelVendorPreset(selectedVendorPresetId),
+    [selectedVendorPresetId],
+  );
+  const isCustomPreset = selectedVendorPresetId === "custom";
+
+  useEffect(() => {
+    if (!show) {
+      return;
+    }
+
+    const nextCard = cards.find((item) => item.isActive) ?? cards[0];
+    if (nextCard) {
+      const savedProvider = savedProviders.find((item) => item.name === nextCard.providerKey);
+      if (savedProvider) {
+        const nextDraft = createDraftFromSavedProvider(savedProvider, currentConfig);
+        setEditingProviderId(nextCard.providerKey);
+        setSelectedVendorPresetId(nextDraft.vendorPresetId);
+        setDraft(nextDraft);
+        return;
+      }
+    }
+
+    const customDraft = createDraftFromPreset("custom");
+    setEditingProviderId(null);
+    setSelectedVendorPresetId("custom");
+    setDraft(customDraft);
+  }, [cards, currentConfig, savedProviders, show]);
+
+  const clearStatus = () => {
+    setNotice("");
+    setError("");
+  };
+
+  const handleSelectCard = async (providerKey: string) => {
+    clearStatus();
+    setDeletePendingProviderId(null);
+
+    const savedProvider = savedProviders.find((item) => item.name === providerKey);
+    if (!savedProvider) {
+      return;
+    }
+
+    const nextDraft = createDraftFromSavedProvider(savedProvider, currentConfig);
+    setEditingProviderId(providerKey);
+    setSelectedVendorPresetId(nextDraft.vendorPresetId);
+    setDraft(nextDraft);
+
+    if (currentConfig?.provider === providerKey) {
+      return;
+    }
+
+    setSwitchingProviderId(providerKey);
+    try {
+      const nextModelId = nextDraft.modelId || savedProvider.models[0]?.id;
+      if (!nextModelId) {
+        throw new Error("No model found for this provider");
+      }
+      await onSetModel(`${providerKey}/${nextModelId}`);
+      setNotice(`已切换到 ${nextDraft.providerDisplayName} / ${nextModelId}`);
+    } catch (switchError) {
+      setError(switchError instanceof Error ? switchError.message : "切换模型失败");
+    } finally {
+      setSwitchingProviderId(null);
+    }
+  };
+
+  const handleEditCard = (providerKey: string) => {
+    clearStatus();
+    setDeletePendingProviderId(null);
+
+    const savedProvider = savedProviders.find((item) => item.name === providerKey);
+    if (!savedProvider) {
+      return;
+    }
+
+    const nextDraft = createDraftFromSavedProvider(savedProvider, currentConfig);
+    setEditingProviderId(providerKey);
+    setSelectedVendorPresetId(nextDraft.vendorPresetId);
+    setDraft(nextDraft);
+  };
+
+  const handleAddConfig = () => {
+    clearStatus();
+    setDeletePendingProviderId(null);
+    const nextDraft = createDraftFromPreset("custom");
+    setEditingProviderId(null);
+    setSelectedVendorPresetId("custom");
+    setDraft(nextDraft);
+  };
+
+  const handleSelectVendorPreset = (presetId: string) => {
+    clearStatus();
+    setDeletePendingProviderId(null);
+
+    const nextPreset = getWorkspaceModelVendorPreset(presetId);
+    setSelectedVendorPresetId(presetId);
+    setDraft((current) => ({
+      ...current,
+      vendorPresetId: presetId,
+      providerDisplayName: presetId === "custom" ? current.providerDisplayName : nextPreset.displayName,
+      providerBaseUrl: presetId === "custom" ? current.providerBaseUrl : nextPreset.baseUrl,
+      providerApi: presetId === "custom" ? current.providerApi : nextPreset.apiType,
+      modelId:
+        presetId === "custom"
+          ? current.modelId
+          : current.modelId && nextPreset.modelOptions.includes(current.modelId)
+            ? current.modelId
+            : nextPreset.defaultModel,
+      modelOptions: presetId === "custom" ? current.modelOptions : [...nextPreset.modelOptions],
+    }));
+  };
+
+  const handleRefresh = async () => {
+    clearStatus();
+    setDeletePendingProviderId(null);
+    setRefreshing(true);
+    try {
+      await Promise.all([onRefreshSavedProviders(), onRefreshCurrentConfig()]);
+      setNotice("模型配置已从 openclaw.json 刷新");
+    } catch (refreshError) {
+      setError(refreshError instanceof Error ? refreshError.message : "刷新模型配置失败");
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleDelete = async (providerKey: string) => {
+    if (deletePendingProviderId !== providerKey) {
+      clearStatus();
+      setDeletePendingProviderId(providerKey);
+      setNotice("再次点击删除以确认移除该配置");
+      return;
+    }
+
+    clearStatus();
+    setSaving(true);
+    try {
+      const result = await onDeleteSavedProviderConfig(providerKey);
+      setNotice(result);
+      setDeletePendingProviderId(null);
+
+      if (editingProviderId === providerKey) {
+        handleAddConfig();
+      }
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "删除模型配置失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSave = async () => {
+    clearStatus();
+
+    const providerDisplayName = draft.providerDisplayName.trim();
+    const providerBaseUrl = draft.providerBaseUrl.trim();
+    const modelId = draft.modelId.trim();
+
+    if (!providerDisplayName) {
+      setError("请填写名称");
+      return;
+    }
+    if (!providerBaseUrl) {
+      setError("请填写请求地址");
+      return;
+    }
+    if (!modelId) {
+      setError("请填写模型 ID");
+      return;
+    }
+
+    const existingKeys = savedProviders.map((item) => item.name);
+    const generatedKey =
+      selectedVendorPresetId !== "custom"
+        ? selectedPreset.id
+        : buildUniqueProviderKey(slugifyProviderKey(providerDisplayName), existingKeys);
+
+    const providerKey = editingProviderId || draft.providerKey || generatedKey;
+    const modelOptions =
+      selectedVendorPresetId === "custom"
+        ? [modelId]
+        : [modelId, ...selectedPreset.modelOptions.filter((item) => item !== modelId)];
+
+    setSaving(true);
+    try {
+      const result = await onUpsertSavedProviderConfig({
+        providerKey,
+        displayName: providerDisplayName,
+        baseUrl: providerBaseUrl,
+        api: draft.providerApi,
+        apiKey: draft.apiKey.trim(),
+        modelId,
+        modelOptions,
+      });
+      setEditingProviderId(providerKey);
+      setDraft((current) => ({
+        ...current,
+        providerKey,
+        apiKey: "",
+        apiKeyConfigured: current.apiKeyConfigured || draft.apiKey.trim().length > 0,
+      }));
+      setNotice(result);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "保存模型配置失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      show={show}
+      onClose={onClose}
+      maxWidth={840}
+      overlayClassName="workspace-model-modal__overlay"
+      contentClassName="workspace-model-modal__surface"
+    >
+      <div className="workspace-model-modal">
+        <div className="workspace-model-modal__header">
+          <div>
+            <h3>模型配置</h3>
+            <p>在 workspace-clone 内管理当前会话使用的模型 Provider、协议和默认模型。</p>
+          </div>
+
+          <div className="workspace-model-modal__header-actions">
+            <button
+              type="button"
+              className="workspace-model-modal__ghost"
+              onClick={() => void handleRefresh()}
+              disabled={refreshing || saving}
+            >
+              <WorkspaceCloneIcon name="refresh" size={14} strokeWidth={1.9} />
+              <span>{refreshing ? "刷新中..." : "刷新"}</span>
+            </button>
+            <button type="button" className="workspace-model-modal__icon" onClick={onClose} aria-label="关闭模型配置">
+              <WorkspaceCloneIcon name="x" size={16} strokeWidth={1.9} />
+            </button>
+          </div>
+        </div>
+
+        <div className="workspace-model-modal__body">
+          <section className="workspace-model-modal__cards">
+            <div className="workspace-model-modal__cards-grid">
+              {cards.map((card) => (
+                <article
+                  key={card.providerKey}
+                  className={[
+                    "workspace-model-card",
+                    card.isActive ? "is-active" : "",
+                    editingProviderId === card.providerKey ? "is-editing" : "",
+                    deletePendingProviderId === card.providerKey ? "is-delete-pending" : "",
+                  ].join(" ").trim()}
+                >
+                  <button
+                    type="button"
+                    className="workspace-model-card__main"
+                    onClick={() => void handleSelectCard(card.providerKey)}
+                    disabled={switchingProviderId === card.providerKey || saving}
+                  >
+                    <div className="workspace-model-card__title-row">
+                      <strong>{card.modelId || "未选择模型"}</strong>
+                      {card.isActive && (
+                        <span className="workspace-model-card__state">
+                          <i />
+                          当前
+                        </span>
+                      )}
+                    </div>
+                  </button>
+
+                  <div className="workspace-model-card__actions">
+                    <button type="button" onClick={() => handleEditCard(card.providerKey)} aria-label="编辑模型配置">
+                      <WorkspaceCloneIcon name="edit" size={14} strokeWidth={1.9} />
+                    </button>
+                    <button
+                      type="button"
+                      className={deletePendingProviderId === card.providerKey ? "is-danger" : ""}
+                      onClick={() => void handleDelete(card.providerKey)}
+                      aria-label="删除模型配置"
+                    >
+                      <WorkspaceCloneIcon name="trash" size={14} strokeWidth={1.9} />
+                    </button>
+                  </div>
+                </article>
+              ))}
+
+              <button
+                type="button"
+                className={`workspace-model-card workspace-model-card--add ${editingProviderId ? "" : "is-editing"}`}
+                onClick={handleAddConfig}
+              >
+                <span className="workspace-model-card__add-icon">
+                  <WorkspaceCloneIcon name="plus" size={16} strokeWidth={2} />
+                </span>
+                <strong>新增配置</strong>
+                <span>创建新配置卡片</span>
+              </button>
+            </div>
+          </section>
+
+          <section className="workspace-model-modal__form-shell">
+            <div className="workspace-model-modal__form-head">
+              <strong>{editingProviderId ? "编辑配置" : "新增配置"}</strong>
+            </div>
+
+            <div className="workspace-model-modal__form-grid">
+              <label className="workspace-model-modal__field">
+                <span>模型厂商</span>
+                <select value={selectedVendorPresetId} onChange={(event) => handleSelectVendorPreset(event.target.value)}>
+                  {WORKSPACE_MODEL_VENDOR_PRESETS.map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="workspace-model-modal__field">
+                <span>名称</span>
+                <input
+                  value={draft.providerDisplayName}
+                  readOnly={!isCustomPreset}
+                  onChange={(event) => setDraft((current) => ({ ...current, providerDisplayName: event.target.value }))}
+                  placeholder="例如：自定义 Provider"
+                />
+              </label>
+
+              <label className="workspace-model-modal__field">
+                <span>请求地址</span>
+                <input
+                  value={draft.providerBaseUrl}
+                  readOnly={!isCustomPreset}
+                  onChange={(event) => setDraft((current) => ({ ...current, providerBaseUrl: event.target.value }))}
+                  placeholder="https://api.example.com/v1"
+                />
+              </label>
+
+              <label className="workspace-model-modal__field">
+                <span>API Key</span>
+                <input
+                  value={draft.apiKey}
+                  type="password"
+                  onChange={(event) => setDraft((current) => ({ ...current, apiKey: event.target.value }))}
+                  placeholder={draft.apiKeyConfigured ? "留空则保留当前输入状态" : "sk-..."}
+                />
+              </label>
+
+              <label className="workspace-model-modal__field">
+                <span>模型 ID</span>
+                {selectedPreset.modelOptions.length > 0 && !isCustomPreset ? (
+                  <select
+                    value={draft.modelId}
+                    onChange={(event) => setDraft((current) => ({ ...current, modelId: event.target.value }))}
+                  >
+                    {selectedPreset.modelOptions.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    value={draft.modelId}
+                    onChange={(event) => setDraft((current) => ({ ...current, modelId: event.target.value }))}
+                    placeholder="model-id"
+                  />
+                )}
+              </label>
+
+              <label className="workspace-model-modal__field">
+                <span>协议</span>
+                <select
+                  value={draft.providerApi}
+                  disabled={!isCustomPreset}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      providerApi: event.target.value as WorkspaceModelProviderApi,
+                    }))
+                  }
+                >
+                  <option value="openai-completions">OpenAI 兼容</option>
+                  <option value="anthropic-messages">Anthropic Messages</option>
+                </select>
+              </label>
+            </div>
+
+            {(notice || error) && (
+              <div className={`workspace-model-modal__status ${error ? "is-error" : "is-success"}`}>
+                {error || notice}
+              </div>
+            )}
+
+            <div className="workspace-model-modal__footer">
+              <button type="button" className="workspace-model-modal__ghost" onClick={handleAddConfig}>
+                重置表单
+              </button>
+              <button type="button" className="workspace-model-modal__primary" onClick={() => void handleSave()} disabled={saving}>
+                {saving ? "保存中..." : editingProviderId ? "更新配置" : "保存配置"}
+              </button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </Modal>
+  );
+}

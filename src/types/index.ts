@@ -47,6 +47,7 @@ export interface SkillInfo {
 
 export interface SavedProvider {
     name: string;
+    display_name?: string | null;
     base_url: string;
     api: string | null;
     has_api_key: boolean;

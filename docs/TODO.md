@@ -244,6 +244,6 @@
 - [x] Phase 5.15.3: 重构 `workspace-clone` 顶部标题栏与聊天会话头部，并新增应用内仿标题栏
 - [x] Phase 5.15.3: 将右侧抽屉升级为会话边栏，迁入模型、记忆、技能库、命令、工具权限主入口
 - [x] Phase 5.15.3: 弱化 composer 旧入口并保留 overlay 作为二级详情容器
-- [ ] Phase 5.15.4: 为 `workspace-clone` 新增独立模型配置弹窗，并接管模型相关点击入口
-- [ ] Phase 5.15.4: 同步 DragonClaw 模型厂商列表到 workspace 模型弹窗私有数据源
-- [ ] Phase 5.15.4: 新增 workspace 专用模型配置保存/删除命令并打通 openclaw.json 持久化
+- [x] Phase 5.15.4: 为 `workspace-clone` 新增独立模型配置弹窗，并接管模型相关点击入口
+- [x] Phase 5.15.4: 同步 DragonClaw 模型厂商列表到 workspace 模型弹窗私有数据源
+- [x] Phase 5.15.4: 新增 workspace 专用模型配置保存/删除命令并打通 openclaw.json 持久化

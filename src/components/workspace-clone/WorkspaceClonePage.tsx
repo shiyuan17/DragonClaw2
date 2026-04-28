@@ -1,11 +1,10 @@
 // Copyright (C) 2026 shiyuan
 // SPDX-License-Identifier: GPL-3.0-only
 // This file is part of DragonClaw. See LICENSE for details.
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { motion } from "framer-motion";
-import logo from "../../assets/dragonclaw-logo.png";
-import type { LogEntry, WorkspaceEntityType, WorkspaceMenuKey } from "../../types";
+import type { CurrentConfig, LogEntry, ProviderInfo, SavedProvider, WorkspaceEntityType, WorkspaceMenuKey } from "../../types";
 import { useWorkspaceGatewayChat } from "../../hooks/useWorkspaceGatewayChat";
 import { formatUptime } from "../../utils/log-humanizer";
 import {
@@ -27,6 +26,7 @@ import { WorkspaceCloneChatView } from "./WorkspaceCloneChatView";
 import { WorkspaceCloneComposer } from "./WorkspaceCloneComposer";
 import { WorkspaceCloneDirectory } from "./WorkspaceCloneDirectory";
 import { WorkspaceCloneHeader } from "./WorkspaceCloneHeader";
+import { WorkspaceCloneModelConfigModal } from "./WorkspaceCloneModelConfigModal";
 import { WorkspaceCloneOverlayStack } from "./WorkspaceCloneOverlayStack";
 import { WorkspaceCloneSidebar } from "./WorkspaceCloneSidebar";
 import type {
@@ -48,12 +48,25 @@ export interface WorkspaceClonePageProps {
   uptime: number;
   currentModelName: string;
   currentProviderName: string;
+  currentConfig: CurrentConfig | null;
+  configVersion: number;
+  providers: ProviderInfo[];
   workspacePath: string;
   logs: LogEntry[];
   handleStart: () => void;
   handleStop: () => void;
-  setShowKeyModal: (value: boolean) => void;
-  setShowModelSwitchModal: (value: boolean) => void;
+  refreshCurrentConfig: () => Promise<CurrentConfig>;
+  handleSetModel: (modelId: string) => Promise<void>;
+  handleUpsertSavedProviderConfig: (payload: {
+    providerKey: string;
+    displayName?: string | null;
+    baseUrl: string;
+    api: string;
+    apiKey: string;
+    modelId: string;
+    modelOptions?: string[];
+  }) => Promise<string>;
+  handleDeleteSavedProviderConfig: (providerKey: string) => Promise<string>;
 }
 
 const COMPACT_COPY: Record<Exclude<WorkspaceMenuKey, "chat">, { title: string; description: string; bullets: string[] }> = {
@@ -96,6 +109,14 @@ function formatRecentLabel(timestamp?: number | null) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date)}`;
+}
+
+function resolveWorkspaceModelName(currentConfig: CurrentConfig | null, fallbackModelName: string) {
+  const primaryModel = currentConfig?.model || fallbackModelName;
+  if (!primaryModel) {
+    return fallbackModelName;
+  }
+  return primaryModel.includes("/") ? primaryModel.split("/").slice(1).join("/") : primaryModel;
 }
 
 function buildGatewayAgentEntities(params: {
@@ -169,12 +190,17 @@ export function WorkspaceClonePage({
   uptime,
   currentModelName,
   currentProviderName,
+  currentConfig,
+  configVersion,
+  providers,
   workspacePath,
   logs,
   handleStart,
   handleStop,
-  setShowKeyModal,
-  setShowModelSwitchModal,
+  refreshCurrentConfig,
+  handleSetModel,
+  handleUpsertSavedProviderConfig,
+  handleDeleteSavedProviderConfig,
 }: WorkspaceClonePageProps) {
   const [activeMenu, setActiveMenu] = useState<WorkspaceMenuKey>("chat");
   const [activeType, setActiveType] = useState<WorkspaceEntityType>("agents");
@@ -197,11 +223,37 @@ export function WorkspaceClonePage({
   const [showRuntimeLogDetail, setShowRuntimeLogDetail] = useState(false);
   const [showSettingsTextPreview, setShowSettingsTextPreview] = useState(false);
   const [relatedResource, setRelatedResource] = useState<WorkspaceRelatedResource>(null);
+  const [isModelConfigOpen, setIsModelConfigOpen] = useState(false);
+  const [savedProviders, setSavedProviders] = useState<SavedProvider[]>([]);
   const homepageChat = useWorkspaceGatewayChat({ running, servicePort, gatewayToken });
 
+  const refreshSavedProviders = useCallback(async () => {
+    const nextProviders = await invoke<SavedProvider[]>("list_saved_providers");
+    setSavedProviders(nextProviders);
+  }, []);
+
+  useEffect(() => {
+    void refreshSavedProviders().catch(() => {});
+  }, [configVersion, refreshSavedProviders]);
+
+  const workspaceModelName = useMemo(
+    () => resolveWorkspaceModelName(currentConfig, currentModelName),
+    [currentConfig, currentModelName],
+  );
+
+  const workspaceProviderName = useMemo(() => {
+    const primaryProviderKey = currentConfig?.provider;
+    if (!primaryProviderKey) {
+      return currentProviderName;
+    }
+
+    const savedProvider = savedProviders.find((item) => item.name === primaryProviderKey);
+    return savedProvider?.display_name || currentProviderName || primaryProviderKey;
+  }, [currentConfig, currentProviderName, savedProviders]);
+
   const staticEntitiesByType = useMemo(
-    () => buildWorkspaceEntities(currentModelName, currentProviderName, running),
-    [currentModelName, currentProviderName, running],
+    () => buildWorkspaceEntities(workspaceModelName, workspaceProviderName, running),
+    [workspaceModelName, workspaceProviderName, running],
   );
 
   const gatewayAgentEntities = useMemo(
@@ -215,13 +267,13 @@ export function WorkspaceClonePage({
             sessionsResult: homepageChat.sessionsResult,
             running,
             isGenerating: homepageChat.isGenerating,
-            currentModelName,
-            currentProviderName,
+            currentModelName: workspaceModelName,
+            currentProviderName: workspaceProviderName,
           })
         : staticEntitiesByType.agents,
     [
-      currentModelName,
-      currentProviderName,
+      workspaceModelName,
+      workspaceProviderName,
       homepageChat.agents,
       homepageChat.currentMainSession,
       homepageChat.currentSessionKey,
@@ -299,6 +351,7 @@ export function WorkspaceClonePage({
 
   const uptimeLabel = running ? formatUptime(uptime) : "未启动";
   const derivedLogs = useMemo(() => buildWorkspaceLogs(logs), [logs]);
+  const openModelConfigModal = () => setIsModelConfigOpen(true);
 
   const openChannelBindingModal = (entityId: string) => {
     const entity = entitiesByType.channels.find((item) => item.id === entityId);
@@ -351,7 +404,7 @@ export function WorkspaceClonePage({
             <div className="workspace-clone__compact-card-icon">模</div>
             <div>
               <strong>当前模型</strong>
-              <small>{currentModelName}</small>
+              <small>{workspaceModelName}</small>
             </div>
           </div>
           <div className="workspace-clone__compact-card">
@@ -375,31 +428,6 @@ export function WorkspaceClonePage({
       exit={{ opacity: 0, y: -8 }}
       transition={{ duration: 0.2 }}
     >
-      <div className="workspace-clone__appbar">
-        <div className="workspace-clone__appbar-brand">
-          <img src={logo} alt="DragonClaw" className="workspace-clone__appbar-logo" />
-          <div className="workspace-clone__appbar-copy">
-            <strong>DRAGONCLAW</strong>
-            <span>Workspace Console</span>
-          </div>
-        </div>
-
-        <div className="workspace-clone__appbar-drag" />
-
-        <div className="workspace-clone__appbar-right">
-          <span className={`workspace-clone__appbar-status ${running ? "is-running" : "is-idle"}`}>
-            <span className="workspace-clone__appbar-status-dot" />
-            {running ? "运行中" : "未启动"}
-          </span>
-          <span className="workspace-clone__appbar-provider">{currentProviderName || "Provider"}</span>
-          <div className="workspace-clone__window-controls" aria-hidden="true">
-            <span className="workspace-clone__window-btn">−</span>
-            <span className="workspace-clone__window-btn">□</span>
-            <span className="workspace-clone__window-btn">×</span>
-          </div>
-        </div>
-      </div>
-
       <main
         className={[
           "workspace-clone",
@@ -503,8 +531,8 @@ export function WorkspaceClonePage({
                 commandItems={WORKSPACE_COMMAND_ITEMS}
                 channelItems={WORKSPACE_CHANNEL_ITEMS}
                 toolItems={WORKSPACE_TOOLS}
-                currentModelName={currentModelName}
-                currentProviderName={currentProviderName}
+                currentModelName={workspaceModelName}
+                currentProviderName={workspaceProviderName}
                 workspacePath={workspacePath}
                 running={running}
                 loading={loading}
@@ -519,8 +547,7 @@ export function WorkspaceClonePage({
                     void invoke("open_url", { url: consoleUrl });
                   }
                 }}
-                onOpenModelSwitch={() => setShowModelSwitchModal(true)}
-                onOpenProviderConfig={() => setShowKeyModal(true)}
+                onOpenModelConfig={openModelConfigModal}
                 onOpenLogs={() => toggleUtilityPanel("logs")}
               />
 
@@ -529,11 +556,12 @@ export function WorkspaceClonePage({
                 chatEnabled={chatEnabled}
                 connectionStatus={homepageChat.status}
                 selectedEntityName={selectedEntity?.name || null}
-                currentModelName={currentModelName}
+                currentModelName={workspaceModelName}
                 sending={homepageChat.sending}
                 isGenerating={homepageChat.isGenerating}
                 resettingSession={homepageChat.resettingSession}
                 onOpenSessionSection={openSessionPanel}
+                onOpenModelConfig={openModelConfigModal}
                 onSend={homepageChat.sendMessage}
                 onAbort={homepageChat.abortMessage}
                 onResetSession={homepageChat.resetSession}
@@ -563,6 +591,19 @@ export function WorkspaceClonePage({
           onCloseRuntimeLogDetail={() => setShowRuntimeLogDetail(false)}
           onCloseSettingsTextPreview={() => setShowSettingsTextPreview(false)}
           onCloseRelatedResource={() => setRelatedResource(null)}
+        />
+
+        <WorkspaceCloneModelConfigModal
+          show={isModelConfigOpen}
+          savedProviders={savedProviders}
+          currentConfig={currentConfig}
+          providers={providers}
+          onClose={() => setIsModelConfigOpen(false)}
+          onRefreshSavedProviders={refreshSavedProviders}
+          onRefreshCurrentConfig={refreshCurrentConfig}
+          onSetModel={handleSetModel}
+          onUpsertSavedProviderConfig={handleUpsertSavedProviderConfig}
+          onDeleteSavedProviderConfig={handleDeleteSavedProviderConfig}
         />
       </main>
     </motion.section>

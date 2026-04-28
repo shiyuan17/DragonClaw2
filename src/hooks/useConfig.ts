@@ -137,6 +137,80 @@ export function useConfig({ addLog, running, setRunning, setStartingUp }: UseCon
         }
     }, [addLog, refreshCurrentConfig, running, setRunning, setStartingUp]);
 
+    const handleUpsertSavedProviderConfig = useCallback(async (payload: {
+        providerKey: string;
+        displayName?: string | null;
+        baseUrl: string;
+        api: string;
+        apiKey: string;
+        modelId: string;
+        modelOptions?: string[];
+    }) => {
+        const result = await invoke<string>("upsert_saved_provider_config", {
+            providerKey: payload.providerKey,
+            displayName: payload.displayName ?? null,
+            baseUrl: payload.baseUrl,
+            api: payload.api,
+            apiKey: payload.apiKey,
+            modelId: payload.modelId,
+            modelOptions: payload.modelOptions ?? [],
+        });
+
+        setConfigStatus(result);
+        addLog("success", result);
+        await refreshCurrentConfig().catch((error) => {
+            addLog("error", `閸掗攱鏌婅ぐ鎾冲闁板秶鐤嗘径杈Е: ${error}`);
+        });
+        setConfigVersion((value) => value + 1);
+
+        if (running) {
+            setStartingUp?.(true);
+            addLog("info", "姝ｅ湪閲嶅惎鏈嶅姟浠ュ簲鐢ㄦ柊妯″瀷閰嶇疆...");
+            try {
+                await invoke("stop_service");
+                setRunning(false);
+                await new Promise((resolve) => setTimeout(resolve, 1000));
+                await invoke("start_service_silent");
+                setRunning(true);
+                addLog("success", "[OK] Workspace 妯″瀷閰嶇疆宸叉洿鏂板苟閲嶅惎鏈嶅姟");
+            } catch (restartErr) {
+                addLog("error", `闁插秴鎯庨張宥呭婢惰精瑙? ${restartErr}`);
+                setStartingUp?.(false);
+            }
+        }
+
+        return result;
+    }, [addLog, refreshCurrentConfig, running, setRunning, setStartingUp]);
+
+    const handleDeleteSavedProviderConfig = useCallback(async (providerKey: string) => {
+        const result = await invoke<string>("delete_saved_provider_config", { providerKey });
+
+        setConfigStatus(result);
+        addLog("success", result);
+        await refreshCurrentConfig().catch((error) => {
+            addLog("error", `閸掗攱鏌婅ぐ鎾冲闁板秶鐤嗘径杈Е: ${error}`);
+        });
+        setConfigVersion((value) => value + 1);
+
+        if (running) {
+            setStartingUp?.(true);
+            addLog("info", "姝ｅ湪閲嶅惎鏈嶅姟浠ュ簲鐢ㄥ垹闄ゅ悗鐨勬ā鍨嬮厤缃?...");
+            try {
+                await invoke("stop_service");
+                setRunning(false);
+                await new Promise((resolve) => setTimeout(resolve, 1000));
+                await invoke("start_service_silent");
+                setRunning(true);
+                addLog("success", "[OK] Workspace 妯″瀷閰嶇疆宸插垹闄ゅ苟閲嶅惎鏈嶅姟");
+            } catch (restartErr) {
+                addLog("error", `闁插秴鎯庨張宥呭婢惰精瑙? ${restartErr}`);
+                setStartingUp?.(false);
+            }
+        }
+
+        return result;
+    }, [addLog, refreshCurrentConfig, running, setRunning, setStartingUp]);
+
     const handleOpenRegister = useCallback(async (providerId: string) => {
         try {
             await invoke("open_provider_register", { providerId });
@@ -196,9 +270,12 @@ export function useConfig({ addLog, running, setRunning, setStartingUp }: UseCon
         showReinstallModal, setShowReinstallModal,
         showModelSwitchModal, setShowModelSwitchModal,
         infoModalTitle, setInfoModalTitle,
+        refreshCurrentConfig,
         checkApiKey,
         handleSaveConfig,
         handleSetModel,
+        handleUpsertSavedProviderConfig,
+        handleDeleteSavedProviderConfig,
         handleOpenRegister,
         handleReset,
         confirmReset,
