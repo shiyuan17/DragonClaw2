@@ -37,6 +37,7 @@ pub struct CurrentConfig {
     pub provider: Option<String>,
     pub model: Option<String>,
     pub base_url: Option<String>,
+    pub gateway_token: Option<String>,
 }
 
 /// Return the list of supported providers (loaded from providers.json)

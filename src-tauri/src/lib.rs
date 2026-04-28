@@ -55,7 +55,12 @@ pub fn run() {
                             // Open the gateway in default browser using actual service port
                             let state = app.state::<service::ServiceState>();
                             let port = *state.port.lock().unwrap();
-                            let _ = open::that(format!("http://localhost:{}?token=dragonclaw-local", port));
+                            let token = config::get_current_config()
+                                .ok()
+                                .and_then(|current| current.gateway_token)
+                                .filter(|value| !value.trim().is_empty())
+                                .unwrap_or_else(|| config::DEFAULT_GATEWAY_TOKEN.to_string());
+                            let _ = open::that(format!("http://localhost:{}?token={}", port, token));
                         }
                         "restart" => {
                             // Show the window first so user sees the restart progress

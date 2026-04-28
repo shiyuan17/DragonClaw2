@@ -41,6 +41,8 @@ export interface WorkspaceClonePageProps {
   running: boolean;
   loading: boolean;
   servicePort: number;
+  gatewayToken?: string | null;
+  consoleUrl: string | null;
   uptime: number;
   currentModelName: string;
   currentProviderName: string;
@@ -56,16 +58,16 @@ const COMPACT_COPY: Record<Exclude<WorkspaceMenuKey, "chat">, { title: string; d
   schedule: {
     title: "定时任务工作区骨架",
     description: "这里先保留定时任务栏目的结构和信息节奏，后续再逐步迁移真实调度能力。",
-    bullets: ["后续迁移任务列表、启停状态和调度设置。", "当前只保留标题、说明卡片与状态占位。"],
+    bullets: ["后续迁移任务列表、启停状态和调度设置。", "当前仅保留标题、说明卡片和状态占位。"],
   },
   knowledge: {
     title: "知识库管理工作区骨架",
     description: "先保留知识类工作区的分区结构，为后续资料树、上传区和知识面板预留接线位置。",
-    bullets: ["占位卡片模拟知识源、文档集和索引状态。", "本次不接任何真实文档或后端命令。"],
+    bullets: ["占位卡片模拟知识源、文档集和索引状态。", "本次不接入任何真实文档或后端命令。"],
   },
   employees: {
     title: "数字员工工作区骨架",
-    description: "先把数字员工首页壳保留下来，后续再把现有 Agent 能力逐步映射进来。",
+    description: "先把数字员工首页壳层保留下来，后续再把现有 Agent 能力逐步映射进来。",
     bullets: ["当前只展示静态的栏目说明和布局占位。", "后续再逐项接入真实的 agents 功能。"],
   },
   skills: {
@@ -147,7 +149,7 @@ function buildGatewayAgentEntities(params: {
       accent: agent.id,
       currentWork:
         !running
-          ? "服务未启动，首页聊天暂不可用。"
+          ? "服务尚未启动，首页聊天暂不可用。"
           : isGenerating && currentSessionKey === sessionKey
             ? "正在生成当前主会话回复。"
             : "首页已接入当前 Agent 的主会话。",
@@ -160,6 +162,8 @@ export function WorkspaceClonePage({
   running,
   loading,
   servicePort,
+  gatewayToken,
+  consoleUrl,
   uptime,
   currentModelName,
   currentProviderName,
@@ -190,7 +194,7 @@ export function WorkspaceClonePage({
   const [showRuntimeLogDetail, setShowRuntimeLogDetail] = useState(false);
   const [showSettingsTextPreview, setShowSettingsTextPreview] = useState(false);
   const [relatedResource, setRelatedResource] = useState<WorkspaceRelatedResource>(null);
-  const homepageChat = useWorkspaceGatewayChat({ running, servicePort });
+  const homepageChat = useWorkspaceGatewayChat({ running, servicePort, gatewayToken });
 
   const staticEntitiesByType = useMemo(
     () => buildWorkspaceEntities(currentModelName, currentProviderName, running),
@@ -332,7 +336,7 @@ export function WorkspaceClonePage({
             <div className="workspace-clone__compact-card-icon">运</div>
             <div>
               <strong>运行状态</strong>
-              <small>{running ? `运行中 · ${uptimeLabel}` : "服务未启动，当前仅保留骨架页面。"}</small>
+              <small>{running ? `运行中 · ${uptimeLabel}` : "服务尚未启动，当前仅保留骨架页面。"}</small>
             </div>
           </div>
         </div>
@@ -449,7 +453,11 @@ export function WorkspaceClonePage({
               onOpenSettingsTextPreview={() => setShowSettingsTextPreview(true)}
               onStart={handleStart}
               onStop={handleStop}
-              onOpenConsole={() => invoke("open_url", { url: `http://localhost:${servicePort}?token=dragonclaw-local` })}
+              onOpenConsole={() => {
+                if (consoleUrl) {
+                  void invoke("open_url", { url: consoleUrl });
+                }
+              }}
               onOpenModelSwitch={() => setShowModelSwitchModal(true)}
               onOpenProviderConfig={() => setShowKeyModal(true)}
               onOpenLogs={() => setUtilityPanel("logs")}

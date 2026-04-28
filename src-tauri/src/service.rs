@@ -13,6 +13,14 @@ use std::os::windows::process::CommandExt;
 use crate::environment;
 use crate::paths;
 
+fn resolve_gateway_token() -> String {
+    crate::config::get_current_config()
+        .ok()
+        .and_then(|config| config.gateway_token)
+        .filter(|token| !token.trim().is_empty())
+        .unwrap_or_else(|| crate::config::DEFAULT_GATEWAY_TOKEN.to_string())
+}
+
 /// Pre-build Control UI assets if missing.
 ///
 /// On Windows, usernames with spaces (e.g., "C:\Users\chuhan zhou\...") cause
@@ -290,7 +298,7 @@ async fn start_service_impl(
     let run_script = openclaw_dir.join("scripts").join("run-node.mjs");
 
     // Auth token for web UI — injected via env var (also set in openclaw.json)
-    let token = "dragonclaw-local";
+    let token = resolve_gateway_token();
 
     let mut cmd = Command::new(&node_bin);
     cmd.arg(&run_script)
@@ -301,7 +309,7 @@ async fn start_service_impl(
         .current_dir(&openclaw_dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .env("OPENCLAW_GATEWAY_AUTH_TOKEN", token);
+        .env("OPENCLAW_GATEWAY_AUTH_TOKEN", &token);
 
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
@@ -325,6 +333,7 @@ async fn start_service_impl(
     if let Some(stdout) = stdout {
         let app_out = app_clone.clone();
         let open_port = chosen_port;  // Copy for thread
+        let open_token = token.clone();
         std::thread::spawn(move || {
             let reader = BufReader::new(stdout);
             let mut browser_opened = false;
@@ -336,13 +345,14 @@ async fn start_service_impl(
                     if open_browser && !browser_opened && is_service_ready_signal(&line) {
                         browser_opened = true;
                         let app_browser = app_out.clone();
+                        let browser_token = open_token.clone();
                         std::thread::spawn(move || {
                             std::thread::sleep(std::time::Duration::from_secs(2));
                             let _ = app_browser.emit("service-log", serde_json::json!({
                                 "level": "success",
                                 "message": "🌐 正在打开浏览器..."
                             }));
-                            let _ = open::that(format!("http://localhost:{}?token=dragonclaw-local", open_port));
+                            let _ = open::that(format!("http://localhost:{}?token={}", open_port, browser_token));
                         });
                     }
 

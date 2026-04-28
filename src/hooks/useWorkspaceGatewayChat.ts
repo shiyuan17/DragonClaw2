@@ -22,6 +22,7 @@ import type {
 interface UseWorkspaceGatewayChatOptions {
   running: boolean;
   servicePort: number;
+  gatewayToken?: string | null;
 }
 
 interface ChatHistoryPayload {
@@ -191,7 +192,9 @@ function buildSessionHistoryItem(session: WorkspaceGatewaySessionRow): Workspace
   };
 }
 
-export function useWorkspaceGatewayChat({ running, servicePort }: UseWorkspaceGatewayChatOptions) {
+const MISSING_GATEWAY_TOKEN_ERROR = "本地网关 token 缺失或未同步，请检查 ~/.openclaw/openclaw.json，或重新保存 Provider 配置后再试。";
+
+export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: UseWorkspaceGatewayChatOptions) {
   const clientRef = useRef<WorkspaceGatewayClient | null>(null);
   const currentSessionKeyRef = useRef("");
   const currentRunIdRef = useRef<string | null>(null);
@@ -216,6 +219,7 @@ export function useWorkspaceGatewayChat({ running, servicePort }: UseWorkspaceGa
     [agents, selectedAgentId],
   );
   const currentSessionKey = selectedAgentId ? createAgentSessionKey(selectedAgentId) : "";
+  const normalizedGatewayToken = gatewayToken?.trim() || "";
 
   useEffect(() => {
     currentSessionKeyRef.current = currentSessionKey;
@@ -377,19 +381,36 @@ export function useWorkspaceGatewayChat({ running, servicePort }: UseWorkspaceGa
   );
 
   useEffect(() => {
-    if (!running || !servicePort) {
+    const resetGatewayState = (nextStatus: WorkspaceGatewayStatus, nextError: string | null) => {
       clientRef.current?.stop();
       clientRef.current = null;
-      setStatus("idle");
-      setError(null);
+      setStatus(nextStatus);
+      setError(nextError);
+      setAgentsResult(null);
+      setSessionsResult(null);
+      setSelectedAgentId("");
+      setHistoryRawMessages([]);
+      setHistoryLoading(false);
+      setSending(false);
+      setResettingSession(false);
       setActiveRunId(null);
       setPendingUserMessage(null);
       setStreamText(null);
+    };
+
+    if (!running || !servicePort) {
+      resetGatewayState("idle", null);
+      return;
+    }
+
+    if (!normalizedGatewayToken) {
+      resetGatewayState("error", MISSING_GATEWAY_TOKEN_ERROR);
       return;
     }
 
     const client = new WorkspaceGatewayClient({
       url: buildGatewayUrl(servicePort),
+      token: normalizedGatewayToken,
       onConnecting: () => {
         setStatus("connecting");
       },
@@ -413,7 +434,7 @@ export function useWorkspaceGatewayChat({ running, servicePort }: UseWorkspaceGa
       }
       client.stop();
     };
-  }, [bootstrapGatewayState, handleGatewayEvent, running, servicePort]);
+  }, [bootstrapGatewayState, handleGatewayEvent, normalizedGatewayToken, running, servicePort]);
 
   useEffect(() => {
     if (!connected || !currentSessionKey) {

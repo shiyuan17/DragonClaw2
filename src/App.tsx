@@ -185,6 +185,13 @@ function App() {
     : (currentConfig?.has_api_key ? "自定义" : "未配置");
   const currentModelName = currentConfig?.model || "未选择";
 
+  const gatewayToken = currentConfig?.gateway_token?.trim() || null;
+  const consoleUrl = servicePort
+    ? gatewayToken
+      ? `http://localhost:${servicePort}?token=${encodeURIComponent(gatewayToken)}`
+      : `http://localhost:${servicePort}`
+    : null;
+
   const handleExportDiagnostics = async () => {
     const savePath = await save({
       defaultPath: `openclaw-diagnostics-${Date.now()}.zip`,
@@ -255,6 +262,8 @@ function App() {
           running={running}
           loading={loading}
           servicePort={servicePort}
+          gatewayToken={gatewayToken}
+          consoleUrl={consoleUrl}
           uptime={uptime}
           currentModelName={currentModelName}
           currentProviderName={currentProviderName}
@@ -277,6 +286,7 @@ function App() {
           statusClass={getStatusClass()}
           appVersion={appVersion}
           servicePort={servicePort}
+          consoleUrl={consoleUrl}
           uptime={uptime}
           currentModelName={currentModelName}
           currentProviderName={currentProviderName}

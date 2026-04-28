@@ -9,6 +9,7 @@
 
 use tauri::Emitter;
 
+use crate::config::DEFAULT_GATEWAY_TOKEN;
 use crate::environment;
 use crate::paths;
 use crate::download;
@@ -108,7 +109,7 @@ pub fn inject_default_config(app: tauri::AppHandle) -> Result<String, String> {
     "mode": "local",
     "auth": {{
       "mode": "token",
-      "token": "dragonclaw-local"
+      "token": "{}"
     }},
     "controlUi": {{
       "allowInsecureAuth": true,
@@ -120,7 +121,7 @@ pub fn inject_default_config(app: tauri::AppHandle) -> Result<String, String> {
       "{}"
     ]
   }}
-}}"#, workspace.to_string_lossy().replace('\\', "\\\\"));
+}}"#, DEFAULT_GATEWAY_TOKEN, workspace.to_string_lossy().replace('\\', "\\\\"));
 
     std::fs::write(&config_path, &config_content)
         .map_err(|e| format!("写入配置文件失败: {}", e))?;

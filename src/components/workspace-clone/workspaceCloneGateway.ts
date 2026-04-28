@@ -6,7 +6,6 @@ import type {
 } from "./workspaceCloneTypes";
 
 const GATEWAY_PROTOCOL_VERSION = 3;
-const GATEWAY_TOKEN = "dragonclaw-local";
 const CONNECT_DELAY_MS = 250;
 const RECONNECT_BASE_MS = 900;
 const RECONNECT_MAX_MS = 10_000;
@@ -47,13 +46,14 @@ export type WorkspaceGatewayChatEventPayload = {
 
 interface WorkspaceGatewayClientOptions {
   url: string;
+  token: string;
   onConnecting?: () => void;
   onConnected?: (hello: GatewayHelloOk) => void;
   onEvent?: (frame: GatewayEventFrame) => void;
   onDisconnected?: (errorMessage?: string) => void;
 }
 
-function buildConnectParams(_nonce?: string | null) {
+function buildConnectParams(token: string, _nonce?: string | null) {
   return {
     minProtocol: GATEWAY_PROTOCOL_VERSION,
     maxProtocol: GATEWAY_PROTOCOL_VERSION,
@@ -68,7 +68,7 @@ function buildConnectParams(_nonce?: string | null) {
     scopes: ["operator.admin", "operator.approvals", "operator.pairing"],
     caps: [],
     auth: {
-      token: GATEWAY_TOKEN,
+      token,
     },
     locale: navigator.language,
     userAgent: navigator.userAgent,
@@ -201,7 +201,7 @@ export class WorkspaceGatewayClient {
     }
 
     try {
-      const hello = await this.request<GatewayHelloOk>("connect", buildConnectParams(this.connectNonce));
+      const hello = await this.request<GatewayHelloOk>("connect", buildConnectParams(this.options.token, this.connectNonce));
       this.hasConnected = true;
       this.reconnectDelayMs = RECONNECT_BASE_MS;
       this.options.onConnected?.(hello);

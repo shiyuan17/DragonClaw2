@@ -23,6 +23,7 @@ interface LegacyHomeShellProps {
   statusClass: string;
   appVersion: string;
   servicePort: number;
+  consoleUrl: string | null;
   uptime: number;
   currentModelName: string;
   currentProviderName: string;
@@ -86,6 +87,7 @@ export function LegacyHomeShell({
   statusClass,
   appVersion,
   servicePort,
+  consoleUrl,
   uptime,
   currentModelName,
   currentProviderName,
@@ -153,6 +155,7 @@ export function LegacyHomeShell({
               running={running}
               loading={loading}
               servicePort={servicePort}
+              consoleUrl={consoleUrl}
               uptime={uptime}
               currentModelName={currentModelName}
               currentProviderName={currentProviderName}

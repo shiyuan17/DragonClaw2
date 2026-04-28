@@ -81,6 +81,7 @@ export interface CurrentConfig {
     provider: string | null;
     model: string | null;
     base_url: string | null;
+    gateway_token?: string | null;
 }
 
 // ===== UI Constants =====

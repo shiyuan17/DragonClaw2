@@ -8,9 +8,9 @@
  * All Tauri command calls match the actual backend API exactly.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { ProviderInfo, CurrentConfig } from "../types";
+import type { CurrentConfig, ProviderInfo } from "../types";
 
 interface UseConfigOptions {
     addLog: (level: string, message: string) => void;
@@ -30,7 +30,6 @@ export function useConfig({ addLog, running, setRunning, setStartingUp }: UseCon
     const [configStatus, setConfigStatus] = useState("");
     const [currentConfig, setCurrentConfig] = useState<CurrentConfig | null>(null);
 
-    // Modal state
     const [showKeyModal, setShowKeyModal] = useState(false);
     const [showResetModal, setShowResetModal] = useState(false);
     const [showReinstallModal, setShowReinstallModal] = useState(false);
@@ -40,28 +39,37 @@ export function useConfig({ addLog, running, setRunning, setStartingUp }: UseCon
 
     const filteredProviders = providers.filter((p) => p.category === selectedCategory);
 
-    // Load providers on mount
     useEffect(() => {
         invoke<ProviderInfo[]>("get_providers").then(setProviders).catch(() => { });
+    }, []);
+
+    const refreshCurrentConfig = useCallback(async () => {
+        const config = await invoke<CurrentConfig>("get_current_config");
+        setCurrentConfig(config);
+        return config;
     }, []);
 
     const checkApiKey = useCallback(async () => {
         try {
             await invoke("migrate_gateway_config").catch(() => { });
-            const config = await invoke<CurrentConfig>("get_current_config");
-            setCurrentConfig(config);
+            const config = await refreshCurrentConfig();
             if (!config.has_api_key) {
                 setShowKeyModal(true);
             }
         } catch {
             setShowKeyModal(true);
         }
-    }, []);
+    }, [refreshCurrentConfig]);
 
     const handleSaveConfig = useCallback(async () => {
-        if (!apiKeyInput.trim()) { setConfigStatus("[!] 请输入 API Key"); return; }
+        if (!apiKeyInput.trim()) {
+            setConfigStatus("[!] 璇疯緭鍏?API Key");
+            return;
+        }
+
         setConfigSaving(true);
         setConfigStatus("");
+
         try {
             const result = await invoke<string>("save_api_config", {
                 provider: selectedProvider || "custom",
@@ -69,36 +77,34 @@ export function useConfig({ addLog, running, setRunning, setStartingUp }: UseCon
                 baseUrl: baseUrlInput || null,
                 model: selectedModel || null,
             });
+
             setConfigStatus(result);
             addLog("success", result);
-            // Use full provider/model format for consistent matching
-            const fullModelId = selectedModel
-                ? `${selectedProvider || "custom"}/${selectedModel}`
-                : null;
-            setCurrentConfig({ has_api_key: true, provider: selectedProvider, model: fullModelId, base_url: baseUrlInput || null });
+            await refreshCurrentConfig().catch((error) => {
+                addLog("error", `鍒锋柊褰撳墠閰嶇疆澶辫触: ${error}`);
+            });
             setShowKeyModal(false);
-            setConfigVersion(v => v + 1);
+            setConfigVersion((value) => value + 1);
 
-            // Auto-restart service if running, so new config takes effect
             if (running) {
-                addLog("info", "正在重启服务以加载新配置...");
+                addLog("info", "姝ｅ湪閲嶅惎鏈嶅姟浠ュ姞杞芥柊閰嶇疆...");
                 try {
                     await invoke("stop_service");
                     setRunning(false);
-                    await new Promise(r => setTimeout(r, 1000));
+                    await new Promise((resolve) => setTimeout(resolve, 1000));
                     await invoke("start_service_silent");
                     setRunning(true);
-                    addLog("success", "[OK] 服务已重启，新配置生效");
+                    addLog("success", "[OK] 鏈嶅姟宸查噸鍚紝鏂伴厤缃敓鏁?");
                 } catch (err) {
-                    addLog("error", `重启服务失败: ${err}`);
+                    addLog("error", `閲嶅惎鏈嶅姟澶辫触: ${err}`);
                 }
             }
         } catch (err) {
-            setConfigStatus(`[!] 保存失败: ${err}`);
+            setConfigStatus(`[!] 淇濆瓨澶辫触: ${err}`);
         } finally {
             setConfigSaving(false);
         }
-    }, [apiKeyInput, selectedProvider, baseUrlInput, selectedModel, addLog, running, setRunning]);
+    }, [apiKeyInput, selectedProvider, baseUrlInput, selectedModel, addLog, refreshCurrentConfig, running, setRunning]);
 
     const handleSetModel = useCallback(async (modelId: string) => {
         try {
@@ -106,41 +112,37 @@ export function useConfig({ addLog, running, setRunning, setStartingUp }: UseCon
             setSelectedModel(modelId);
             setConfigStatus(result);
             addLog("success", result);
-            // Extract provider from "provider/model" format
-            const parts = modelId.split("/");
-            const newProvider = parts.length > 1 ? parts[0] : undefined;
-            setCurrentConfig(prev => prev ? {
-                ...prev,
-                model: modelId,
-                provider: newProvider ?? prev.provider,
-            } : prev);
-            // Trigger all consumers to reload (ModelsTab, etc.)
-            setConfigVersion(v => v + 1);
-            // Auto-restart service if running so new model takes effect
+            await refreshCurrentConfig().catch((error) => {
+                addLog("error", `鍒锋柊褰撳墠閰嶇疆澶辫触: ${error}`);
+            });
+            setConfigVersion((value) => value + 1);
+
             if (running) {
                 setStartingUp?.(true);
-                addLog("info", "正在重启服务以加载新模型...");
+                addLog("info", "姝ｅ湪閲嶅惎鏈嶅姟浠ュ姞杞芥柊妯″瀷...");
                 try {
                     await invoke("stop_service");
                     setRunning(false);
-                    await new Promise(r => setTimeout(r, 1000));
+                    await new Promise((resolve) => setTimeout(resolve, 1000));
                     await invoke("start_service_silent");
                     setRunning(true);
-                    // Don't clear startingUp here — useService event listener
-                    // clears it when service emits "started on" / "ready on"
-                    addLog("success", "[OK] 服务已重启，新模型配置生效");
+                    addLog("success", "[OK] 鏈嶅姟宸查噸鍚紝鏂版ā鍨嬮厤缃敓鏁?");
                 } catch (restartErr) {
-                    addLog("error", `重启服务失败: ${restartErr}`);
+                    addLog("error", `閲嶅惎鏈嶅姟澶辫触: ${restartErr}`);
                     setStartingUp?.(false);
                 }
             }
         } catch (err) {
-            setConfigStatus(`[!] 切换失败: ${err}`);
+            setConfigStatus(`[!] 鍒囨崲澶辫触: ${err}`);
         }
-    }, [addLog]);
+    }, [addLog, refreshCurrentConfig, running, setRunning, setStartingUp]);
 
     const handleOpenRegister = useCallback(async (providerId: string) => {
-        try { await invoke("open_provider_register", { providerId }); } catch { /* */ }
+        try {
+            await invoke("open_provider_register", { providerId });
+        } catch {
+            // ignore
+        }
     }, []);
 
     const handleReset = useCallback(() => {
@@ -151,7 +153,9 @@ export function useConfig({ addLog, running, setRunning, setStartingUp }: UseCon
         setShowResetModal(false);
         try {
             const result = await invoke<string>("reset_config");
-            setCurrentConfig({ has_api_key: false, provider: null, model: null, base_url: null });
+            await refreshCurrentConfig().catch(() => {
+                setCurrentConfig({ has_api_key: false, provider: null, model: null, base_url: null, gateway_token: null });
+            });
             setApiKeyInput("");
             setSelectedProvider("");
             setSelectedModel("");
@@ -160,15 +164,14 @@ export function useConfig({ addLog, running, setRunning, setStartingUp }: UseCon
             addLog("success", result);
             setShowKeyModal(true);
         } catch (err) {
-            addLog("error", `重置失败: ${err}`);
+            addLog("error", `閲嶇疆澶辫触: ${err}`);
         }
-    }, [addLog]);
+    }, [addLog, refreshCurrentConfig]);
 
     const handleReinstall = useCallback(() => {
         setShowReinstallModal(true);
     }, []);
 
-    /** Reset modal form state — call before opening ApiKeyModal */
     const resetModalState = useCallback(() => {
         setSelectedCategory("free");
         setSelectedProvider("");
@@ -188,13 +191,11 @@ export function useConfig({ addLog, running, setRunning, setStartingUp }: UseCon
         configSaving, configStatus, setConfigStatus,
         currentConfig, setCurrentConfig,
         filteredProviders,
-        // Modals
         showKeyModal, setShowKeyModal,
         showResetModal, setShowResetModal,
         showReinstallModal, setShowReinstallModal,
         showModelSwitchModal, setShowModelSwitchModal,
         infoModalTitle, setInfoModalTitle,
-        // Actions
         checkApiKey,
         handleSaveConfig,
         handleSetModel,
