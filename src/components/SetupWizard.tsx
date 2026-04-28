@@ -5,14 +5,15 @@
  * SetupWizard Component
  *
  * Renders the startup/initialization screen and the workspace selection wizard.
- * Shown during "checking", "initializing", and "workspace" phases.
+ * Shown during "checking", "initializing", "launching", and "workspace" phases.
  *
- * Phase 5.4: Aurora floating style — no card, white→gray gradient title,
- * white glow progress bar, error modal.
+ * Phase 5.14: light high-fidelity onboarding refresh based on the guide mock.
  */
 
+import type { ReactNode } from "react";
 import { motion } from "framer-motion";
-import { FolderOpen, FolderSearch, AlertTriangle, Loader2 } from "lucide-react";
+import { AlertTriangle, FolderSearch } from "lucide-react";
+import logo from "../assets/dragonclaw-logo.png";
 import type { AppPhase } from "../types";
 import { Modal } from "./ui/Modal";
 
@@ -30,6 +31,95 @@ interface SetupWizardProps {
     onConfirmWorkspace: () => void;
 }
 
+interface SetupStageLayoutProps {
+    appVersion: string;
+    title: string;
+    description: string;
+    progress?: number;
+    showPercent?: boolean;
+    children?: ReactNode;
+    actions?: ReactNode;
+}
+
+function SetupStageLayout({
+    appVersion,
+    title,
+    description,
+    progress,
+    showPercent = false,
+    children,
+    actions,
+}: SetupStageLayoutProps) {
+    const hasProgress = typeof progress === "number";
+    const clampedProgress = hasProgress ? Math.max(0, Math.min(100, progress)) : 0;
+
+    return (
+        <div className="startup-container">
+            <motion.div
+                className="startup-box"
+                initial={{ opacity: 0, y: 24, scale: 0.985 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ duration: 0.55, ease: "easeOut" }}
+            >
+                <img src={logo} alt="DragonClaw" className="startup-hero-logo" />
+                <h1 className="startup-title">{title}</h1>
+
+                {hasProgress && (
+                    <div className="startup-progress-group" aria-hidden="true">
+                        <div className="startup-progress-bar">
+                            <motion.div
+                                className="startup-progress-fill"
+                                initial={{ width: 0 }}
+                                animate={{ width: `${clampedProgress}%` }}
+                                transition={{ ease: "easeOut", duration: 0.35 }}
+                            />
+                        </div>
+                        {showPercent && clampedProgress > 0 && (
+                            <div className="startup-percent">{clampedProgress}%</div>
+                        )}
+                    </div>
+                )}
+
+                <p className="startup-description">{description}</p>
+                {children}
+                {actions}
+            </motion.div>
+            <div className="startup-version">v{appVersion}</div>
+        </div>
+    );
+}
+
+function SetupErrorModal({
+    title,
+    retryLabel,
+    setupError,
+    onDismissError,
+    onRetry,
+}: {
+    title: string;
+    retryLabel: string;
+    setupError: string | null;
+    onDismissError: () => void;
+    onRetry: () => void;
+}) {
+    return (
+        <Modal show={!!setupError} onClose={onDismissError} title={title} maxWidth={420}>
+            <div className="startup-error-card">
+                <AlertTriangle size={18} strokeWidth={1.5} className="startup-error-icon" />
+                <div className="startup-error-text">{setupError}</div>
+            </div>
+            <div className="startup-modal-actions">
+                <button className="btn-secondary" style={{ flex: 1 }} onClick={onDismissError}>
+                    关闭
+                </button>
+                <button className="btn-primary btn-hero" style={{ flex: 1 }} onClick={onRetry}>
+                    {retryLabel}
+                </button>
+            </div>
+        </Modal>
+    );
+}
+
 export function SetupWizard({
     phase,
     progress,
@@ -43,134 +133,91 @@ export function SetupWizard({
     onSelectFolder,
     onConfirmWorkspace,
 }: SetupWizardProps) {
-    // Init Screen (Checking / Initializing) — Aurora Floating Style
     if (phase === "checking" || phase === "initializing") {
-        return (
-            <div className="startup-container">
-                <motion.div
-                    className="startup-box"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.6, ease: "easeOut" }}
-                >
-                    <div className="startup-logo">DragonClaw</div>
-                    <div className="startup-version">v{appVersion}</div>
-                    <div className="startup-progress-bar">
-                        <motion.div
-                            className="startup-progress-fill"
-                            initial={{ width: 0 }}
-                            animate={{ width: `${progress}%` }}
-                            transition={{ ease: "easeOut", duration: 0.3 }}
-                        />
-                    </div>
-                    <div className="startup-text">{progressMsg}</div>
-                    {progress > 0 && (
-                        <div className="startup-percent">{progress}%</div>
-                    )}
-                </motion.div>
+        const title = phase === "checking" ? "DragonClaw 正在检查环境" : "DragonClaw 正在初始化";
+        const description = progressMsg || (phase === "checking"
+            ? "正在确认运行环境与关键依赖，请稍候。"
+            : "正在准备必要组件与默认配置，请稍候。");
 
-                {/* Error Modal */}
-                <Modal
-                    show={!!setupError}
-                    onClose={onDismissError}
+        return (
+            <>
+                <SetupStageLayout
+                    appVersion={appVersion}
+                    title={title}
+                    description={description}
+                    progress={progress}
+                    showPercent
+                />
+                <SetupErrorModal
                     title="初始化失败"
-                    maxWidth={420}
-                >
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginTop: 16, marginBottom: 20, padding: 16, background: 'rgba(239, 68, 68, 0.06)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(239, 68, 68, 0.15)' }}>
-                        <AlertTriangle size={18} strokeWidth={1.5} style={{ color: 'var(--accent-red)', flexShrink: 0, marginTop: 2 }} />
-                        <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, wordBreak: 'break-word' }}>
-                            {setupError}
-                        </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 10 }}>
-                        <button className="btn-secondary" style={{ flex: 1 }} onClick={onDismissError}>关闭</button>
-                        <button className="btn-primary btn-hero" style={{ flex: 1 }} onClick={onRetry}>重试</button>
-                    </div>
-                </Modal>
-            </div>
+                    retryLabel="重试"
+                    setupError={setupError}
+                    onDismissError={onDismissError}
+                    onRetry={onRetry}
+                />
+            </>
         );
     }
 
-    // Launching Screen — service starts silently from the guide flow
     if (phase === "launching") {
         return (
-            <div className="startup-container">
-                <motion.div
-                    className="startup-box"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.5, ease: "easeOut" }}
-                >
-                    <div className="startup-logo">正在启动引擎</div>
-                    <div className="startup-version">v{appVersion}</div>
-                    <Loader2 className="spin" size={30} strokeWidth={1.5} />
-                    <div className="startup-progress-bar">
-                        <motion.div
-                            className="startup-progress-fill"
-                            initial={{ width: 0 }}
-                            animate={{ width: `${Math.max(progress, 12)}%` }}
-                            transition={{ ease: "easeOut", duration: 0.3 }}
-                        />
-                    </div>
-                    <div className="startup-text">{progressMsg || "正在启动 OpenClaw 服务..."}</div>
-                    {setupError && (
-                        <button className="btn-primary btn-hero start" onClick={onRetry} disabled={loading} style={{ marginTop: 12 }}>
+            <>
+                <SetupStageLayout
+                    appVersion={appVersion}
+                    title="DragonClaw 即将就绪"
+                    description={progressMsg || "正在准备你的工作台，请稍候。"}
+                    progress={Math.max(progress, 12)}
+                    actions={setupError ? (
+                        <button
+                            className="startup-inline-action"
+                            onClick={onRetry}
+                            disabled={loading}
+                            type="button"
+                        >
                             重试启动
                         </button>
-                    )}
-                </motion.div>
-
-                <Modal
-                    show={!!setupError}
-                    onClose={onDismissError}
+                    ) : undefined}
+                />
+                <SetupErrorModal
                     title="启动失败"
-                    maxWidth={420}
-                >
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginTop: 16, marginBottom: 20, padding: 16, background: 'rgba(239, 68, 68, 0.06)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(239, 68, 68, 0.15)' }}>
-                        <AlertTriangle size={18} strokeWidth={1.5} style={{ color: 'var(--accent-red)', flexShrink: 0, marginTop: 2 }} />
-                        <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, wordBreak: 'break-word' }}>
-                            {setupError}
-                        </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 10 }}>
-                        <button className="btn-secondary" style={{ flex: 1 }} onClick={onDismissError}>关闭</button>
-                        <button className="btn-primary btn-hero" style={{ flex: 1 }} onClick={onRetry}>重试启动</button>
-                    </div>
-                </Modal>
-            </div>
+                    retryLabel="重试启动"
+                    setupError={setupError}
+                    onDismissError={onDismissError}
+                    onRetry={onRetry}
+                />
+            </>
         );
     }
 
-    // Workspace Wizard
     if (phase === "workspace") {
         return (
-            <div className="startup-container">
-                <motion.div
-                    className="startup-box"
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ duration: 0.4 }}
-                >
-                    <div className="startup-logo">
-                        <FolderOpen size={24} strokeWidth={1.5} style={{ verticalAlign: 'middle', marginRight: 10 }} />
-                        选择工作区目录
-                    </div>
-                    <p className="modal-desc" style={{ marginBottom: 20, textAlign: 'center' }}>
-                        AI 会在这个文件夹里帮你写代码。你可以选择任意文件夹，或使用默认目录。
-                    </p>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <code className="workspace-path">
-                            {workspacePath || "~/Documents/OpenClaw-Projects (默认)"}
-                        </code>
-                        <button className="btn-quick" onClick={onSelectFolder}>
-                            <FolderSearch size={14} strokeWidth={1.5} style={{ verticalAlign: 'middle', marginRight: 4 }} />浏览...
-                        </button>
-                    </div>
-                    <button className="btn-primary btn-hero start" onClick={onConfirmWorkspace} disabled={loading} style={{ marginTop: 16 }}>
+            <SetupStageLayout
+                appVersion={appVersion}
+                title="选择工作区"
+                description="DragonClaw 会在这个目录中创建和管理工作项目。你可以选择任意文件夹，或直接沿用默认目录。"
+            >
+                <div className="startup-workspace-panel">
+                    <div className="startup-workspace-label">当前工作区目录</div>
+                    <code className="workspace-path">
+                        {workspacePath || "~/Documents/OpenClaw-Projects (默认)"}
+                    </code>
+                </div>
+
+                <div className="startup-actions">
+                    <button className="startup-btn startup-btn--secondary" onClick={onSelectFolder} type="button">
+                        <FolderSearch size={14} strokeWidth={1.6} />
+                        浏览目录
+                    </button>
+                    <button
+                        className="startup-btn startup-btn--primary"
+                        onClick={onConfirmWorkspace}
+                        disabled={loading}
+                        type="button"
+                    >
                         确认并继续
                     </button>
-                </motion.div>
-            </div>
+                </div>
+            </SetupStageLayout>
         );
     }
 

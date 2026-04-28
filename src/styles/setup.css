@@ -1,180 +1,282 @@
-/* Copyright (C) 2026 shiyuan — GPL-3.0-only */
-/* ===== Setup Screen — Aurora Floating Style ===== */
+/* Copyright (C) 2026 shiyuan - GPL-3.0-only */
+/* ===== Setup Screen - Light Guide Refresh ===== */
 
-/* --- Aurora Background Container --- */
 .startup-container {
   position: relative;
+  min-height: 100vh;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100vh;
-  background: var(--bg-primary);
+  padding: 36px 24px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 24%, rgba(229, 240, 255, 0.92), transparent 32%),
+    radial-gradient(circle at 22% 18%, rgba(215, 233, 255, 0.9), transparent 34%),
+    radial-gradient(circle at 82% 72%, rgba(220, 238, 255, 0.78), transparent 28%),
+    linear-gradient(180deg, #f9fbff 0%, #eef5ff 100%);
 }
 
-/* Aurora layer 1: purple wisp */
-.startup-container::before {
-  content: "";
-  position: absolute;
-  top: 2%;
-  left: 15%;
-  width: 500px;
-  height: 300px;
-  background: radial-gradient(ellipse, rgba(139, 92, 246, 0.15), transparent 70%);
-  filter: blur(70px);
-  animation: aurora-drift-1 8s ease-in-out infinite alternate;
-  pointer-events: none;
-  z-index: 0;
-}
-
-/* Aurora layer 2: cyan wisp */
+.startup-container::before,
 .startup-container::after {
   content: "";
   position: absolute;
-  top: 0%;
-  right: 10%;
-  width: 450px;
-  height: 280px;
-  background: radial-gradient(ellipse, rgba(6, 182, 212, 0.12), transparent 70%);
-  filter: blur(60px);
-  animation: aurora-drift-2 10s ease-in-out infinite alternate;
+  inset: auto;
+  border-radius: 999px;
   pointer-events: none;
+  filter: blur(48px);
+  opacity: 0.95;
   z-index: 0;
 }
 
-@keyframes aurora-drift-1 {
-  0% {
-    transform: translate(0, 0) scale(1);
-    opacity: 0.8;
-  }
-
-  100% {
-    transform: translate(60px, 20px) scale(1.15);
-    opacity: 1;
-  }
+.startup-container::before {
+  top: 8%;
+  left: 10%;
+  width: min(42vw, 560px);
+  height: min(26vw, 320px);
+  background: radial-gradient(circle, rgba(210, 228, 255, 0.82) 0%, rgba(210, 228, 255, 0) 72%);
+  animation: startup-cloud-drift-left 11s ease-in-out infinite alternate;
 }
 
-@keyframes aurora-drift-2 {
-  0% {
-    transform: translate(0, 0) scale(1.1);
-    opacity: 0.7;
-  }
-
-  100% {
-    transform: translate(-50px, 15px) scale(1);
-    opacity: 1;
-  }
+.startup-container::after {
+  right: 6%;
+  bottom: 8%;
+  width: min(38vw, 520px);
+  height: min(24vw, 300px);
+  background: radial-gradient(circle, rgba(226, 239, 255, 0.78) 0%, rgba(226, 239, 255, 0) 74%);
+  animation: startup-cloud-drift-right 14s ease-in-out infinite alternate;
 }
 
-/* --- Floating Content (no card/box) --- */
 .startup-box {
   position: relative;
   z-index: 1;
+  width: min(100%, 760px);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
-  padding: 32px 40px;
+  gap: 10px;
   text-align: center;
-  min-width: 320px;
-  /* No background, no border, no shadow — pure floating */
 }
 
-/* --- Title: White → Gray gradient (matches .about-logo) --- */
-.startup-logo {
-  font-size: 38px;
-  font-weight: 800;
-  letter-spacing: -1px;
-  background: linear-gradient(135deg, #ffffff, #6b7280);
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  text-shadow: 0 0 40px rgba(255, 255, 255, 0.08);
+.startup-hero-logo {
+  width: clamp(104px, 12vw, 126px);
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 14px 22px rgba(225, 88, 88, 0.12));
 }
 
-/* --- Version subtitle --- */
-.startup-version {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.35);
-  font-family: 'JetBrains Mono', monospace;
-  letter-spacing: 0.5px;
-  margin-top: -8px;
+.startup-title {
+  max-width: none;
+  font-size: clamp(22px, 2.35vw, 30px);
+  line-height: 1.12;
+  font-weight: 680;
+  letter-spacing: -0.03em;
+  color: #214f8d;
+  white-space: nowrap;
+  margin-top: -10px;
 }
 
-/* --- Progress Bar with White Glow --- */
+.startup-description {
+  max-width: none;
+  margin-top: 2px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  white-space: nowrap;
+  color: rgba(78, 116, 167, 0.88);
+  min-height: 0;
+}
+
+.startup-progress-group {
+  width: min(100%, 460px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
 .startup-progress-bar {
-  width: 320px;
-  height: 4px;
-  background: rgba(255, 255, 255, 0.06);
-  border-radius: 2px;
-  overflow: visible;
-  position: relative;
-  margin-top: 8px;
+  width: 100%;
+  height: 10px;
+  padding: 1px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(176, 201, 233, 0.56);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.65),
+    0 12px 32px rgba(190, 213, 240, 0.18);
 }
 
 .startup-progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.5));
-  border-radius: 2px;
   position: relative;
+  height: 100%;
+  min-width: 10px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(111, 160, 225, 0.86), rgba(191, 224, 255, 0.96));
   box-shadow:
-    0 0 8px rgba(255, 255, 255, 0.3),
-    0 0 20px rgba(255, 255, 255, 0.15);
+    0 0 0 1px rgba(255, 255, 255, 0.28),
+    0 8px 18px rgba(133, 179, 231, 0.28);
+  overflow: hidden;
 }
 
-/* Shimmer sweep on the progress fill */
 .startup-progress-fill::after {
   content: "";
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(90deg,
-      transparent 0%,
-      rgba(255, 255, 255, 0.4) 50%,
-      transparent 100%);
-  background-size: 200% 100%;
-  animation: progress-shimmer 2s linear infinite;
+  inset: 0;
   border-radius: inherit;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.44) 50%, transparent 100%);
+  background-size: 180% 100%;
+  animation: startup-progress-shimmer 2.4s linear infinite;
 }
 
-@keyframes progress-shimmer {
-  0% {
-    background-position: -200% center;
-  }
-
-  100% {
-    background-position: 200% center;
-  }
-}
-
-/* --- Progress percentage text --- */
 .startup-percent {
+  font-family: "JetBrains Mono", monospace;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.3);
-  font-family: 'JetBrains Mono', monospace;
-  margin-top: 2px;
+  letter-spacing: 0.08em;
+  color: rgba(97, 132, 177, 0.76);
 }
 
-/* --- Status text --- */
-.startup-text {
-  font-size: 13px;
-  color: var(--text-secondary);
-  font-family: 'JetBrains Mono', monospace;
+.startup-version {
+  position: absolute;
+  right: 22px;
+  bottom: 16px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: rgba(112, 142, 181, 0.72);
+  z-index: 1;
 }
 
-/* --- Workspace Path Badge --- */
+.startup-inline-action,
+.startup-btn {
+  border: none;
+  border-radius: 999px;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    opacity 160ms ease;
+}
+
+.startup-inline-action:hover,
+.startup-btn:hover {
+  transform: translateY(-1px);
+}
+
+.startup-inline-action:disabled,
+.startup-btn:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.startup-inline-action {
+  margin-top: 6px;
+  padding: 10px 18px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(182, 204, 231, 0.8);
+  color: #2c5d9d;
+  box-shadow: 0 10px 26px rgba(195, 214, 239, 0.2);
+}
+
+.startup-workspace-panel {
+  width: min(100%, 520px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 6px;
+  padding: 18px 20px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(184, 206, 232, 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 18px 40px rgba(201, 218, 240, 0.18);
+}
+
+.startup-workspace-label {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(99, 130, 169, 0.84);
+}
+
 .workspace-path {
-  font-size: 12px;
-  padding: 8px 14px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
+  width: 100%;
+  overflow-wrap: anywhere;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(248, 252, 255, 0.88);
+  border: 1px solid rgba(199, 218, 241, 0.82);
+  color: #38629a;
 }
 
-/* --- Legacy .init-screen (kept for compat) --- */
+.startup-actions {
+  width: min(100%, 520px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.startup-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 156px;
+  padding: 13px 22px;
+}
+
+.startup-btn--secondary {
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(184, 206, 232, 0.84);
+  color: #2f629f;
+  box-shadow: 0 12px 28px rgba(198, 217, 241, 0.18);
+}
+
+.startup-btn--primary {
+  background: linear-gradient(135deg, #2f67ad, #4f89ca);
+  color: #f9fcff;
+  box-shadow: 0 16px 34px rgba(105, 145, 198, 0.28);
+}
+
+.startup-error-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 16px;
+  margin-bottom: 20px;
+  padding: 16px;
+  background: rgba(239, 68, 68, 0.06);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  border-radius: var(--radius-sm);
+}
+
+.startup-error-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--accent-red);
+}
+
+.startup-error-text {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+.startup-modal-actions {
+  display: flex;
+  gap: 10px;
+}
+
 .init-screen {
   flex: 1;
   display: flex;
@@ -196,7 +298,6 @@
   text-align: center;
 }
 
-/* Legacy progress bar classes (may be used elsewhere) */
 .progress-bar-container {
   width: 320px;
   height: 6px;
@@ -210,4 +311,100 @@
   background: linear-gradient(90deg, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.4));
   border-radius: 3px;
   transition: width 0.5s;
+}
+
+@keyframes startup-progress-shimmer {
+  0% {
+    background-position: -180% center;
+  }
+
+  100% {
+    background-position: 180% center;
+  }
+}
+
+@keyframes startup-cloud-drift-left {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  100% {
+    transform: translate3d(42px, 18px, 0) scale(1.08);
+  }
+}
+
+@keyframes startup-cloud-drift-right {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  100% {
+    transform: translate3d(-38px, -16px, 0) scale(1.06);
+  }
+}
+
+@media (max-width: 720px) {
+  .startup-container {
+    padding-top: 42px;
+    padding-bottom: 42px;
+  }
+
+  .startup-title {
+    font-size: clamp(21px, 5.8vw, 27px);
+    white-space: normal;
+    margin-top: -6px;
+  }
+
+  .startup-description {
+    font-size: 12.5px;
+    white-space: nowrap;
+  }
+
+  .startup-actions {
+    flex-direction: column;
+  }
+
+  .startup-btn {
+    width: 100%;
+  }
+
+  .startup-workspace-panel,
+  .startup-actions,
+  .startup-progress-group {
+    width: min(100%, 430px);
+  }
+}
+
+@media (max-width: 480px) {
+  .startup-container {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .startup-box {
+    gap: 12px;
+  }
+
+  .startup-description {
+    max-width: 28ch;
+    white-space: normal;
+  }
+
+  .startup-title {
+    white-space: normal;
+  }
+
+  .startup-workspace-panel {
+    padding: 16px;
+    border-radius: 20px;
+  }
+
+  .workspace-path {
+    padding: 12px 14px;
+  }
+
+  .startup-version {
+    right: 18px;
+    bottom: 14px;
+  }
 }
