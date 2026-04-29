@@ -2566,11 +2566,14 @@
   background:
     radial-gradient(circle at top, rgba(233, 242, 255, 0.72), rgba(221, 233, 248, 0.56) 38%, rgba(196, 212, 233, 0.42) 100%);
   backdrop-filter: blur(10px);
+  padding: 24px 18px;
+  box-sizing: border-box;
 }
 
 .modal-box.workspace-resource-modal__surface {
   width: min(920px, 88vw);
-  max-height: min(720px, 84vh);
+  height: min(720px, calc(100vh - 48px));
+  max-height: min(720px, calc(100vh - 48px));
   padding: 0;
   border-radius: 24px;
   border: 1px solid rgba(210, 225, 244, 0.96);
@@ -2578,6 +2581,8 @@
   box-shadow:
     0 24px 56px rgba(103, 127, 159, 0.14),
     0 1px 0 rgba(255, 255, 255, 0.9) inset;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
@@ -2615,6 +2620,7 @@
 .workspace-resource-modal__body {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: 12px;
   padding: 12px;
   background:
@@ -2752,12 +2758,14 @@
 
 .workspace-resource-modal__list {
   flex: 1 1 auto;
-  min-height: 260px;
+  min-height: 0;
   overflow: auto;
   display: grid;
   gap: 8px;
   padding-right: 2px;
   align-content: start;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .workspace-resource-modal__item {
@@ -3065,7 +3073,8 @@
 
   .modal-box.workspace-resource-modal__surface {
     width: min(920px, 94vw);
-    max-height: 86vh;
+    height: min(720px, calc(100vh - 32px));
+    max-height: min(720px, calc(100vh - 32px));
   }
 
   .workspace-memory-modal__layout {
@@ -3103,6 +3112,10 @@
   .workspace-memory-modal__editor,
   .workspace-resource-modal__body {
     padding: 10px;
+  }
+
+  .modal-overlay.workspace-resource-modal__overlay {
+    padding: 12px;
   }
 
   .workspace-memory-modal__file-item,
