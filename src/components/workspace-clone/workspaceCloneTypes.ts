@@ -8,6 +8,19 @@ export type WorkspaceComposerModal = "knowledge" | "knowledge-delete" | "slash-c
 export type WorkspaceSuggestionMode = "slash" | "mention" | null;
 export type ChannelBindingView = "wechat" | "feishu" | "manual";
 export type WorkspaceModelProviderApi = "openai-completions" | "anthropic-messages";
+export type WorkspaceSkillCategory = "builtIn" | "installed";
+export type WorkspaceToolCategory =
+  | "all"
+  | "fs"
+  | "runtime"
+  | "web"
+  | "memory"
+  | "sessions"
+  | "messaging"
+  | "ui"
+  | "automation"
+  | "nodes"
+  | "other";
 
 export interface WorkspaceMenuItem {
   key: WorkspaceMenuKey;
@@ -75,6 +88,15 @@ export interface WorkspaceResourceItem {
   tag?: string;
 }
 
+export interface WorkspaceSkillOption {
+  id: string;
+  title: string;
+  description: string;
+  tag: string;
+  category: WorkspaceSkillCategory;
+  selected: boolean;
+}
+
 export interface WorkspaceMemoryFile {
   id: string;
   title: string;
@@ -93,6 +115,31 @@ export interface WorkspaceToolItem {
   title: string;
   description: string;
   enabled: boolean;
+  tag?: string;
+}
+
+export interface WorkspaceToolOption {
+  id: string;
+  title: string;
+  description: string;
+  tag: string;
+  category: Exclude<WorkspaceToolCategory, "all">;
+  categoryLabel: string;
+  groupKey: Exclude<WorkspaceToolCategory, "all">;
+  groupLabel: string;
+  selected: boolean;
+}
+
+export interface WorkspaceToolCategoryCount {
+  key: Exclude<WorkspaceToolCategory, "all">;
+  label: string;
+  count: number;
+}
+
+export interface WorkspaceToolGroup {
+  key: Exclude<WorkspaceToolCategory, "all">;
+  label: string;
+  tools: WorkspaceToolOption[];
 }
 
 export interface WorkspaceModelVendorPreset {
@@ -202,4 +249,45 @@ export interface WorkspaceGatewaySessionsListResult {
     contextTokens: number | null;
   };
   sessions: WorkspaceGatewaySessionRow[];
+}
+
+export interface WorkspaceGatewaySkillStatusEntry {
+  name: string;
+  description: string;
+  source: string;
+  bundled: boolean;
+  disabled: boolean;
+  blockedByAllowlist: boolean;
+  eligible: boolean;
+}
+
+export interface WorkspaceGatewaySkillStatusResult {
+  workspaceDir: string;
+  managedSkillsDir: string;
+  skills: WorkspaceGatewaySkillStatusEntry[];
+}
+
+export interface WorkspaceInstalledSkillInfo {
+  name: string;
+  description: string;
+  path: string;
+}
+
+export interface WorkspaceAgentSkillConfig {
+  agentId: string;
+  selectedSkillNames: string[];
+}
+
+export interface WorkspaceAgentSkillSaveResult {
+  agentId: string;
+  selectedSkillNames: string[];
+  appliesOnNextMessage: boolean;
+}
+
+export interface WorkspaceAgentToolConfig {
+  agentId: string;
+  profile?: string | null;
+  allow?: string[] | null;
+  alsoAllow?: string[] | null;
+  deny?: string[] | null;
 }

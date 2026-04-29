@@ -7,6 +7,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::config::get_user_openclaw_dir;
+use crate::paths;
 
 /// Info returned for each discovered agent
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -44,9 +45,66 @@ fn agents_dir() -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-fn skills_dir() -> Result<PathBuf, String> {
+fn global_skills_dir() -> Result<PathBuf, String> {
     let dir = get_user_openclaw_dir()?.join("skills");
     Ok(dir)
+}
+
+fn workspace_skills_dir() -> Result<PathBuf, String> {
+    Ok(paths::main_workspace_dir()?.join("skills"))
+}
+
+fn collect_skills_from_dir(dir: &PathBuf, skills: &mut Vec<SkillInfo>) {
+    if !dir.exists() {
+        return;
+    }
+
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        if !entry.path().is_dir() {
+            continue;
+        }
+        let skill_md = entry.path().join("SKILL.md");
+        if !skill_md.exists() {
+            continue;
+        }
+
+        let content = match fs::read_to_string(&skill_md) {
+            Ok(content) => content,
+            Err(_) => continue,
+        };
+
+        let mut skill_name = entry.file_name().to_string_lossy().to_string();
+        let mut description = String::new();
+
+        if content.starts_with("---") {
+            if let Some(end) = content[3..].find("---") {
+                let frontmatter = &content[3..3 + end];
+                for line in frontmatter.lines() {
+                    let line = line.trim();
+                    if let Some(val) = line.strip_prefix("name:") {
+                        skill_name = val.trim().trim_matches('"').trim_matches('\'').to_string();
+                    } else if let Some(val) = line.strip_prefix("description:") {
+                        description = val.trim().trim_matches('"').trim_matches('\'').to_string();
+                    }
+                }
+            }
+        }
+
+        if skills.iter().any(|skill| skill.name.eq_ignore_ascii_case(&skill_name)) {
+            continue;
+        }
+
+        skills.push(SkillInfo {
+            name: skill_name,
+            description,
+            path: entry.path().to_string_lossy().to_string(),
+        });
+    }
 }
 
 /// Extract the primary model from an agent's models.json
@@ -255,59 +313,12 @@ pub fn delete_agent(name: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn list_skills() -> Result<Vec<SkillInfo>, String> {
-    let dir = match skills_dir() {
-        Ok(d) => d,
-        Err(_) => return Ok(Vec::new()),
-    };
-
-    if !dir.exists() {
-        return Ok(Vec::new());
-    }
-
     let mut skills = Vec::new();
-
-    let entries = match fs::read_dir(&dir) {
-        Ok(e) => e,
-        Err(_) => return Ok(Vec::new()),
-    };
-
-    for entry in entries.flatten() {
-        if !entry.path().is_dir() {
-            continue;
-        }
-        let skill_md = entry.path().join("SKILL.md");
-        if !skill_md.exists() {
-            continue;
-        }
-
-        let content = match fs::read_to_string(&skill_md) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-
-        // Parse YAML frontmatter: ---\nname: ...\ndescription: ...\n---
-        let mut skill_name = entry.file_name().to_string_lossy().to_string();
-        let mut description = String::new();
-
-        if content.starts_with("---") {
-            if let Some(end) = content[3..].find("---") {
-                let frontmatter = &content[3..3 + end];
-                for line in frontmatter.lines() {
-                    let line = line.trim();
-                    if let Some(val) = line.strip_prefix("name:") {
-                        skill_name = val.trim().trim_matches('"').trim_matches('\'').to_string();
-                    } else if let Some(val) = line.strip_prefix("description:") {
-                        description = val.trim().trim_matches('"').trim_matches('\'').to_string();
-                    }
-                }
-            }
-        }
-
-        skills.push(SkillInfo {
-            name: skill_name,
-            description,
-            path: entry.path().to_string_lossy().to_string(),
-        });
+    if let Ok(dir) = workspace_skills_dir() {
+        collect_skills_from_dir(&dir, &mut skills);
+    }
+    if let Ok(dir) = global_skills_dir() {
+        collect_skills_from_dir(&dir, &mut skills);
     }
 
     skills.sort_by(|a, b| a.name.cmp(&b.name));

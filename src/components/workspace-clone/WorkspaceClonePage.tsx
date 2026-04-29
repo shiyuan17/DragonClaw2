@@ -15,12 +15,18 @@ import {
   WORKSPACE_HISTORY,
   WORKSPACE_MENU_ITEMS,
   WORKSPACE_SCHEDULES,
-  WORKSPACE_SKILL_ITEMS,
-  WORKSPACE_TOOLS,
   WORKSPACE_TYPE_TABS,
   WORKSPACE_WORKBENCH,
 } from "./workspaceCloneData";
-import { formatAgentAvatar } from "./workspaceCloneGateway";
+import {
+  buildSkillOptions,
+  buildSkillSummaryItems,
+  buildToolOptions,
+  buildToolSummaryItems,
+  getWorkspaceToolProfileLabel,
+  normalizeWorkspaceStringList,
+} from "./workspaceCloneAgentResources";
+import { formatAgentAvatar, isGatewaySkillStatusResult } from "./workspaceCloneGateway";
 import {
   buildWorkspaceMemoryResourceItems,
   createWorkspaceFallbackMemoryFiles,
@@ -39,10 +45,19 @@ import type {
   ChannelBindingModalState,
   DirectoryContextMenuState,
   WorkspaceEntity,
+  WorkspaceAgentSkillConfig,
+  WorkspaceAgentSkillSaveResult,
+  WorkspaceAgentToolConfig,
+  WorkspaceGatewaySkillStatusResult,
+  WorkspaceInstalledSkillInfo,
   WorkspaceMemoryFile,
   WorkspaceRelatedResource,
+  WorkspaceSkillCategory,
+  WorkspaceSkillOption,
   WorkspaceSessionSectionKey,
   WorkspaceSidebarAdminPanel,
+  WorkspaceToolCategory,
+  WorkspaceToolOption,
   WorkspaceUtilityPanel,
 } from "./workspaceCloneTypes";
 
@@ -190,7 +205,6 @@ function buildGatewayAgentEntities(params: {
 
 export function WorkspaceClonePage({
   running,
-  loading,
   servicePort,
   gatewayToken,
   consoleUrl,
@@ -200,10 +214,8 @@ export function WorkspaceClonePage({
   currentConfig,
   configVersion,
   providers,
-  workspacePath,
   logs,
   handleStart,
-  handleStop,
   refreshCurrentConfig,
   handleSetModel,
   handleUpsertSavedProviderConfig,
@@ -228,19 +240,36 @@ export function WorkspaceClonePage({
   });
   const [showAgentInfo, setShowAgentInfo] = useState(false);
   const [showMemoryModal, setShowMemoryModal] = useState(false);
+  const [showSkillsModal, setShowSkillsModal] = useState(false);
+  const [showToolsModal, setShowToolsModal] = useState(false);
   const [showRuntimeLogDetail, setShowRuntimeLogDetail] = useState(false);
   const [showSettingsTextPreview, setShowSettingsTextPreview] = useState(false);
   const [relatedResource, setRelatedResource] = useState<WorkspaceRelatedResource>(null);
   const [isModelConfigOpen, setIsModelConfigOpen] = useState(false);
   const [savedProviders, setSavedProviders] = useState<SavedProvider[]>([]);
   const [memoryFiles, setMemoryFiles] = useState<WorkspaceMemoryFile[]>(createWorkspaceFallbackMemoryFiles);
-  const [memorySearch, setMemorySearch] = useState("");
   const [selectedMemoryFileId, setSelectedMemoryFileId] = useState("agents.md");
   const [memoryDraftContent, setMemoryDraftContent] = useState("");
   const [memoryLoading, setMemoryLoading] = useState(false);
   const [memorySaving, setMemorySaving] = useState(false);
   const [memoryNotice, setMemoryNotice] = useState("");
   const [memoryError, setMemoryError] = useState("");
+  const [skillOptions, setSkillOptions] = useState<WorkspaceSkillOption[]>([]);
+  const [skillSearch, setSkillSearch] = useState("");
+  const [skillCategory, setSkillCategory] = useState<WorkspaceSkillCategory>("builtIn");
+  const [skillDraftIds, setSkillDraftIds] = useState<string[]>([]);
+  const [skillLoading, setSkillLoading] = useState(false);
+  const [skillSaving, setSkillSaving] = useState(false);
+  const [skillNotice, setSkillNotice] = useState("");
+  const [skillError, setSkillError] = useState("");
+  const [toolOptions, setToolOptions] = useState<WorkspaceToolOption[]>([]);
+  const [toolCategory, setToolCategory] = useState<WorkspaceToolCategory>("all");
+  const [toolProfileLabel, setToolProfileLabel] = useState("全量");
+  const [toolDraftIds, setToolDraftIds] = useState<string[]>([]);
+  const [toolLoading, setToolLoading] = useState(false);
+  const [toolSaving, setToolSaving] = useState(false);
+  const [toolNotice, setToolNotice] = useState("");
+  const [toolError, setToolError] = useState("");
   const homepageChat = useWorkspaceGatewayChat({ running, servicePort, gatewayToken });
 
   const refreshSavedProviders = useCallback(async () => {
@@ -337,11 +366,23 @@ export function WorkspaceClonePage({
       setRelatedResource(null);
       setShowAgentInfo(false);
       setShowMemoryModal(false);
-      setMemorySearch("");
+      setShowSkillsModal(false);
+      setShowToolsModal(false);
       setMemoryLoading(false);
       setMemorySaving(false);
       setMemoryNotice("");
       setMemoryError("");
+      setSkillSearch("");
+      setSkillCategory("builtIn");
+      setSkillLoading(false);
+      setSkillSaving(false);
+      setSkillNotice("");
+      setSkillError("");
+      setToolCategory("all");
+      setToolLoading(false);
+      setToolSaving(false);
+      setToolNotice("");
+      setToolError("");
       setShowRuntimeLogDetail(false);
       setShowSettingsTextPreview(false);
     }
@@ -384,6 +425,16 @@ export function WorkspaceClonePage({
   const clearMemoryStatus = useCallback(() => {
     setMemoryNotice("");
     setMemoryError("");
+  }, []);
+
+  const clearSkillStatus = useCallback(() => {
+    setSkillNotice("");
+    setSkillError("");
+  }, []);
+
+  const clearToolStatus = useCallback(() => {
+    setToolNotice("");
+    setToolError("");
   }, []);
 
   const refreshMemoryFiles = useCallback(async (options?: {
@@ -437,6 +488,101 @@ export function WorkspaceClonePage({
     }
   }, [currentMemoryAgentId, memoryFiles.length, selectedMemoryFileId]);
 
+  const refreshSkillOptions = useCallback(async (options?: { showLoading?: boolean }) => {
+    const showLoading = options?.showLoading ?? false;
+    if (!currentMemoryAgentId) {
+      setSkillOptions([]);
+      setSkillDraftIds([]);
+      return;
+    }
+
+    if (showLoading) {
+      setSkillLoading(true);
+    }
+
+    try {
+      const savedConfig = await invoke<WorkspaceAgentSkillConfig>("get_agent_skill_config", {
+        agentId: currentMemoryAgentId,
+      });
+
+      let nextOptions: WorkspaceSkillOption[] = [];
+      if (homepageChat.connected) {
+        const report = await homepageChat.request<WorkspaceGatewaySkillStatusResult>("skills.status", {
+          agentId: currentMemoryAgentId,
+        });
+        if (!isGatewaySkillStatusResult(report)) {
+          throw new Error("skills.status 返回格式不正确");
+        }
+        nextOptions = buildSkillOptions({
+          selectedSkillNames: savedConfig.selectedSkillNames,
+          statusEntries: report.skills,
+        });
+      } else {
+        const installedSkills = await invoke<WorkspaceInstalledSkillInfo[]>("list_skills");
+        nextOptions = buildSkillOptions({
+          selectedSkillNames: savedConfig.selectedSkillNames,
+          installedSkills,
+        });
+      }
+
+      setSkillOptions(nextOptions);
+      setSkillDraftIds(nextOptions.filter((item) => item.selected).map((item) => item.id));
+      setSkillError("");
+    } catch (skillLoadError) {
+      setSkillError(skillLoadError instanceof Error ? skillLoadError.message : "读取技能配置失败");
+      setSkillOptions((current) =>
+        current.length > 0
+          ? current
+          : buildSkillOptions({
+              selectedSkillNames: [],
+            }),
+      );
+      setSkillDraftIds((current) => current);
+    } finally {
+      if (showLoading) {
+        setSkillLoading(false);
+      }
+    }
+  }, [currentMemoryAgentId, homepageChat.connected, homepageChat.request]);
+
+  const refreshToolOptions = useCallback(async (options?: { showLoading?: boolean }) => {
+    const showLoading = options?.showLoading ?? false;
+    if (!currentMemoryAgentId) {
+      setToolOptions([]);
+      setToolProfileLabel("全量");
+      setToolDraftIds([]);
+      return;
+    }
+
+    if (showLoading) {
+      setToolLoading(true);
+    }
+
+    try {
+      const config = await invoke<WorkspaceAgentToolConfig>("get_agent_tool_config", {
+        agentId: currentMemoryAgentId,
+      });
+      const nextOptions = buildToolOptions(config);
+      setToolOptions(nextOptions);
+      setToolProfileLabel(getWorkspaceToolProfileLabel(config));
+      setToolDraftIds(nextOptions.filter((item) => item.selected).map((item) => item.id));
+      setToolError("");
+    } catch (toolLoadError) {
+      setToolError(toolLoadError instanceof Error ? toolLoadError.message : "读取工具权限失败");
+      const fallbackOptions = buildToolOptions({
+        agentId: currentMemoryAgentId,
+        profile: "full",
+      });
+      setToolOptions(fallbackOptions);
+      setToolProfileLabel("全量");
+      setToolDraftIds(fallbackOptions.map((item) => item.id));
+    } finally {
+      if (showLoading) {
+        setToolLoading(false);
+      }
+    }
+  }, [currentMemoryAgentId]);
+
   const openMemoryModal = useCallback(() => {
     setActiveSessionSection("memory");
     setShowMemoryModal(true);
@@ -449,11 +595,39 @@ export function WorkspaceClonePage({
 
   const closeMemoryModal = useCallback(() => {
     setShowMemoryModal(false);
-    setMemorySearch("");
     setMemoryLoading(false);
     setMemorySaving(false);
     clearMemoryStatus();
   }, [clearMemoryStatus]);
+
+  const openSkillsModal = useCallback(() => {
+    setActiveSessionSection("skills");
+    setShowSkillsModal(true);
+    clearSkillStatus();
+    void refreshSkillOptions({ showLoading: true });
+  }, [clearSkillStatus, refreshSkillOptions]);
+
+  const closeSkillsModal = useCallback(() => {
+    setShowSkillsModal(false);
+    setSkillSearch("");
+    setSkillLoading(false);
+    setSkillSaving(false);
+    clearSkillStatus();
+  }, [clearSkillStatus]);
+
+  const openToolsModal = useCallback(() => {
+    setActiveSessionSection("tools");
+    setShowToolsModal(true);
+    clearToolStatus();
+    void refreshToolOptions({ showLoading: true });
+  }, [clearToolStatus, refreshToolOptions]);
+
+  const closeToolsModal = useCallback(() => {
+    setShowToolsModal(false);
+    setToolLoading(false);
+    setToolSaving(false);
+    clearToolStatus();
+  }, [clearToolStatus]);
 
   const handleSelectMemoryFile = useCallback((fileId: string) => {
     setSelectedMemoryFileId(fileId);
@@ -485,6 +659,72 @@ export function WorkspaceClonePage({
     }
   }, [activeMemoryFile, clearMemoryStatus, currentMemoryAgentId, memoryDraftContent, refreshMemoryFiles]);
 
+  const handleToggleSkill = useCallback((skillId: string) => {
+    setSkillDraftIds((current) =>
+      current.includes(skillId)
+        ? current.filter((item) => item !== skillId)
+        : [...current, skillId],
+    );
+  }, []);
+
+  const handleToggleTool = useCallback((toolId: string) => {
+    setToolDraftIds((current) =>
+      current.includes(toolId)
+        ? current.filter((item) => item !== toolId)
+        : [...current, toolId],
+    );
+  }, []);
+
+  const handleSaveSkills = useCallback(async () => {
+    if (!currentMemoryAgentId) {
+      setSkillError("当前未选中 Agent");
+      return;
+    }
+
+    clearSkillStatus();
+    setSkillSaving(true);
+
+    try {
+      const result = await invoke<WorkspaceAgentSkillSaveResult>("save_agent_skill_config", {
+        agentId: currentMemoryAgentId,
+        skillNames: normalizeWorkspaceStringList(skillDraftIds),
+      });
+      setSkillNotice(
+        result.appliesOnNextMessage
+          ? "技能配置已保存，下一条消息会按新配置生效。"
+          : "技能配置已保存。",
+      );
+      await refreshSkillOptions();
+    } catch (saveError) {
+      setSkillError(saveError instanceof Error ? saveError.message : "保存技能配置失败");
+    } finally {
+      setSkillSaving(false);
+    }
+  }, [clearSkillStatus, currentMemoryAgentId, refreshSkillOptions, skillDraftIds]);
+
+  const handleSaveTools = useCallback(async () => {
+    if (!currentMemoryAgentId) {
+      setToolError("当前未选中 Agent");
+      return;
+    }
+
+    clearToolStatus();
+    setToolSaving(true);
+
+    try {
+      await invoke<WorkspaceAgentToolConfig>("save_agent_tool_config", {
+        agentId: currentMemoryAgentId,
+        selectedToolNames: normalizeWorkspaceStringList(toolDraftIds),
+      });
+      setToolNotice("工具权限已保存，下一条消息会按新权限执行。");
+      await refreshToolOptions();
+    } catch (saveError) {
+      setToolError(saveError instanceof Error ? saveError.message : "保存工具权限失败");
+    } finally {
+      setToolSaving(false);
+    }
+  }, [clearToolStatus, currentMemoryAgentId, refreshToolOptions, toolDraftIds]);
+
   useEffect(() => {
     if (!currentMemoryAgentId) {
       return;
@@ -492,9 +732,51 @@ export function WorkspaceClonePage({
     void refreshMemoryFiles({ preferredId: selectedMemoryFileId || undefined });
   }, [currentMemoryAgentId, refreshMemoryFiles, selectedMemoryFileId]);
 
+  useEffect(() => {
+    setSkillSearch("");
+    setSkillCategory("builtIn");
+    setToolCategory("all");
+    clearSkillStatus();
+    clearToolStatus();
+  }, [clearSkillStatus, clearToolStatus, currentMemoryAgentId]);
+
+  useEffect(() => {
+    if (!currentMemoryAgentId) {
+      return;
+    }
+    void refreshSkillOptions();
+  }, [currentMemoryAgentId, refreshSkillOptions]);
+
+  useEffect(() => {
+    if (!currentMemoryAgentId) {
+      return;
+    }
+    void refreshToolOptions();
+  }, [currentMemoryAgentId, refreshToolOptions]);
+
   const uptimeLabel = running ? formatUptime(uptime) : "未启动";
   const derivedLogs = useMemo(() => buildWorkspaceLogs(logs), [logs]);
   const memoryResourceItems = useMemo(() => buildWorkspaceMemoryResourceItems(memoryFiles), [memoryFiles]);
+  const skillResourceItems = useMemo(
+    () =>
+      buildSkillSummaryItems(
+        skillOptions.map((item) => ({
+          ...item,
+          selected: skillDraftIds.includes(item.id),
+        })),
+      ),
+    [skillDraftIds, skillOptions],
+  );
+  const toolResourceItems = useMemo(
+    () =>
+      buildToolSummaryItems(
+        toolOptions.map((item) => ({
+          ...item,
+          selected: toolDraftIds.includes(item.id),
+        })),
+      ),
+    [toolDraftIds, toolOptions],
+  );
   const openModelConfigModal = () => setIsModelConfigOpen(true);
 
   const openChannelBindingModal = (entityId: string) => {
@@ -521,6 +803,14 @@ export function WorkspaceClonePage({
     if (!resource) return;
     if (resource === "memory") {
       openMemoryModal();
+      return;
+    }
+    if (resource === "skills") {
+      openSkillsModal();
+      return;
+    }
+    if (resource === "tools") {
+      openToolsModal();
       return;
     }
     setActiveSessionSection(resource);
@@ -675,21 +965,18 @@ export function WorkspaceClonePage({
                 schedules={WORKSPACE_SCHEDULES}
                 workbenchItems={WORKSPACE_WORKBENCH}
                 memoryItems={memoryResourceItems}
-                skillItems={WORKSPACE_SKILL_ITEMS}
+                skillItems={skillResourceItems}
                 commandItems={WORKSPACE_COMMAND_ITEMS}
                 channelItems={WORKSPACE_CHANNEL_ITEMS}
-                toolItems={WORKSPACE_TOOLS}
+                toolItems={toolResourceItems}
                 currentModelName={workspaceModelName}
                 currentProviderName={workspaceProviderName}
-                workspacePath={workspacePath}
                 running={running}
-                loading={loading}
                 onCloseUtilityPanel={() => setUtilityPanel(null)}
                 onSelectSessionSection={setActiveSessionSection}
                 onOpenRelatedResource={handleOpenRelatedResource}
                 onOpenSettingsTextPreview={() => setShowSettingsTextPreview(true)}
                 onStart={handleStart}
-                onStop={handleStop}
                 onOpenConsole={() => {
                   if (consoleUrl) {
                     void invoke("open_url", { url: consoleUrl });
@@ -723,22 +1010,41 @@ export function WorkspaceClonePage({
           selectedEntity={selectedEntity}
           showAgentInfo={showAgentInfo}
           showMemoryModal={showMemoryModal}
+          showSkillsModal={showSkillsModal}
+          showToolsModal={showToolsModal}
           showRuntimeLogDetail={showRuntimeLogDetail}
           showSettingsTextPreview={showSettingsTextPreview}
           relatedResource={relatedResource}
           memoryFiles={memoryFiles}
-          memorySearch={memorySearch}
           selectedMemoryFileId={selectedMemoryFileId}
           memoryDraftContent={memoryDraftContent}
           memoryLoading={memoryLoading}
           memorySaving={memorySaving}
           memoryNotice={memoryNotice}
           memoryError={memoryError}
+          skillSearch={skillSearch}
+          skillCategory={skillCategory}
+          skillOptions={skillOptions.map((item) => ({
+            ...item,
+            selected: skillDraftIds.includes(item.id),
+          }))}
+          skillLoading={skillLoading}
+          skillSaving={skillSaving}
+          skillNotice={skillNotice}
+          skillError={skillError}
+          toolCategory={toolCategory}
+          toolProfileLabel={toolProfileLabel}
+          toolOptions={toolOptions.map((item) => ({
+            ...item,
+            selected: toolDraftIds.includes(item.id),
+          }))}
+          toolLoading={toolLoading}
+          toolSaving={toolSaving}
+          toolNotice={toolNotice}
+          toolError={toolError}
           memoryItems={memoryResourceItems}
-          skillItems={WORKSPACE_SKILL_ITEMS}
           commandItems={WORKSPACE_COMMAND_ITEMS}
           channelItems={WORKSPACE_CHANNEL_ITEMS}
-          toolItems={WORKSPACE_TOOLS}
           scheduleItems={WORKSPACE_SCHEDULES.map((item) => ({
             id: item.id,
             title: item.title,
@@ -754,11 +1060,35 @@ export function WorkspaceClonePage({
               preferredId: selectedMemoryFileId || undefined,
             });
           }}
-          onUpdateMemorySearch={setMemorySearch}
           onSelectMemoryFile={handleSelectMemoryFile}
           onUpdateMemoryDraftContent={setMemoryDraftContent}
           onSaveMemoryFile={() => {
             void handleSaveMemoryFile();
+          }}
+          onCloseSkillsModal={closeSkillsModal}
+          onRefreshSkillsModal={() => {
+            clearSkillStatus();
+            void refreshSkillOptions({ showLoading: true });
+          }}
+          onUpdateSkillSearch={setSkillSearch}
+          onChangeSkillCategory={setSkillCategory}
+          onToggleSkill={handleToggleSkill}
+          onSelectAllSkills={() => setSkillDraftIds(skillOptions.map((item) => item.id))}
+          onClearSkills={() => setSkillDraftIds([])}
+          onSaveSkills={() => {
+            void handleSaveSkills();
+          }}
+          onCloseToolsModal={closeToolsModal}
+          onRefreshToolsModal={() => {
+            clearToolStatus();
+            void refreshToolOptions({ showLoading: true });
+          }}
+          onChangeToolCategory={setToolCategory}
+          onToggleTool={handleToggleTool}
+          onSelectAllTools={() => setToolDraftIds(toolOptions.map((item) => item.id))}
+          onClearTools={() => setToolDraftIds([])}
+          onSaveTools={() => {
+            void handleSaveTools();
           }}
           onCloseRuntimeLogDetail={() => setShowRuntimeLogDetail(false)}
           onCloseSettingsTextPreview={() => setShowSettingsTextPreview(false)}

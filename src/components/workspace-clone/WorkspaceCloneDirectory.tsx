@@ -49,6 +49,7 @@ export function WorkspaceCloneDirectory({
 }: WorkspaceCloneDirectoryProps) {
   const visibleEntities = activeType === "agents" ? entities : entities.slice(0, 3);
   const emptyLabel = activeType === "channels" ? "暂无频道结果" : activeType === "teams" ? "暂无团队结果" : "暂无数字员工结果";
+  const directoryToggleLabel = isCollapsed ? "展开目录栏" : "收起目录栏";
 
   return (
     <>
@@ -56,7 +57,22 @@ export function WorkspaceCloneDirectory({
         {isCollapsed ? (
           <>
             <div className="workspace-clone__directory-mini-head">
-              <button className="workspace-clone__mini-create" type="button" title="快捷新建">+</button>
+              <button
+                className="workspace-clone__directory-edge-btn workspace-clone__directory-edge-btn--inline"
+                type="button"
+                title={directoryToggleLabel}
+                onClick={onToggleCollapsed}
+              >
+                <WorkspaceCloneIcon
+                  name="chevron-right"
+                  size={14}
+                  strokeWidth={2}
+                  className={`workspace-clone__directory-edge-icon ${isCollapsed ? "is-collapsed" : ""}`}
+                />
+              </button>
+              <button className="workspace-clone__mini-create" type="button" title="快捷新建">
+                <WorkspaceCloneIcon name="plus" size={14} strokeWidth={2} />
+              </button>
             </div>
             <div className="workspace-clone__mini-tabs">
               {typeTabs.map((tab) => (
@@ -97,7 +113,24 @@ export function WorkspaceCloneDirectory({
                   placeholder={activeType === "channels" ? "搜索频道" : activeType === "teams" ? "搜索团队" : "搜索 Agent"}
                 />
               </label>
-              <button className="workspace-clone__icon-btn" type="button" title="快捷新建">+</button>
+              <div className="workspace-clone__directory-head-actions">
+                <button className="workspace-clone__icon-btn" type="button" title="快捷新建">
+                  <WorkspaceCloneIcon name="plus" size={14} strokeWidth={2} />
+                </button>
+                <button
+                  className="workspace-clone__directory-edge-btn workspace-clone__directory-edge-btn--inline"
+                  type="button"
+                  title={directoryToggleLabel}
+                  onClick={onToggleCollapsed}
+                >
+                  <WorkspaceCloneIcon
+                    name="chevron-right"
+                    size={14}
+                    strokeWidth={2}
+                    className={`workspace-clone__directory-edge-icon ${isCollapsed ? "is-collapsed" : ""}`}
+                  />
+                </button>
+              </div>
             </header>
 
             <div className="workspace-clone__type-tabs">
@@ -165,15 +198,6 @@ export function WorkspaceCloneDirectory({
             </section>
           </>
         )}
-
-        <button
-          className="workspace-clone__directory-edge-btn"
-          type="button"
-          title={isCollapsed ? "展开目录栏" : "收起目录栏"}
-          onClick={onToggleCollapsed}
-        >
-          {isCollapsed ? ">" : "<"}
-        </button>
 
         {contextMenu && (
           <div className="workspace-clone__context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>

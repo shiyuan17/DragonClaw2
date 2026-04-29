@@ -541,6 +541,17 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     }
   }, [currentSessionKey, loadHistory, loadSessions]);
 
+  const request = useCallback(
+    async <T = unknown>(method: string, params?: unknown) => {
+      const client = clientRef.current;
+      if (!client?.connected) {
+        throw new Error("gateway not connected");
+      }
+      return client.request<T>(method, params);
+    },
+    [],
+  );
+
   const historyItems = useMemo(() => {
     if (!selectedAgentId) {
       return [];
@@ -608,6 +619,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     resettingSession,
     isGenerating: Boolean(activeRunId),
     selectAgent: setSelectedAgentId,
+    request,
     sendMessage,
     abortMessage,
     resetSession,

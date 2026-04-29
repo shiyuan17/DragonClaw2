@@ -1,6 +1,7 @@
 import type {
   WorkspaceGatewayAgentRow,
   WorkspaceGatewayAgentsListResult,
+  WorkspaceGatewaySkillStatusResult,
   WorkspaceGatewaySessionRow,
   WorkspaceGatewaySessionsListResult,
 } from "./workspaceCloneTypes";
@@ -334,4 +335,13 @@ export function isSessionsListResult(payload: unknown): payload is WorkspaceGate
 
   const candidate = payload as Partial<WorkspaceGatewaySessionsListResult>;
   return typeof candidate.ts === "number" && Array.isArray(candidate.sessions);
+}
+
+export function isGatewaySkillStatusResult(payload: unknown): payload is WorkspaceGatewaySkillStatusResult {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+
+  const candidate = payload as Partial<WorkspaceGatewaySkillStatusResult>;
+  return typeof candidate.workspaceDir === "string" && Array.isArray(candidate.skills);
 }

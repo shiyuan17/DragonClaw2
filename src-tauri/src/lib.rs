@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // This file is part of DragonClaw. See LICENSE for details.
 mod agents;
+mod agent_resource_settings;
 mod config;
 mod diagnostics;
 mod download;
@@ -161,6 +162,10 @@ pub fn run() {
             // Provider management
             provider_mgr::list_saved_providers,
             provider_mgr::list_all_models,
+            agent_resource_settings::get_agent_skill_config,
+            agent_resource_settings::save_agent_skill_config,
+            agent_resource_settings::get_agent_tool_config,
+            agent_resource_settings::save_agent_tool_config,
             provider_mgr::delete_provider,
             provider_mgr::remove_model_from_provider,
             provider_mgr::add_model_to_provider,

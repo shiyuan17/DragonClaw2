@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import { Modal } from "../ui/Modal";
-import { filterWorkspaceMemoryFiles } from "./workspaceCloneMemory";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
 import type { WorkspaceMemoryFile } from "./workspaceCloneTypes";
 
@@ -8,7 +7,6 @@ interface WorkspaceCloneMemoryModalProps {
   show: boolean;
   agentName: string;
   files: WorkspaceMemoryFile[];
-  search: string;
   selectedFileId: string;
   draftContent: string;
   loading: boolean;
@@ -17,7 +15,6 @@ interface WorkspaceCloneMemoryModalProps {
   error: string;
   onClose: () => void;
   onRefresh: () => void;
-  onSearchChange: (value: string) => void;
   onSelectFile: (fileId: string) => void;
   onDraftChange: (value: string) => void;
   onSave: () => void;
@@ -27,7 +24,6 @@ export function WorkspaceCloneMemoryModal({
   show,
   agentName,
   files,
-  search,
   selectedFileId,
   draftContent,
   loading,
@@ -36,19 +32,13 @@ export function WorkspaceCloneMemoryModal({
   error,
   onClose,
   onRefresh,
-  onSearchChange,
   onSelectFile,
   onDraftChange,
   onSave,
 }: WorkspaceCloneMemoryModalProps) {
-  const filteredFiles = useMemo(
-    () => filterWorkspaceMemoryFiles(files, search),
-    [files, search],
-  );
-
   const activeFile = useMemo(
-    () => files.find((file) => file.id === selectedFileId) ?? filteredFiles[0] ?? null,
-    [files, filteredFiles, selectedFileId],
+    () => files.find((file) => file.id === selectedFileId) ?? files[0] ?? null,
+    [files, selectedFileId],
   );
 
   return (
@@ -91,20 +81,11 @@ export function WorkspaceCloneMemoryModal({
 
           <div className="workspace-memory-modal__layout">
             <aside className="workspace-memory-modal__sidebar">
-              <div className="workspace-memory-modal__search">
-                <input
-                  type="search"
-                  value={search}
-                  placeholder="筛选标题、路径或摘要"
-                  onChange={(event) => onSearchChange(event.target.value)}
-                />
-              </div>
-
               <div className="workspace-memory-modal__file-list">
-                {filteredFiles.length === 0 ? (
-                  <div className="workspace-memory-modal__empty">没有匹配的记忆文件。</div>
+                {files.length === 0 ? (
+                  <div className="workspace-memory-modal__empty">暂无可编辑的记忆文件。</div>
                 ) : (
-                  filteredFiles.map((file) => (
+                  files.map((file) => (
                     <button
                       key={file.id}
                       type="button"
@@ -158,7 +139,7 @@ export function WorkspaceCloneMemoryModal({
                     <textarea
                       className="workspace-memory-modal__textarea"
                       value={draftContent}
-                      placeholder="在这里编写当前 Agent 的记忆内容"
+                      placeholder="在这里编辑当前 Agent 的记忆内容"
                       onChange={(event) => onDraftChange(event.target.value)}
                       disabled={saving}
                     />

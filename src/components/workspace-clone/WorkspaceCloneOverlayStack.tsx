@@ -1,42 +1,73 @@
 import { Modal, ModalFooter } from "../ui/Modal";
 import { WorkspaceCloneMemoryModal } from "./WorkspaceCloneMemoryModal";
-import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
+import { WorkspaceCloneSkillsModal } from "./WorkspaceCloneSkillsModal";
+import { WorkspaceCloneToolPermissionsModal } from "./WorkspaceCloneToolPermissionsModal";
 import type {
   WorkspaceEntity,
   WorkspaceMemoryFile,
   WorkspaceRelatedResource,
   WorkspaceResourceItem,
-  WorkspaceToolItem,
+  WorkspaceSkillCategory,
+  WorkspaceSkillOption,
+  WorkspaceToolCategory,
+  WorkspaceToolOption,
 } from "./workspaceCloneTypes";
 
 interface WorkspaceCloneOverlayStackProps {
   selectedEntity: WorkspaceEntity | null;
   showAgentInfo: boolean;
   showMemoryModal: boolean;
+  showSkillsModal: boolean;
+  showToolsModal: boolean;
   showRuntimeLogDetail: boolean;
   showSettingsTextPreview: boolean;
   relatedResource: WorkspaceRelatedResource;
   memoryFiles: WorkspaceMemoryFile[];
-  memorySearch: string;
   selectedMemoryFileId: string;
   memoryDraftContent: string;
   memoryLoading: boolean;
   memorySaving: boolean;
   memoryNotice: string;
   memoryError: string;
+  skillSearch: string;
+  skillCategory: WorkspaceSkillCategory;
+  skillOptions: WorkspaceSkillOption[];
+  skillLoading: boolean;
+  skillSaving: boolean;
+  skillNotice: string;
+  skillError: string;
+  toolCategory: WorkspaceToolCategory;
+  toolProfileLabel: string;
+  toolOptions: WorkspaceToolOption[];
+  toolLoading: boolean;
+  toolSaving: boolean;
+  toolNotice: string;
+  toolError: string;
   memoryItems: WorkspaceResourceItem[];
-  skillItems: WorkspaceResourceItem[];
   commandItems: WorkspaceResourceItem[];
   channelItems: WorkspaceResourceItem[];
-  toolItems: WorkspaceToolItem[];
   scheduleItems: WorkspaceResourceItem[];
   onCloseAgentInfo: () => void;
   onCloseMemoryModal: () => void;
   onRefreshMemoryModal: () => void;
-  onUpdateMemorySearch: (value: string) => void;
   onSelectMemoryFile: (fileId: string) => void;
   onUpdateMemoryDraftContent: (value: string) => void;
   onSaveMemoryFile: () => void;
+  onCloseSkillsModal: () => void;
+  onRefreshSkillsModal: () => void;
+  onUpdateSkillSearch: (value: string) => void;
+  onChangeSkillCategory: (value: WorkspaceSkillCategory) => void;
+  onToggleSkill: (skillId: string) => void;
+  onSelectAllSkills: () => void;
+  onClearSkills: () => void;
+  onSaveSkills: () => void;
+  onCloseToolsModal: () => void;
+  onRefreshToolsModal: () => void;
+  onChangeToolCategory: (value: WorkspaceToolCategory) => void;
+  onToggleTool: (toolId: string) => void;
+  onSelectAllTools: () => void;
+  onClearTools: () => void;
+  onSaveTools: () => void;
   onCloseRuntimeLogDetail: () => void;
   onCloseSettingsTextPreview: () => void;
   onCloseRelatedResource: () => void;
@@ -46,45 +77,69 @@ export function WorkspaceCloneOverlayStack({
   selectedEntity,
   showAgentInfo,
   showMemoryModal,
+  showSkillsModal,
+  showToolsModal,
   showRuntimeLogDetail,
   showSettingsTextPreview,
   relatedResource,
   memoryFiles,
-  memorySearch,
   selectedMemoryFileId,
   memoryDraftContent,
   memoryLoading,
   memorySaving,
   memoryNotice,
   memoryError,
+  skillSearch,
+  skillCategory,
+  skillOptions,
+  skillLoading,
+  skillSaving,
+  skillNotice,
+  skillError,
+  toolCategory,
+  toolProfileLabel,
+  toolOptions,
+  toolLoading,
+  toolSaving,
+  toolNotice,
+  toolError,
   memoryItems,
-  skillItems,
   commandItems,
   channelItems,
-  toolItems,
   scheduleItems,
   onCloseAgentInfo,
   onCloseMemoryModal,
   onRefreshMemoryModal,
-  onUpdateMemorySearch,
   onSelectMemoryFile,
   onUpdateMemoryDraftContent,
   onSaveMemoryFile,
+  onCloseSkillsModal,
+  onRefreshSkillsModal,
+  onUpdateSkillSearch,
+  onChangeSkillCategory,
+  onToggleSkill,
+  onSelectAllSkills,
+  onClearSkills,
+  onSaveSkills,
+  onCloseToolsModal,
+  onRefreshToolsModal,
+  onChangeToolCategory,
+  onToggleTool,
+  onSelectAllTools,
+  onClearTools,
+  onSaveTools,
   onCloseRuntimeLogDetail,
   onCloseSettingsTextPreview,
   onCloseRelatedResource,
 }: WorkspaceCloneOverlayStackProps) {
-  const relatedTitleMap: Record<Exclude<WorkspaceRelatedResource, null | "memory">, string> = {
+  const relatedTitleMap: Record<Exclude<WorkspaceRelatedResource, null | "memory" | "skills" | "tools">, string> = {
     model: "模型资源面板",
-    skills: "技能库面板",
     commands: "命令面板",
-    tools: "工具权限面板",
     channel: "频道资源面板",
     schedule: "定时任务面板",
   };
 
   const relatedItemsMap = {
-    skills: skillItems,
     commands: commandItems,
     channel: channelItems,
     schedule: scheduleItems,
@@ -96,7 +151,7 @@ export function WorkspaceCloneOverlayStack({
         <div className="workspace-clone__dialog-body">
           <div className="workspace-clone__dialog-copy">
             <strong>{selectedEntity?.name || "main"}</strong>
-            <p>{selectedEntity?.subtitle || "当前仅保留 Agent 信息弹层的视觉骨架与字段布局。"}</p>
+            <p>{selectedEntity?.subtitle || "当前只保留 Agent 信息弹层的视觉结构与字段布局。"}</p>
           </div>
           <div className="workspace-clone__info-grid">
             <div><span>状态</span><strong>{selectedEntity?.status || "offline"}</strong></div>
@@ -114,7 +169,6 @@ export function WorkspaceCloneOverlayStack({
         show={showMemoryModal}
         agentName={selectedEntity?.name || "main"}
         files={memoryFiles}
-        search={memorySearch}
         selectedFileId={selectedMemoryFileId}
         draftContent={memoryDraftContent}
         loading={memoryLoading}
@@ -123,10 +177,48 @@ export function WorkspaceCloneOverlayStack({
         error={memoryError}
         onClose={onCloseMemoryModal}
         onRefresh={onRefreshMemoryModal}
-        onSearchChange={onUpdateMemorySearch}
         onSelectFile={onSelectMemoryFile}
         onDraftChange={onUpdateMemoryDraftContent}
         onSave={onSaveMemoryFile}
+      />
+
+      <WorkspaceCloneSkillsModal
+        show={showSkillsModal}
+        agentName={selectedEntity?.name || "main"}
+        items={skillOptions}
+        search={skillSearch}
+        activeCategory={skillCategory}
+        loading={skillLoading}
+        saving={skillSaving}
+        notice={skillNotice}
+        error={skillError}
+        onClose={onCloseSkillsModal}
+        onRefresh={onRefreshSkillsModal}
+        onSearchChange={onUpdateSkillSearch}
+        onChangeCategory={onChangeSkillCategory}
+        onToggleSkill={onToggleSkill}
+        onSelectAll={onSelectAllSkills}
+        onClear={onClearSkills}
+        onSave={onSaveSkills}
+      />
+
+      <WorkspaceCloneToolPermissionsModal
+        show={showToolsModal}
+        agentName={selectedEntity?.name || "main"}
+        items={toolOptions}
+        activeCategory={toolCategory}
+        profileLabel={toolProfileLabel}
+        loading={toolLoading}
+        saving={toolSaving}
+        notice={toolNotice}
+        error={toolError}
+        onClose={onCloseToolsModal}
+        onRefresh={onRefreshToolsModal}
+        onChangeCategory={onChangeToolCategory}
+        onToggleTool={onToggleTool}
+        onSelectAll={onSelectAllTools}
+        onClear={onClearTools}
+        onSave={onSaveTools}
       />
 
       <Modal show={showRuntimeLogDetail} onClose={onCloseRuntimeLogDetail} title="运行日志详情" maxWidth={760}>
@@ -168,15 +260,19 @@ export function WorkspaceCloneOverlayStack({
       </Modal>
 
       <Modal
-        show={Boolean(relatedResource && relatedResource !== "memory")}
+        show={Boolean(relatedResource && relatedResource !== "memory" && relatedResource !== "skills" && relatedResource !== "tools")}
         onClose={onCloseRelatedResource}
-        title={relatedResource && relatedResource !== "memory" ? relatedTitleMap[relatedResource] : ""}
+        title={
+          relatedResource && relatedResource !== "memory" && relatedResource !== "skills" && relatedResource !== "tools"
+            ? relatedTitleMap[relatedResource]
+            : ""
+        }
         maxWidth={860}
       >
         <div className="workspace-clone__dialog-body">
           <div className="workspace-clone__dialog-copy">
             <strong>Related Resource</strong>
-            <p>这里统一承接 model、skills、commands、tools、channel、schedule 的界面占位面板。</p>
+            <p>这里统一承接 model、commands、channel、schedule 的界面占位面板。</p>
           </div>
 
           {relatedResource === "model" && (
@@ -191,7 +287,7 @@ export function WorkspaceCloneOverlayStack({
             </div>
           )}
 
-          {(relatedResource === "skills" || relatedResource === "commands" || relatedResource === "channel" || relatedResource === "schedule") && (
+          {(relatedResource === "commands" || relatedResource === "channel" || relatedResource === "schedule") && (
             <div className="workspace-clone__resource-list">
               {(relatedItemsMap[relatedResource] || []).map((item) => (
                 <div key={item.id} className="workspace-clone__resource-row">
@@ -200,23 +296,6 @@ export function WorkspaceCloneOverlayStack({
                     <small>{item.subtitle}</small>
                   </div>
                   {item.tag && <span className="workspace-clone__resource-tag">{item.tag}</span>}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {relatedResource === "tools" && (
-            <div className="workspace-clone__resource-list">
-              {toolItems.map((item) => (
-                <div key={item.id} className="workspace-clone__resource-row">
-                  <div>
-                    <strong>{item.title}</strong>
-                    <small>{item.description}</small>
-                  </div>
-                  <button type="button" className={item.enabled ? "is-enabled" : ""}>
-                    <WorkspaceCloneIcon name="sparkles" size={14} strokeWidth={1.9} />
-                    {item.enabled ? "已启用" : "未启用"}
-                  </button>
                 </div>
               ))}
             </div>

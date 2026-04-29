@@ -36,15 +36,12 @@ interface WorkspaceCloneChatViewProps {
   toolItems: WorkspaceToolItem[];
   currentModelName: string;
   currentProviderName: string;
-  workspacePath: string;
   running: boolean;
-  loading: boolean;
   onCloseUtilityPanel: () => void;
   onSelectSessionSection: (section: WorkspaceSessionSectionKey) => void;
   onOpenRelatedResource: (resource: WorkspaceRelatedResource) => void;
   onOpenSettingsTextPreview: () => void;
   onStart: () => void;
-  onStop: () => void;
   onOpenConsole: () => void;
   onOpenModelConfig: () => void;
   onOpenLogs: () => void;
@@ -71,15 +68,12 @@ export function WorkspaceCloneChatView({
   toolItems,
   currentModelName,
   currentProviderName,
-  workspacePath,
   running,
-  loading,
   onCloseUtilityPanel,
   onSelectSessionSection,
   onOpenRelatedResource,
   onOpenSettingsTextPreview,
   onStart,
-  onStop,
   onOpenConsole,
   onOpenModelConfig,
   onOpenLogs,
@@ -230,17 +224,10 @@ export function WorkspaceCloneChatView({
         toolItems={toolItems}
         currentModelName={currentModelName}
         currentProviderName={currentProviderName}
-        workspacePath={workspacePath}
-        running={running}
-        loading={loading}
         onClose={onCloseUtilityPanel}
         onSelectSessionSection={onSelectSessionSection}
         onOpenRelatedResource={onOpenRelatedResource}
-        onOpenSettingsTextPreview={onOpenSettingsTextPreview}
         onOpenModelConfig={onOpenModelConfig}
-        onStart={onStart}
-        onStop={onStop}
-        onOpenConsole={onOpenConsole}
       />
     </div>
   );
