@@ -65,7 +65,7 @@ export function DashboardTab({
                     {running && (
                         <button
                             className="btn-secondary btn-hero-sub animate-fade-in"
-                            onClick={() => consoleUrl && invoke("open_url", { url: consoleUrl })}
+                            onClick={() => void invoke("open_console", { port: servicePort })}
                             disabled={!consoleUrl}
                         >
                             <Activity size={16} strokeWidth={2} /> 璁块棶鎺у埗鍙?

@@ -148,6 +148,10 @@ export function normalizeWorkspaceStringList(values: string[]) {
   return normalized;
 }
 
+function normalizeSkillName(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
 function expandToolGroups(values: string[]) {
   const expanded: string[] = [];
 
@@ -277,10 +281,12 @@ export function buildSkillOptions(params: {
   statusEntries?: WorkspaceGatewaySkillStatusEntry[];
   installedSkills?: WorkspaceInstalledSkillInfo[];
 }): WorkspaceSkillOption[] {
-  const selectedIds = new Set(normalizeWorkspaceStringList(params.selectedSkillNames));
+  const normalizedSelectedNames = normalizeWorkspaceStringList(params.selectedSkillNames);
+  const selectedIds = new Set(normalizedSelectedNames.map((item) => normalizeSkillName(item)));
   const map = new Map<string, WorkspaceSkillOption>();
 
   for (const entry of params.statusEntries ?? []) {
+    const key = normalizeSkillName(entry.name);
     const tag = entry.disabled
       ? "Disabled"
       : entry.blockedByAllowlist
@@ -288,34 +294,37 @@ export function buildSkillOptions(params: {
         : entry.bundled
           ? "Built-in"
           : "Installed";
-    map.set(entry.name, {
+    map.set(key, {
       id: entry.name,
       title: entry.name,
       description: entry.description || "该技能暂无额外说明。",
       tag,
       category: entry.bundled ? "builtIn" : "installed",
-      selected: selectedIds.has(entry.name),
+      selected: selectedIds.has(key),
     });
   }
 
-  if (map.size === 0) {
-    for (const entry of params.installedSkills ?? []) {
-      map.set(entry.name, {
+  for (const entry of params.installedSkills ?? []) {
+      const key = normalizeSkillName(entry.name);
+      if (map.has(key)) {
+        continue;
+      }
+      map.set(key, {
         id: entry.name,
         title: entry.name,
         description: entry.description || "本地已安装技能。",
         tag: "Installed",
         category: "installed",
-        selected: selectedIds.has(entry.name),
+        selected: selectedIds.has(key),
       });
-    }
   }
 
-  for (const skillName of selectedIds) {
-    if (map.has(skillName)) {
+  for (const skillName of normalizedSelectedNames) {
+    const key = normalizeSkillName(skillName);
+    if (map.has(key)) {
       continue;
     }
-    map.set(skillName, {
+    map.set(key, {
       id: skillName,
       title: skillName,
       description: "当前 Agent 配置中已选中，但当前列表里未找到该技能。",

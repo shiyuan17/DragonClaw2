@@ -228,7 +228,14 @@ export function useConfig({ addLog, running, setRunning, setStartingUp }: UseCon
         try {
             const result = await invoke<string>("reset_config");
             await refreshCurrentConfig().catch(() => {
-                setCurrentConfig({ has_api_key: false, provider: null, model: null, base_url: null, gateway_token: null });
+                setCurrentConfig({
+                    has_api_key: false,
+                    provider: null,
+                    model: null,
+                    base_url: null,
+                    gateway_token: null,
+                    workspace_path: null,
+                });
             });
             setApiKeyInput("");
             setSelectedProvider("");

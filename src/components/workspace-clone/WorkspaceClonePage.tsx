@@ -1,7 +1,7 @@
 // Copyright (C) 2026 shiyuan
 // SPDX-License-Identifier: GPL-3.0-only
 // This file is part of DragonClaw. See LICENSE for details.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { motion } from "framer-motion";
 import type { CurrentConfig, LogEntry, ProviderInfo, SavedProvider, WorkspaceEntityType, WorkspaceMenuKey } from "../../types";
@@ -207,7 +207,7 @@ export function WorkspaceClonePage({
   running,
   servicePort,
   gatewayToken,
-  consoleUrl,
+  consoleUrl: _consoleUrl,
   uptime,
   currentModelName,
   currentProviderName,
@@ -271,6 +271,10 @@ export function WorkspaceClonePage({
   const [toolNotice, setToolNotice] = useState("");
   const [toolError, setToolError] = useState("");
   const homepageChat = useWorkspaceGatewayChat({ running, servicePort, gatewayToken });
+  const currentAgentIdRef = useRef<string | null>(null);
+  const memoryLoadSeqRef = useRef(0);
+  const skillLoadSeqRef = useRef(0);
+  const toolLoadSeqRef = useRef(0);
 
   const refreshSavedProviders = useCallback(async () => {
     const nextProviders = await invoke<SavedProvider[]>("list_saved_providers");
@@ -417,6 +421,10 @@ export function WorkspaceClonePage({
     [activeType, homepageChat.selectedAgentId, selectedEntity?.id, selectedEntityId],
   );
 
+  useEffect(() => {
+    currentAgentIdRef.current = currentMemoryAgentId;
+  }, [currentMemoryAgentId]);
+
   const activeMemoryFile = useMemo(
     () => memoryFiles.find((file) => file.id === selectedMemoryFileId) ?? memoryFiles[0] ?? null,
     [memoryFiles, selectedMemoryFileId],
@@ -456,8 +464,15 @@ export function WorkspaceClonePage({
       setMemoryLoading(true);
     }
 
+    const targetAgentId = currentMemoryAgentId;
+    const requestId = memoryLoadSeqRef.current + 1;
+    memoryLoadSeqRef.current = requestId;
+
     try {
-      const snapshot = await loadWorkspaceMemorySnapshot(currentMemoryAgentId);
+      const snapshot = await loadWorkspaceMemorySnapshot(targetAgentId);
+      if (memoryLoadSeqRef.current !== requestId || currentAgentIdRef.current !== targetAgentId) {
+        return;
+      }
       const nextFiles = snapshot.items.length > 0
         ? snapshot.items.map((item) => normalizeWorkspaceMemoryFile(item))
         : createWorkspaceFallbackMemoryFiles();
@@ -474,6 +489,9 @@ export function WorkspaceClonePage({
       setMemoryDraftContent(nextActiveFile?.content || "");
       setMemoryError("");
     } catch (memoryLoadError) {
+      if (memoryLoadSeqRef.current !== requestId || currentAgentIdRef.current !== targetAgentId) {
+        return;
+      }
       setMemoryError(memoryLoadError instanceof Error ? memoryLoadError.message : "读取记忆文件失败");
       if (memoryFiles.length === 0) {
         const fallbackFiles = createWorkspaceFallbackMemoryFiles();
@@ -482,7 +500,7 @@ export function WorkspaceClonePage({
         setMemoryDraftContent(fallbackFiles[0]?.content || "");
       }
     } finally {
-      if (showLoading) {
+      if (showLoading && memoryLoadSeqRef.current === requestId && currentAgentIdRef.current === targetAgentId) {
         setMemoryLoading(false);
       }
     }
@@ -500,25 +518,43 @@ export function WorkspaceClonePage({
       setSkillLoading(true);
     }
 
+    const targetAgentId = currentMemoryAgentId;
+    const requestId = skillLoadSeqRef.current + 1;
+    skillLoadSeqRef.current = requestId;
+
     try {
       const savedConfig = await invoke<WorkspaceAgentSkillConfig>("get_agent_skill_config", {
-        agentId: currentMemoryAgentId,
+        agentId: targetAgentId,
       });
+      if (skillLoadSeqRef.current !== requestId || currentAgentIdRef.current !== targetAgentId) {
+        return;
+      }
 
       let nextOptions: WorkspaceSkillOption[] = [];
       if (homepageChat.connected) {
         const report = await homepageChat.request<WorkspaceGatewaySkillStatusResult>("skills.status", {
-          agentId: currentMemoryAgentId,
+          agentId: targetAgentId,
         });
+        if (skillLoadSeqRef.current !== requestId || currentAgentIdRef.current !== targetAgentId) {
+          return;
+        }
         if (!isGatewaySkillStatusResult(report)) {
           throw new Error("skills.status 返回格式不正确");
+        }
+        const installedSkills = await invoke<WorkspaceInstalledSkillInfo[]>("list_skills").catch(() => []);
+        if (skillLoadSeqRef.current !== requestId || currentAgentIdRef.current !== targetAgentId) {
+          return;
         }
         nextOptions = buildSkillOptions({
           selectedSkillNames: savedConfig.selectedSkillNames,
           statusEntries: report.skills,
+          installedSkills,
         });
       } else {
         const installedSkills = await invoke<WorkspaceInstalledSkillInfo[]>("list_skills");
+        if (skillLoadSeqRef.current !== requestId || currentAgentIdRef.current !== targetAgentId) {
+          return;
+        }
         nextOptions = buildSkillOptions({
           selectedSkillNames: savedConfig.selectedSkillNames,
           installedSkills,
@@ -529,6 +565,9 @@ export function WorkspaceClonePage({
       setSkillDraftIds(nextOptions.filter((item) => item.selected).map((item) => item.id));
       setSkillError("");
     } catch (skillLoadError) {
+      if (skillLoadSeqRef.current !== requestId || currentAgentIdRef.current !== targetAgentId) {
+        return;
+      }
       setSkillError(skillLoadError instanceof Error ? skillLoadError.message : "读取技能配置失败");
       setSkillOptions((current) =>
         current.length > 0
@@ -539,7 +578,7 @@ export function WorkspaceClonePage({
       );
       setSkillDraftIds((current) => current);
     } finally {
-      if (showLoading) {
+      if (showLoading && skillLoadSeqRef.current === requestId && currentAgentIdRef.current === targetAgentId) {
         setSkillLoading(false);
       }
     }
@@ -558,26 +597,36 @@ export function WorkspaceClonePage({
       setToolLoading(true);
     }
 
+    const targetAgentId = currentMemoryAgentId;
+    const requestId = toolLoadSeqRef.current + 1;
+    toolLoadSeqRef.current = requestId;
+
     try {
       const config = await invoke<WorkspaceAgentToolConfig>("get_agent_tool_config", {
-        agentId: currentMemoryAgentId,
+        agentId: targetAgentId,
       });
+      if (toolLoadSeqRef.current !== requestId || currentAgentIdRef.current !== targetAgentId) {
+        return;
+      }
       const nextOptions = buildToolOptions(config);
       setToolOptions(nextOptions);
       setToolProfileLabel(getWorkspaceToolProfileLabel(config));
       setToolDraftIds(nextOptions.filter((item) => item.selected).map((item) => item.id));
       setToolError("");
     } catch (toolLoadError) {
+      if (toolLoadSeqRef.current !== requestId || currentAgentIdRef.current !== targetAgentId) {
+        return;
+      }
       setToolError(toolLoadError instanceof Error ? toolLoadError.message : "读取工具权限失败");
       const fallbackOptions = buildToolOptions({
-        agentId: currentMemoryAgentId,
+        agentId: targetAgentId,
         profile: "full",
       });
       setToolOptions(fallbackOptions);
       setToolProfileLabel("全量");
       setToolDraftIds(fallbackOptions.map((item) => item.id));
     } finally {
-      if (showLoading) {
+      if (showLoading && toolLoadSeqRef.current === requestId && currentAgentIdRef.current === targetAgentId) {
         setToolLoading(false);
       }
     }
@@ -978,8 +1027,8 @@ export function WorkspaceClonePage({
                 onOpenSettingsTextPreview={() => setShowSettingsTextPreview(true)}
                 onStart={handleStart}
                 onOpenConsole={() => {
-                  if (consoleUrl) {
-                    void invoke("open_url", { url: consoleUrl });
+                  if (servicePort) {
+                    void invoke("open_console", { port: servicePort });
                   }
                 }}
                 onOpenModelConfig={openModelConfigModal}

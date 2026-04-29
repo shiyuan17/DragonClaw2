@@ -190,9 +190,7 @@ function App() {
 
   const gatewayToken = currentConfig?.gateway_token?.trim() || null;
   const consoleUrl = servicePort
-    ? gatewayToken
-      ? `http://localhost:${servicePort}?token=${encodeURIComponent(gatewayToken)}`
-      : `http://localhost:${servicePort}`
+    ? `http://localhost:${servicePort}`
     : null;
 
   const handleExportDiagnostics = async () => {

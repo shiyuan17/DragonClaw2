@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { WorkspaceGatewayClient, buildGatewayUrl } from "../components/workspace-clone/workspaceCloneGateway";
 import type {
   CurrentConfig,
+  OnboardingSkillInstallDiagnostics,
   OnboardingSkillInstallResultItem,
   OnboardingSkillInstallState,
 } from "../types";
@@ -37,6 +38,13 @@ type SkillStatusRow = {
   name?: unknown;
 };
 
+type SkillHubBootstrapSpec = {
+  name: string;
+  slug?: string;
+  installId: string;
+  resolvedFrom: "search" | "detail";
+};
+
 type ExecuteOnboardingSkillInstallOptions = {
   servicePort: number;
   addLog: (level: string, message: string) => void;
@@ -68,6 +76,17 @@ function createPendingState(): OnboardingSkillInstallState {
     completed: false,
     skipped: false,
     results: [],
+    lastAttemptAt: Date.now(),
+  };
+}
+
+function buildResultState(results: OnboardingSkillInstallResultItem[]): OnboardingSkillInstallState {
+  const completed = results.length > 0 && results.every((item) => item.status === "installed");
+  return {
+    required: !completed,
+    completed,
+    skipped: false,
+    results,
     lastAttemptAt: Date.now(),
   };
 }
@@ -181,6 +200,64 @@ function resolveSearchItems(payload: unknown): Array<Record<string, unknown>> {
   return [];
 }
 
+function extractInstallIdFromValue(value: unknown): string | null {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const next = extractInstallIdFromValue(item);
+      if (next) {
+        return next;
+      }
+    }
+    return null;
+  }
+
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as {
+    id?: unknown;
+    installId?: unknown;
+    install?: unknown;
+    installs?: unknown;
+  };
+
+  if (typeof candidate.installId === "string" && candidate.installId.trim()) {
+    return candidate.installId.trim();
+  }
+  if (typeof candidate.id === "string" && candidate.id.trim()) {
+    return candidate.id.trim();
+  }
+
+  return extractInstallIdFromValue(candidate.install ?? candidate.installs);
+}
+
+function resolveSkillHubSearchMatch(items: Array<Record<string, unknown>>) {
+  return items.find((item) => {
+    const values = [item.slug, item.name, item.id, item.title]
+      .filter((value): value is string => typeof value === "string");
+
+    return values.some((value) => {
+      const normalized = normalizeSkillName(value);
+      return normalized === normalizeSkillName(SKILLHUB_NAME) || normalized === normalizeSkillName(SKILLHUB_FALLBACK_SLUG);
+    });
+  });
+}
+
+function resolveSkillHubName(item: Record<string, unknown>) {
+  const values = [item.name, item.title, item.slug, item.id]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+
+  return values[0]?.trim() || SKILLHUB_NAME;
+}
+
+function resolveSkillHubSlug(item: Record<string, unknown>) {
+  const values = [item.slug, item.id]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+
+  return values[0]?.trim();
+}
+
 function isSkillInstalled(installedNames: string[], expectedName: string) {
   const normalizedInstalled = installedNames.map(normalizeSkillName);
   const expected = normalizeSkillName(expectedName);
@@ -202,6 +279,10 @@ async function getOnboardingSkillInstallState() {
   } catch {
     return createDefaultState();
   }
+}
+
+export async function getOnboardingSkillInstallDiagnostics() {
+  return invoke<OnboardingSkillInstallDiagnostics>("get_onboarding_skill_install_diagnostics");
 }
 
 async function saveOnboardingSkillInstallState(state: OnboardingSkillInstallState) {
@@ -266,67 +347,57 @@ async function connectGatewayClient(servicePort: number, token: string) {
   });
 }
 
-async function requestWithFallbacks<T>(
-  client: WorkspaceGatewayClient,
-  method: string,
-  paramsList: unknown[],
-) {
-  let lastError: unknown = null;
+async function loadSkillHubBootstrapSpec(client: WorkspaceGatewayClient): Promise<SkillHubBootstrapSpec> {
+  const payload = await client.request<unknown>("skills.search", {
+    query: SKILLHUB_NAME,
+  });
+  const items = resolveSearchItems(payload);
+  const exactMatch = resolveSkillHubSearchMatch(items);
 
-  for (const params of paramsList) {
-    try {
-      return await client.request<T>(method, params);
-    } catch (error) {
-      lastError = error;
-    }
+  if (!exactMatch) {
+    throw new Error("skills.search 未找到 SkillHub");
   }
 
-  throw lastError instanceof Error ? lastError : new Error(`${method} 调用失败`);
-}
+  const name = resolveSkillHubName(exactMatch);
+  const slug = resolveSkillHubSlug(exactMatch);
+  const searchInstallId = extractInstallIdFromValue(exactMatch);
 
-async function searchSkillHubSlug(client: WorkspaceGatewayClient) {
-  try {
-    const payload = await requestWithFallbacks<unknown>(client, "skills.search", [
-      { query: SKILLHUB_NAME },
-      { q: SKILLHUB_NAME },
-      { text: SKILLHUB_NAME },
-      SKILLHUB_NAME,
-    ]);
-
-    const items = resolveSearchItems(payload);
-    const exactMatch = items.find((item) => {
-      const values = [item.slug, item.name, item.id, item.title]
-        .filter((value): value is string => typeof value === "string");
-
-      return values.some((value) => {
-        const normalized = normalizeSkillName(value);
-        return normalized === normalizeSkillName(SKILLHUB_NAME) || normalized === normalizeSkillName(SKILLHUB_FALLBACK_SLUG);
-      });
-    });
-
-    if (typeof exactMatch?.slug === "string") {
-      return exactMatch.slug;
-    }
-    if (typeof exactMatch?.id === "string") {
-      return exactMatch.id;
-    }
-    if (typeof exactMatch?.name === "string") {
-      return exactMatch.name;
-    }
-  } catch {
-    // Fall back to the known slug when search is unavailable.
+  if (searchInstallId) {
+    return {
+      name,
+      slug,
+      installId: searchInstallId,
+      resolvedFrom: "search",
+    };
   }
 
-  return SKILLHUB_FALLBACK_SLUG;
+  if (!slug) {
+    throw new Error("SkillHub 搜索结果缺少 slug，无法继续解析 installId");
+  }
+
+  const detailPayload = await client.request<unknown>("skills.detail", { slug });
+  const detailRecord = detailPayload && typeof detailPayload === "object"
+    ? detailPayload as Record<string, unknown>
+    : {};
+  const installId = extractInstallIdFromValue(detailRecord.skill) ?? extractInstallIdFromValue(detailRecord);
+
+  if (!installId) {
+    throw new Error("SkillHub 详情中未找到 installId");
+  }
+
+  return {
+    name,
+    slug,
+    installId,
+    resolvedFrom: "detail",
+  };
 }
 
-async function installMarketplaceSkill(client: WorkspaceGatewayClient, slug: string) {
-  return requestWithFallbacks<unknown>(client, "skills.install", [
-    { slug },
-    { skill: slug },
-    { id: slug },
-    { package: slug },
-  ]);
+async function installMarketplaceSkill(client: WorkspaceGatewayClient, spec: SkillHubBootstrapSpec) {
+  return client.request<unknown>("skills.install", {
+    name: spec.name,
+    installId: spec.installId,
+  });
 }
 
 async function getInstalledSkillNames(client: WorkspaceGatewayClient) {
@@ -462,9 +533,17 @@ export async function runOnboardingSkillInstall({
     addLog("info", "开始安装 SkillHub");
 
     try {
-      const skillHubSlug = await searchSkillHubSlug(context.client);
-      await installMarketplaceSkill(context.client, skillHubSlug);
+      const skillHubSpec = await loadSkillHubBootstrapSpec(context.client);
+      addLog(
+        "info",
+        `SkillHub search 命中: ${skillHubSpec.name}${skillHubSpec.slug ? ` (${skillHubSpec.slug})` : ""}`,
+      );
+      addLog("info", `SkillHub installId 已通过${skillHubSpec.resolvedFrom === "search" ? "搜索结果" : "详情接口"}解析`);
+      await installMarketplaceSkill(context.client, skillHubSpec);
       const installedNames = await getInstalledSkillNames(context.client).catch(() => []);
+      if (!isSkillInstalled(installedNames, SKILLHUB_NAME)) {
+        throw new Error("SkillHub 安装请求返回成功，但 skills.status 中未看到 SkillHub");
+      }
       const resolvedSkillHubName = resolveInstalledSkillName(installedNames, SKILLHUB_NAME);
       await enableSkillForMain(resolvedSkillHubName);
       await resetMainSession(context.client).catch(() => undefined);
@@ -483,14 +562,7 @@ export async function runOnboardingSkillInstall({
         });
       }
 
-      const nextState = {
-        required: true,
-        completed: true,
-        skipped: false,
-        results,
-        lastAttemptAt: Date.now(),
-      } satisfies OnboardingSkillInstallState;
-      await saveOnboardingSkillInstallState(nextState);
+      await saveOnboardingSkillInstallState(buildResultState(results));
 
       return {
         results,
@@ -544,14 +616,7 @@ export async function runOnboardingSkillInstall({
     }
   }
 
-  const nextState = {
-    required: true,
-    completed: true,
-    skipped: false,
-    results,
-    lastAttemptAt: Date.now(),
-  } satisfies OnboardingSkillInstallState;
-  await saveOnboardingSkillInstallState(nextState);
+  await saveOnboardingSkillInstallState(buildResultState(results));
 
   return {
     results,

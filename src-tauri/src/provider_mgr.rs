@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::fs;
 
-use crate::config::{ensure_default_workspace, ensure_gateway_config, get_user_openclaw_dir};
+use crate::config::{
+    ensure_config_roots, ensure_default_workspace, ensure_gateway_config, get_user_openclaw_dir,
+    read_openclaw_config, write_openclaw_config,
+};
 use tauri::Emitter;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -30,39 +33,11 @@ pub struct SavedModel {
 }
 
 fn read_config() -> Result<Value, String> {
-    let path = get_user_openclaw_dir()?.join("openclaw.json");
-    if !path.exists() {
-        return Ok(json!({}));
-    }
-
-    let content =
-        fs::read_to_string(&path).map_err(|e| format!("Failed to read openclaw.json: {}", e))?;
-    serde_json::from_str(&content).map_err(|e| format!("Failed to parse openclaw.json: {}", e))
+    read_openclaw_config()
 }
 
 fn write_config(value: &Value) -> Result<(), String> {
-    let path = get_user_openclaw_dir()?.join("openclaw.json");
-    let content =
-        serde_json::to_string_pretty(value).map_err(|e| format!("Failed to serialize config: {}", e))?;
-    fs::write(&path, content).map_err(|e| format!("Failed to write openclaw.json: {}", e))
-}
-
-fn ensure_config_roots(config: &mut Value) {
-    if config.get("models").is_none() {
-        config["models"] = json!({});
-    }
-    if config["models"].get("providers").is_none() {
-        config["models"]["providers"] = json!({});
-    }
-    if config.get("agents").is_none() {
-        config["agents"] = json!({});
-    }
-    if config["agents"].get("defaults").is_none() {
-        config["agents"]["defaults"] = json!({});
-    }
-    if config["agents"]["defaults"].get("models").is_none() {
-        config["agents"]["defaults"]["models"] = json!({});
-    }
+    write_openclaw_config(value)
 }
 
 fn build_model_entry(model_id: &str) -> Value {

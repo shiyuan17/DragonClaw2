@@ -13,8 +13,9 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { AppPhase } from "../types";
+import type { AppPhase, CurrentConfig } from "../types";
 import {
+  getOnboardingSkillInstallDiagnostics,
   markOnboardingSkillInstallRequired,
   runOnboardingSkillInstall,
   shouldRunOnboardingSkillInstall,
@@ -43,10 +44,17 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
   const launchStartedRef = useRef(false);
   const launchFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startupFinalizingRef = useRef(false);
+  const servicePortRef = useRef(18789);
+  const finalizeStartupRef = useRef<(force?: boolean) => Promise<void>>(async () => {});
+  const checkEnvironmentRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
+
+  useEffect(() => {
+    servicePortRef.current = servicePort;
+  }, [servicePort]);
 
   const setSetupPhase = useCallback((nextPhase: AppPhase) => {
     phaseRef.current = nextPhase;
@@ -57,6 +65,21 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
     if (launchFallbackRef.current) {
       clearTimeout(launchFallbackRef.current);
       launchFallbackRef.current = null;
+    }
+  }, []);
+
+  const syncWorkspacePath = useCallback(async (fallback?: string) => {
+    try {
+      const currentConfig = await invoke<CurrentConfig>("get_current_config");
+      const nextPath = currentConfig.workspace_path?.trim() || fallback || "";
+      setWorkspacePath(nextPath);
+      return nextPath;
+    } catch {
+      if (typeof fallback === "string") {
+        setWorkspacePath(fallback);
+        return fallback;
+      }
+      return "";
     }
   }, []);
 
@@ -77,7 +100,7 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
       if (needsOnboardingSkills) {
         setSetupPhase("launching");
         const installResult = await runOnboardingSkillInstall({
-          servicePort,
+          servicePort: servicePortRef.current,
           addLog,
           onProgress: (message, nextPercent) => {
             setProgress(nextPercent);
@@ -186,6 +209,17 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
           return;
         }
 
+        await syncWorkspacePath();
+        try {
+          const diagnostics = await getOnboardingSkillInstallDiagnostics();
+          if (diagnostics.shouldBackfill) {
+            addLog("info", "Detected missing onboarding skill install state for an existing user; backfill will run on this launch.");
+            await markOnboardingSkillInstallRequired();
+          }
+        } catch (diagnosticsError) {
+          addLog("warn", `Onboarding skill install diagnostics failed; skipping backfill check: ${diagnosticsError}`);
+        }
+
         addLog("success", "[OK] 环境检查通过，所有组件就绪");
         if (serviceRunning) {
           setRunning(true);
@@ -207,7 +241,12 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
       setSetupPhase("initializing");
       await runSetup();
     }
-  }, [addLog, finalizeStartup, launchService, runSetup, setRunning, setSetupPhase]);
+  }, [addLog, finalizeStartup, launchService, runSetup, setRunning, setSetupPhase, syncWorkspacePath]);
+
+  useEffect(() => {
+    finalizeStartupRef.current = finalizeStartup;
+    checkEnvironmentRef.current = checkEnvironment;
+  }, [checkEnvironment, finalizeStartup]);
 
   useEffect(() => {
     const unlistenProgress = listen<{ stage: string; message: string; percent: number }>(
@@ -235,7 +274,7 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
             || msg.includes("server started")
           )
         ) {
-          void finalizeStartup();
+          void finalizeStartupRef.current();
         }
       },
     );
@@ -244,7 +283,7 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
       setServicePort(event.payload.port || 18789);
     });
 
-    void checkEnvironment();
+    void checkEnvironmentRef.current();
 
     return () => {
       clearLaunchFallback();
@@ -270,9 +309,12 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
     setLoading(true);
 
     try {
-      await invoke("inject_default_config");
+      await invoke("inject_default_config", {
+        workspacePath: workspacePath.trim() || null,
+      });
       await invoke("inject_default_models");
       await markOnboardingSkillInstallRequired();
+      await syncWorkspacePath(workspacePath.trim() || undefined);
       addLog("success", `[OK] 工作区已配置: ${workspacePath || "默认目录"}`);
       await launchService();
     } catch (err) {
@@ -282,7 +324,7 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
         setLoading(false);
       }
     }
-  }, [addLog, launchService, workspacePath]);
+  }, [addLog, launchService, syncWorkspacePath, workspacePath]);
 
   const handleSwitchWorkspace = useCallback(async () => {
     const selected = await open({
@@ -296,7 +338,8 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
       setLoading(true);
 
       try {
-        await invoke("inject_default_config");
+        await invoke("inject_default_config", { workspacePath: selected });
+        await syncWorkspacePath(selected);
         addLog("success", `[OK] 工作区已切换到: ${selected}`);
       } catch (err) {
         addLog("error", `切换失败: ${err}`);
@@ -304,7 +347,7 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
         setLoading(false);
       }
     }
-  }, [addLog]);
+  }, [addLog, syncWorkspacePath]);
 
   const clearSetupError = useCallback(() => setSetupError(null), []);
 

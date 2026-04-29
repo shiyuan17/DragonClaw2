@@ -26,6 +26,8 @@ export const WORKSPACE_TYPE_TABS: WorkspaceTypeTab[] = [
   { key: "teams", label: "团队", icon: "bot" },
 ];
 
+export const WORKSPACE_REAL_TYPE_TABS: WorkspaceTypeTab[] = WORKSPACE_TYPE_TABS.filter((tab) => tab.key === "agents");
+
 export const WORKSPACE_HOME_SUGGESTIONS = [
   {
     id: "task",

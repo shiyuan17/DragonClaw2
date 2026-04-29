@@ -54,6 +54,7 @@ export function WorkspaceCloneComposer({
   const [state, setState] = useState<WorkspaceCloneComposerState>({ modal: null, suggestion: null });
   const canMention = useMemo(() => Boolean(selectedEntityName), [selectedEntityName]);
   const canSend = chatEnabled && running && connectionStatus === "connected" && !sending && !isGenerating;
+  const placeholderToolsDisabled = true;
   const statusText = !chatEnabled
     ? "当前仅接入数字员工"
     : !running
@@ -98,33 +99,33 @@ export function WorkspaceCloneComposer({
           <div className="workspace-clone__composer-tools">
             <button
               type="button"
-              title="知识库"
+              title="Coming soon"
               onClick={() => setState({ modal: state.modal === "knowledge" ? null : "knowledge", suggestion: null })}
-              disabled={!chatEnabled}
+              disabled={!chatEnabled || placeholderToolsDisabled}
             >
               <WorkspaceCloneIcon name="book-open" size={15} strokeWidth={1.9} />
             </button>
             <button
               type="button"
-              title="Slash Command"
+              title="Coming soon"
               onClick={() => setState({ modal: null, suggestion: state.suggestion === "slash" ? null : "slash" })}
-              disabled={!chatEnabled}
+              disabled={!chatEnabled || placeholderToolsDisabled}
             >
               <WorkspaceCloneIcon name="wand" size={15} strokeWidth={1.9} />
             </button>
             <button
               type="button"
-              title="邮件绑定"
+              title="Coming soon"
               onClick={() => setState({ modal: state.modal === "email-binding" ? null : "email-binding", suggestion: null })}
-              disabled={!chatEnabled}
+              disabled={!chatEnabled || placeholderToolsDisabled}
             >
               <WorkspaceCloneIcon name="globe" size={15} strokeWidth={1.9} />
             </button>
             <button
               type="button"
-              title="Mention"
+              title="Coming soon"
               onClick={() => setState({ modal: null, suggestion: canMention ? "mention" : null })}
-              disabled={!chatEnabled}
+              disabled={!chatEnabled || placeholderToolsDisabled}
             >
               <WorkspaceCloneIcon name="users" size={15} strokeWidth={1.9} />
             </button>

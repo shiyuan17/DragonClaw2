@@ -143,6 +143,7 @@ pub fn run() {
             providers::get_providers,
             providers::open_provider_register,
             providers::open_url,
+            providers::open_console,
             // Config & API Key management
             config::get_current_config,
             config::migrate_gateway_config,
@@ -152,6 +153,7 @@ pub fn run() {
             memory::load_memory_file_snapshot,
             memory::save_source_file,
             onboarding::get_onboarding_skill_install_state,
+            onboarding::get_onboarding_skill_install_diagnostics,
             onboarding::save_onboarding_skill_install_state,
             // Diagnostics
             diagnostics::export_diagnostics_zip,

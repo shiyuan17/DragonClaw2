@@ -99,6 +99,7 @@ export interface CurrentConfig {
     model: string | null;
     base_url: string | null;
     gateway_token?: string | null;
+    workspace_path?: string | null;
 }
 
 export interface OnboardingSkillInstallResultItem {
@@ -113,6 +114,16 @@ export interface OnboardingSkillInstallState {
     skipped: boolean;
     results: OnboardingSkillInstallResultItem[];
     lastAttemptAt?: number | null;
+}
+
+export interface OnboardingSkillInstallDiagnostics {
+    stateFileExists: boolean;
+    stateRequired: boolean;
+    stateCompleted: boolean;
+    mainAgentHasSkills: boolean;
+    skillHubInstalled: boolean;
+    installedTargetSkillCount: number;
+    shouldBackfill: boolean;
 }
 
 // ===== UI Constants =====
