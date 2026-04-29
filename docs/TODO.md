@@ -1,5 +1,8 @@
 # DragonClaw - 开发任务总表 (AI 开发规范版)
 
+## Phase 5.15.9: 首页收缩侧边栏视觉重设计
+- [ ] `workspace-clone` 首页收缩态侧边栏改为参考图风格的双轨轻量导航，统一左侧菜单轨与右侧迷你目录轨的卡片节奏、间距、阴影和选中态
+
 ## Phase 5.11: 旧 logo 切换为新 logo 引用
 - [ ] 前端所有旧 `logo.jpg` 展示位统一切换到新的 DragonClaw 龙形 logo，并移除默认 Vite favicon 引用
 
@@ -252,3 +255,4 @@
 - [ ] Phase 5.15.6: 为 `workspace-clone` 聊天右侧边栏接入 Agent 技能库 / 工具权限弹窗，并支持按当前 Agent 读写真实 skills / tools 配置
 
 - [ ] Phase 5.15.7: 首次引导启动后自动安装 SkillHub，并由 SkillHub 为 main Agent 安装 Summarize、agent browser、imap-smtp-email、opencli、Humanizer
+- [ ] Phase 5.15.8: 统一 `openclaw.json` 真源、补工作区正式契约、修复 Agent 路径安全、onboarding 失败语义与首页控制台 token 扩散
