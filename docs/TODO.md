@@ -240,6 +240,7 @@
 - [ ] Phase 5.15.2: 修复 `workspace-clone` 首页乱码，并恢复聊天消息区域滚动
 - [ ] Phase 5.15.2: 收窄首页左侧主菜单栏，并压缩聊天顶部高度与分割线视觉重量
 - [ ] Phase 5.15.2: 按参考图收敛首页左侧侧边栏的菜单排布、品牌水印与底部操作区
+- [ ] Phase 5.15.2: 修复首页主侧栏与目录栏的收缩态体验，统一双边栏窄轨宽度、留白与展开入口
 - [ ] Phase 5.15.2: 恢复首页聊天消息正文的文本选择能力，支持直接框选复制
 - [x] Phase 5.15.3: 重构 `workspace-clone` 顶部标题栏与聊天会话头部，并新增应用内仿标题栏
 - [x] Phase 5.15.3: 将右侧抽屉升级为会话边栏，迁入模型、记忆、技能库、命令、工具权限主入口
@@ -248,4 +249,6 @@
 - [x] Phase 5.15.4: 同步 DragonClaw 模型厂商列表到 workspace 模型弹窗私有数据源
 - [x] Phase 5.15.4: 新增 workspace 专用模型配置保存/删除命令并打通 openclaw.json 持久化
 - [x] Phase 5.15.5: 为 `workspace-clone` 聊天右侧会话边栏接入 Agent 记忆弹窗，并支持按当前 Agent 读写固定记忆文件
-- [ ] Phase 5.15.6: Ϊ `workspace-clone` �����Ҳ�������� Agent ���ܿ� / ����Ȩ�޵�������֧�ְ���ǰ Agent ��д��ʵ skills / tools ����
+- [ ] Phase 5.15.6: 为 `workspace-clone` 聊天右侧边栏接入 Agent 技能库 / 工具权限弹窗，并支持按当前 Agent 读写真实 skills / tools 配置
+
+- [ ] Phase 5.15.7: 首次引导启动后自动安装 SkillHub，并由 SkillHub 为 main Agent 安装 Summarize、agent browser、imap-smtp-email、opencli、Humanizer
