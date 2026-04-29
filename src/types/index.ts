@@ -126,6 +126,26 @@ export interface OnboardingSkillInstallDiagnostics {
     shouldBackfill: boolean;
 }
 
+export interface SkillHubInstallRuntimeInfo {
+    bashAvailable: boolean;
+    bashVersion?: string | null;
+    isWslBash: boolean;
+    homeDir: string;
+    openclawConfigPath: string;
+    workspaceDir: string;
+    workspaceSkillsDir: string;
+    skillhubCliHomeDir: string;
+    skillhubWrapperPath: string;
+    skillhubCliScriptPath: string;
+}
+
+export interface SkillHubCommandResult {
+    success: boolean;
+    stdout: string;
+    stderr: string;
+    runtimeInfo: SkillHubInstallRuntimeInfo;
+}
+
 // ===== UI Constants =====
 export const CATEGORY_LABELS: Record<string, { label: string; icon: string }> = {
     free: { label: "免费注册", icon: "gift" },

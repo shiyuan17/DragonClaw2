@@ -6,9 +6,8 @@
 /// - Engine source / sandbox paths should use `engine_dir()`
 /// - User config paths under `~/.openclaw/` should use `user_config_dir()`
 /// - Agent memory workspace roots should use `workspace_root_for_agent()`
-
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
@@ -31,8 +30,7 @@ pub fn get_openclaw_dir() -> Result<PathBuf, String> {
 /// Get the DragonClaw user config directory under `~/.openclaw/`.
 pub fn user_config_dir() -> Result<PathBuf, String> {
     if let Some(path) = env_override_path(USER_CONFIG_OVERRIDE_ENV) {
-        fs::create_dir_all(&path)
-            .map_err(|error| format!("创建用户配置目录失败: {error}"))?;
+        fs::create_dir_all(&path).map_err(|error| format!("创建用户配置目录失败: {error}"))?;
         return Ok(path);
     }
 
@@ -42,9 +40,55 @@ pub fn user_config_dir() -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+/// Get the current user's home directory.
+pub fn user_home_dir() -> Result<PathBuf, String> {
+    dirs::home_dir().ok_or("Cannot determine home directory".to_string())
+}
+
 /// Get the path to `~/.openclaw/openclaw.json`.
 pub fn openclaw_config_path() -> Result<PathBuf, String> {
     Ok(user_config_dir()?.join("openclaw.json"))
+}
+
+/// Resolve the workspace that the official SkillHub installer bootstraps into.
+pub fn skillhub_workspace_dir() -> Result<PathBuf, String> {
+    Ok(user_config_dir()?.join("workspace"))
+}
+
+/// Resolve the bootstrap skills directory used by the official SkillHub installer.
+pub fn skillhub_workspace_skills_dir() -> Result<PathBuf, String> {
+    Ok(skillhub_workspace_dir()?.join("skills"))
+}
+
+/// Resolve the official SkillHub CLI home directory.
+pub fn skillhub_cli_home_dir() -> Result<PathBuf, String> {
+    Ok(user_home_dir()?.join(".skillhub"))
+}
+
+/// Resolve the local bin directory where the SkillHub wrapper is installed.
+pub fn local_bin_dir() -> Result<PathBuf, String> {
+    Ok(user_home_dir()?.join(".local").join("bin"))
+}
+
+/// Convert an absolute Windows path into a WSL-style path.
+pub fn windows_path_to_wsl(path: &Path) -> Result<String, String> {
+    let raw = path.to_string_lossy().replace('\\', "/");
+    let bytes = raw.as_bytes();
+
+    if bytes.len() >= 2 && bytes[1] == b':' {
+        let drive = raw
+            .chars()
+            .next()
+            .ok_or("Cannot determine Windows drive letter".to_string())?
+            .to_ascii_lowercase();
+        let suffix = raw[2..].trim_start_matches('/');
+        if suffix.is_empty() {
+            return Ok(format!("/mnt/{drive}"));
+        }
+        return Ok(format!("/mnt/{drive}/{suffix}"));
+    }
+
+    Ok(raw)
 }
 
 /// Resolve the default workspace root used by the main agent.
@@ -53,11 +97,9 @@ pub fn default_workspace_dir() -> Result<PathBuf, String> {
         return Ok(path);
     }
 
-    Ok(
-        dirs::document_dir()
-            .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join("Documents"))
-            .join("OpenClaw-Projects"),
-    )
+    Ok(dirs::document_dir()
+        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join("Documents"))
+        .join("OpenClaw-Projects"))
 }
 
 /// Resolve the configured main workspace. Falls back to the default workspace path.
@@ -76,7 +118,9 @@ pub fn workspace_root_for_agent(agent_id: Option<&str>) -> Result<PathBuf, Strin
         return main_workspace_dir();
     }
 
-    if let Some(configured_path) = configured_agent_workspace_path(&scope).filter(|path| path.is_dir()) {
+    if let Some(configured_path) =
+        configured_agent_workspace_path(&scope).filter(|path| path.is_dir())
+    {
         return Ok(configured_path);
     }
 
@@ -267,7 +311,10 @@ fn collect_agent_workspace_candidates(scope: &str) -> Result<Vec<PathBuf>, Strin
                 .join("agency-agents")
                 .join(&variant),
         );
-        push_unique_path(&mut candidates, config_root.join("agency-agents").join(&variant));
+        push_unique_path(
+            &mut candidates,
+            config_root.join("agency-agents").join(&variant),
+        );
         push_unique_path(
             &mut candidates,
             config_root
@@ -275,7 +322,10 @@ fn collect_agent_workspace_candidates(scope: &str) -> Result<Vec<PathBuf>, Strin
                 .join("agency-agents")
                 .join(&variant),
         );
-        push_unique_path(&mut candidates, config_root.join(format!("workspace-{variant}")));
+        push_unique_path(
+            &mut candidates,
+            config_root.join(format!("workspace-{variant}")),
+        );
     }
 
     Ok(candidates)
@@ -290,7 +340,9 @@ mod tests {
 
     fn env_lock() -> std::sync::MutexGuard<'static, ()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(())).lock().expect("lock env")
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("lock env")
     }
 
     fn unique_temp_dir(prefix: &str) -> PathBuf {
@@ -373,7 +425,12 @@ mod tests {
         let configured_workspace = temp_root.join("configured-main-workspace");
         let default_workspace = temp_root.join("default-main-workspace");
 
-        write_mock_config(config_root.as_path(), Some(configured_workspace.as_path()), None, None);
+        write_mock_config(
+            config_root.as_path(),
+            Some(configured_workspace.as_path()),
+            None,
+            None,
+        );
 
         let resolved = with_mock_env(config_root.as_path(), default_workspace.as_path(), || {
             main_workspace_dir().expect("resolve main workspace")
@@ -388,7 +445,9 @@ mod tests {
         let temp_root = unique_temp_dir("paths-agent-candidate");
         let config_root = temp_root.join(".openclaw");
         let default_workspace = temp_root.join("default-main-workspace");
-        let stale_workspace = temp_root.join("configured").join("engineering-frontend-developer");
+        let stale_workspace = temp_root
+            .join("configured")
+            .join("engineering-frontend-developer");
         let candidate_workspace = config_root
             .join("workspace-dragonclaw")
             .join("agency-agents")

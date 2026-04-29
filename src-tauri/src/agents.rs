@@ -142,15 +142,26 @@ fn collect_skills_from_dir(dir: &PathBuf, skills: &mut Vec<SkillInfo>) {
                 for line in frontmatter.lines() {
                     let line = line.trim();
                     if let Some(value) = line.strip_prefix("name:") {
-                        skill_name = value.trim().trim_matches('"').trim_matches('\'').to_string();
+                        skill_name = value
+                            .trim()
+                            .trim_matches('"')
+                            .trim_matches('\'')
+                            .to_string();
                     } else if let Some(value) = line.strip_prefix("description:") {
-                        description = value.trim().trim_matches('"').trim_matches('\'').to_string();
+                        description = value
+                            .trim()
+                            .trim_matches('"')
+                            .trim_matches('\'')
+                            .to_string();
                     }
                 }
             }
         }
 
-        if skills.iter().any(|skill| skill.name.eq_ignore_ascii_case(&skill_name)) {
+        if skills
+            .iter()
+            .any(|skill| skill.name.eq_ignore_ascii_case(&skill_name))
+        {
             continue;
         }
 
@@ -168,6 +179,10 @@ fn global_skills_dir() -> Result<PathBuf, String> {
 
 fn workspace_skills_dir() -> Result<PathBuf, String> {
     Ok(paths::main_workspace_dir()?.join("skills"))
+}
+
+fn skillhub_workspace_skills_dir() -> Result<PathBuf, String> {
+    paths::skillhub_workspace_skills_dir()
 }
 
 fn extract_model_from_dir(agent_path: &PathBuf) -> (Option<String>, Option<String>) {
@@ -344,7 +359,9 @@ fn maybe_delete_managed_workspace(workspace: &Path, agent_id: &str) -> Result<()
         .join("workspace-dragonclaw")
         .join("agency-agents");
     let managed_root_canonical = if managed_root.exists() {
-        managed_root.canonicalize().map_err(|error| format!("解析工作区根目录失败: {error}"))?
+        managed_root
+            .canonicalize()
+            .map_err(|error| format!("解析工作区根目录失败: {error}"))?
     } else {
         return Ok(());
     };
@@ -359,8 +376,7 @@ fn maybe_delete_managed_workspace(workspace: &Path, agent_id: &str) -> Result<()
             .map(|value| value == agent_id)
             .unwrap_or(false)
     {
-        fs::remove_dir_all(workspace)
-            .map_err(|error| format!("删除 Agent 工作区失败: {error}"))?;
+        fs::remove_dir_all(workspace).map_err(|error| format!("删除 Agent 工作区失败: {error}"))?;
     }
 
     Ok(())
@@ -535,6 +551,9 @@ pub fn list_skills() -> Result<Vec<SkillInfo>, String> {
         collect_skills_from_dir(&dir, &mut skills);
     }
     if let Ok(dir) = global_skills_dir() {
+        collect_skills_from_dir(&dir, &mut skills);
+    }
+    if let Ok(dir) = skillhub_workspace_skills_dir() {
         collect_skills_from_dir(&dir, &mut skills);
     }
 

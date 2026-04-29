@@ -1,8 +1,8 @@
 // Copyright (C) 2026 shiyuan
 // SPDX-License-Identifier: GPL-3.0-only
 // This file is part of DragonClaw. See LICENSE for details.
-mod agents;
 mod agent_resource_settings;
+mod agents;
 mod config;
 mod diagnostics;
 mod download;
@@ -16,9 +16,9 @@ mod providers;
 mod service;
 mod setup;
 
-use tauri::{Emitter, Manager};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{Emitter, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -37,7 +37,14 @@ pub fn run() {
 
             let menu = Menu::with_items(
                 app,
-                &[&show_i, &browser_i, &separator1, &restart_i, &separator2, &quit_i],
+                &[
+                    &show_i,
+                    &browser_i,
+                    &separator1,
+                    &restart_i,
+                    &separator2,
+                    &quit_i,
+                ],
             )?;
 
             let _tray = TrayIconBuilder::new()
@@ -63,7 +70,8 @@ pub fn run() {
                                 .and_then(|current| current.gateway_token)
                                 .filter(|value| !value.trim().is_empty())
                                 .unwrap_or_else(|| config::DEFAULT_GATEWAY_TOKEN.to_string());
-                            let _ = open::that(format!("http://localhost:{}?token={}", port, token));
+                            let _ =
+                                open::that(format!("http://localhost:{}?token={}", port, token));
                         }
                         "restart" => {
                             // Show the window first so user sees the restart progress
@@ -152,6 +160,9 @@ pub fn run() {
             config::reset_config,
             memory::load_memory_file_snapshot,
             memory::save_source_file,
+            onboarding::get_skillhub_install_runtime_info,
+            onboarding::install_official_skillhub,
+            onboarding::install_skillhub_recommended_skill,
             onboarding::get_onboarding_skill_install_state,
             onboarding::get_onboarding_skill_install_diagnostics,
             onboarding::save_onboarding_skill_install_state,
