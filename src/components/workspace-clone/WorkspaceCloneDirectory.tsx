@@ -55,7 +55,7 @@ export function WorkspaceCloneDirectory({
     <>
       <aside className={`workspace-clone__directory ${isCollapsed ? "is-collapsed" : ""}`}>
         {isCollapsed ? (
-          <>
+          <div className="workspace-clone__directory-mini-rail">
             <div className="workspace-clone__directory-mini-head">
               <button
                 className="workspace-clone__directory-edge-btn workspace-clone__directory-edge-btn--inline"
@@ -70,7 +70,7 @@ export function WorkspaceCloneDirectory({
                   className={`workspace-clone__directory-edge-icon ${isCollapsed ? "is-collapsed" : ""}`}
                 />
               </button>
-              <button className="workspace-clone__mini-create" type="button" title="快捷新建">
+              <button className="workspace-clone__mini-create" type="button" title="Coming soon" disabled>
                 <WorkspaceCloneIcon name="plus" size={14} strokeWidth={2} />
               </button>
             </div>
@@ -96,11 +96,12 @@ export function WorkspaceCloneDirectory({
                   title={entity.name}
                   onClick={() => onSelectEntity(entity.id)}
                 >
-                  <span>{entity.avatarLabel}</span>
+                  <span className="workspace-clone__mini-entity-avatar">{entity.avatarLabel}</span>
+                  <i className={`workspace-clone__mini-entity-status is-${entity.status}`} />
                 </button>
               ))}
             </div>
-          </>
+          </div>
         ) : (
           <>
             <header className="workspace-clone__directory-head">
@@ -114,7 +115,7 @@ export function WorkspaceCloneDirectory({
                 />
               </label>
               <div className="workspace-clone__directory-head-actions">
-                <button className="workspace-clone__icon-btn" type="button" title="快捷新建">
+                <button className="workspace-clone__icon-btn" type="button" title="Coming soon" disabled>
                   <WorkspaceCloneIcon name="plus" size={14} strokeWidth={2} />
                 </button>
                 <button
