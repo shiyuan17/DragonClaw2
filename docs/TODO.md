@@ -258,7 +258,7 @@
 - [x] Phase 5.15.8: 统一 `openclaw.json` 真源、补工作区正式契约、修复 Agent 路径安全、onboarding 失败语义与首页控制台 token 扩散
 
 ## Phase 5.16: Workspace 频道功能迁移
-- [ ] 在 `workspace-clone` 首页聊天工作区迁移旧版频道目录、绑定弹窗与 onboarding 体验，保持 legacy tabs 不变
-- [ ] 在首页频道目录中展示 8 个平台入口，并为微信 / 飞书接入真实绑定链路
-- [ ] 为 `DragonClaw2` 新增频道专用 Tauri commands、类型与前端 API 封装，保持与旧仓库协议一致
-- [ ] 让已绑定频道在首页复用对应 Agent 主会话，未绑定频道显示空态引导
+- [x] 在 `workspace-clone` 首页聊天工作区迁移旧版频道目录、绑定弹窗与 onboarding 体验，保持 legacy tabs 不变
+- [x] 在首页频道目录中展示 8 个平台入口，并为微信 / 飞书接入真实绑定链路
+- [x] 为 `DragonClaw2` 新增频道专用 Tauri commands、类型与前端 API 封装，保持与旧仓库协议一致
+- [x] 让已绑定频道在首页复用对应 Agent 主会话，未绑定频道显示空态引导

@@ -3,6 +3,7 @@ import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
 import type {
   ChannelBindingModalState,
   DirectoryContextMenuState,
+  WorkspaceChannelAgentOption,
   WorkspaceEntity,
   WorkspaceTypeTab,
 } from "./workspaceCloneTypes";
@@ -17,6 +18,26 @@ interface WorkspaceCloneDirectoryProps {
   searchQuery: string;
   contextMenu: DirectoryContextMenuState;
   channelBindingModal: ChannelBindingModalState;
+  channelBindingAgents: WorkspaceChannelAgentOption[];
+  channelBindingAgentId: string;
+  channelBindingModalLoading: boolean;
+  channelBindingModalSaving: boolean;
+  channelBindingNotice: string;
+  channelBindingError: string;
+  weixinQrStarting: boolean;
+  weixinQrPolling: boolean;
+  weixinQrUrl: string;
+  weixinQrDetail: string;
+  feishuQrRequesting: boolean;
+  feishuQrChecking: boolean;
+  feishuQrTargetUrl: string;
+  feishuQrUserCode: string;
+  feishuQrExpiresAtMs: number | null;
+  feishuAppId: string;
+  feishuAppSecret: string;
+  feishuAppSecretConfigured: boolean;
+  feishuDmPolicy: string;
+  feishuAllowFromSessionIds: string[];
   onToggleCollapsed: () => void;
   onSelectType: (type: WorkspaceEntityType) => void;
   onSelectEntity: (entityId: string) => void;
@@ -26,6 +47,79 @@ interface WorkspaceCloneDirectoryProps {
   onOpenChannelBindingModal: (entity: WorkspaceEntity) => void;
   onCloseChannelBindingModal: () => void;
   onSelectChannelBindingView: (view: ChannelBindingModalState["view"]) => void;
+  onSelectChannelBindingAgent: (agentId: string) => void;
+  onStartWeixinQrBinding: () => void;
+  onOpenExternalBindingLink: (url: string) => void;
+  onRequestFeishuQr: () => void;
+  onCheckFeishuQr: () => void;
+  onChangeFeishuAppId: (value: string) => void;
+  onChangeFeishuAppSecret: (value: string) => void;
+  onChangeFeishuDmPolicy: (value: string) => void;
+  onChangeFeishuAllowFrom: (value: string[]) => void;
+  onSaveChannelBinding: () => void;
+  onRemoveChannelBinding: (entityId: string) => void;
+}
+
+function renderEntityAvatar(entity: WorkspaceEntity) {
+  if (entity.iconSrc) {
+    return <img src={entity.iconSrc} alt="" className="workspace-clone__entity-avatar-image" />;
+  }
+  if (entity.memberLabels?.length) {
+    return (
+      <span className="workspace-clone__avatar-stack-inline">
+        {entity.memberLabels.slice(0, 3).map((label) => (
+          <span key={`${entity.id}-${label}`} className="workspace-clone__avatar-stack-chip">{label}</span>
+        ))}
+      </span>
+    );
+  }
+  return entity.avatarLabel;
+}
+
+function renderEntityButton(
+  entity: WorkspaceEntity,
+  selectedEntityId: string,
+  activeType: WorkspaceEntityType,
+  onSelectEntity: (entityId: string) => void,
+  onOpenContextMenu: (event: React.MouseEvent<HTMLButtonElement>, entity: WorkspaceEntity) => void,
+  onOpenChannelBindingModal: (entity: WorkspaceEntity) => void,
+) {
+  return (
+    <button
+      key={entity.id}
+      className={`workspace-clone__entity-item ${selectedEntityId === entity.id ? "is-active" : ""} ${entity.isCatalogEntry ? "is-catalog" : ""}`}
+      type="button"
+      onClick={() => onSelectEntity(entity.id)}
+      onContextMenu={(event) => {
+        if (!entity.isBoundChannel) {
+          return;
+        }
+        event.preventDefault();
+        onOpenContextMenu(event, entity);
+      }}
+    >
+      <span className={`workspace-clone__entity-avatar is-${entity.accent}`}>
+        {renderEntityAvatar(entity)}
+      </span>
+      <span className="workspace-clone__entity-text">
+        <strong>{entity.name}</strong>
+        <small>{entity.subtitle}</small>
+      </span>
+      <i className={`workspace-clone__entity-status is-${entity.status}`} />
+      {activeType === "channels" && (
+        <button
+          className="workspace-clone__entity-link"
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenChannelBindingModal(entity);
+          }}
+        >
+          {entity.actionLabel || (entity.isBoundChannel ? "查看" : "绑定")}
+        </button>
+      )}
+    </button>
+  );
 }
 
 export function WorkspaceCloneDirectory({
@@ -37,6 +131,26 @@ export function WorkspaceCloneDirectory({
   searchQuery,
   contextMenu,
   channelBindingModal,
+  channelBindingAgents,
+  channelBindingAgentId,
+  channelBindingModalLoading,
+  channelBindingModalSaving,
+  channelBindingNotice,
+  channelBindingError,
+  weixinQrStarting,
+  weixinQrPolling,
+  weixinQrUrl,
+  weixinQrDetail,
+  feishuQrRequesting,
+  feishuQrChecking,
+  feishuQrTargetUrl,
+  feishuQrUserCode,
+  feishuQrExpiresAtMs,
+  feishuAppId,
+  feishuAppSecret,
+  feishuAppSecretConfigured,
+  feishuDmPolicy,
+  feishuAllowFromSessionIds,
   onToggleCollapsed,
   onSelectType,
   onSelectEntity,
@@ -46,10 +160,23 @@ export function WorkspaceCloneDirectory({
   onOpenChannelBindingModal,
   onCloseChannelBindingModal,
   onSelectChannelBindingView,
+  onSelectChannelBindingAgent,
+  onStartWeixinQrBinding,
+  onOpenExternalBindingLink,
+  onRequestFeishuQr,
+  onCheckFeishuQr,
+  onChangeFeishuAppId,
+  onChangeFeishuAppSecret,
+  onChangeFeishuDmPolicy,
+  onChangeFeishuAllowFrom,
+  onSaveChannelBinding,
+  onRemoveChannelBinding,
 }: WorkspaceCloneDirectoryProps) {
-  const visibleEntities = activeType === "agents" ? entities : entities.slice(0, 3);
   const emptyLabel = activeType === "channels" ? "暂无频道结果" : activeType === "teams" ? "暂无团队结果" : "暂无数字员工结果";
   const directoryToggleLabel = isCollapsed ? "展开目录栏" : "收起目录栏";
+  const visibleEntities = activeType === "agents" ? entities : entities.slice(0, 6);
+  const boundChannels = activeType === "channels" ? entities.filter((entity) => entity.isBoundChannel) : [];
+  const catalogChannels = activeType === "channels" ? entities.filter((entity) => entity.isCatalogEntry) : [];
 
   return (
     <>
@@ -69,9 +196,6 @@ export function WorkspaceCloneDirectory({
                   strokeWidth={2}
                   className={`workspace-clone__directory-edge-icon ${isCollapsed ? "is-collapsed" : ""}`}
                 />
-              </button>
-              <button className="workspace-clone__mini-create" type="button" title="Coming soon" disabled>
-                <WorkspaceCloneIcon name="plus" size={14} strokeWidth={2} />
               </button>
             </div>
             <div className="workspace-clone__mini-tabs">
@@ -96,7 +220,9 @@ export function WorkspaceCloneDirectory({
                   title={entity.name}
                   onClick={() => onSelectEntity(entity.id)}
                 >
-                  <span className="workspace-clone__mini-entity-avatar">{entity.avatarLabel}</span>
+                  <span className="workspace-clone__mini-entity-avatar">
+                    {entity.iconSrc ? <img src={entity.iconSrc} alt="" className="workspace-clone__entity-avatar-image" /> : entity.avatarLabel}
+                  </span>
                   <i className={`workspace-clone__mini-entity-status is-${entity.status}`} />
                 </button>
               ))}
@@ -115,9 +241,6 @@ export function WorkspaceCloneDirectory({
                 />
               </label>
               <div className="workspace-clone__directory-head-actions">
-                <button className="workspace-clone__icon-btn" type="button" title="Coming soon" disabled>
-                  <WorkspaceCloneIcon name="plus" size={14} strokeWidth={2} />
-                </button>
                 <button
                   className="workspace-clone__directory-edge-btn workspace-clone__directory-edge-btn--inline"
                   type="button"
@@ -147,56 +270,74 @@ export function WorkspaceCloneDirectory({
               ))}
             </div>
 
-            <section className={`workspace-clone__entity-list ${activeType === "agents" ? "is-agents" : ""}`}>
-              {visibleEntities.length > 0 ? (
-                visibleEntities.map((entity) => (
-                  <button
-                    key={entity.id}
-                    className={`workspace-clone__entity-item ${selectedEntityId === entity.id ? "is-active" : ""}`}
-                    type="button"
-                    onClick={() => onSelectEntity(entity.id)}
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      onOpenContextMenu(event, entity);
-                    }}
-                  >
-                    <span className={`workspace-clone__entity-avatar is-${entity.accent}`}>
-                      {entity.memberLabels?.length ? (
-                        <span className="workspace-clone__avatar-stack-inline">
-                          {entity.memberLabels.slice(0, 3).map((label) => (
-                            <span key={`${entity.id}-${label}`} className="workspace-clone__avatar-stack-chip">{label}</span>
-                          ))}
-                        </span>
-                      ) : entity.avatarLabel}
-                    </span>
-                    <span className="workspace-clone__entity-text">
-                      <strong>{entity.name}</strong>
-                      <small>{entity.subtitle}</small>
-                    </span>
-                    <i className={`workspace-clone__entity-status is-${entity.status}`} />
-                    {activeType === "channels" && (
-                      <button
-                        className="workspace-clone__entity-link"
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onOpenChannelBindingModal(entity);
-                        }}
-                      >
-                        绑定
-                      </button>
-                    )}
-                  </button>
-                ))
-              ) : (
-                <div className="workspace-clone__entity-empty">
-                  <div className="workspace-clone__empty-card">
-                    <strong>{emptyLabel}</strong>
-                    <small>当前阶段只保留目录区层级、搜索、选中态和上下文菜单结构。</small>
+            {activeType === "channels" ? (
+              <section className="workspace-clone__entity-list workspace-clone__entity-list--channels">
+                <div className="workspace-clone__directory-section">
+                  <div className="workspace-clone__directory-section-head">
+                    <strong>频道会话</strong>
+                    <small>{boundChannels.length > 0 ? `${boundChannels.length} 个已绑定账号` : "暂无已绑定频道"}</small>
                   </div>
+                  {boundChannels.length > 0 ? (
+                    boundChannels.map((entity) =>
+                      renderEntityButton(
+                        entity,
+                        selectedEntityId,
+                        activeType,
+                        onSelectEntity,
+                        onOpenContextMenu,
+                        onOpenChannelBindingModal,
+                      ),
+                    )
+                  ) : (
+                    <div className="workspace-clone__entity-empty workspace-clone__entity-empty--compact">
+                      <div className="workspace-clone__empty-card">
+                        <strong>还没有已绑定频道</strong>
+                        <small>先完成微信或飞书绑定，随后频道会以会话卡形式出现在这里。</small>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </section>
+
+                <div className="workspace-clone__directory-section">
+                  <div className="workspace-clone__directory-section-head">
+                    <strong>频道目录</strong>
+                    <small>首批展示 8 个平台</small>
+                  </div>
+                  {catalogChannels.map((entity) =>
+                    renderEntityButton(
+                      entity,
+                      selectedEntityId,
+                      activeType,
+                      onSelectEntity,
+                      onOpenContextMenu,
+                      onOpenChannelBindingModal,
+                    ),
+                  )}
+                </div>
+              </section>
+            ) : (
+              <section className={`workspace-clone__entity-list ${activeType === "agents" ? "is-agents" : ""}`}>
+                {visibleEntities.length > 0 ? (
+                  visibleEntities.map((entity) =>
+                    renderEntityButton(
+                      entity,
+                      selectedEntityId,
+                      activeType,
+                      onSelectEntity,
+                      onOpenContextMenu,
+                      onOpenChannelBindingModal,
+                    ),
+                  )
+                ) : (
+                  <div className="workspace-clone__entity-empty">
+                    <div className="workspace-clone__empty-card">
+                      <strong>{emptyLabel}</strong>
+                      <small>当前阶段只保留目录区层级、搜索、选中态和上下文菜单结构。</small>
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
           </>
         )}
 
@@ -205,8 +346,27 @@ export function WorkspaceCloneDirectory({
             <strong>{contextMenu.title}</strong>
             {contextMenu.kind === "channel" ? (
               <>
-                <button type="button" onClick={onCloseContextMenu}>查看绑定</button>
-                <button type="button" onClick={onCloseContextMenu}>删除配置</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onCloseContextMenu();
+                    const target = entities.find((entity) => entity.id === contextMenu.entityId);
+                    if (target) {
+                      onOpenChannelBindingModal(target);
+                    }
+                  }}
+                >
+                  查看绑定
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onCloseContextMenu();
+                    onRemoveChannelBinding(contextMenu.entityId);
+                  }}
+                >
+                  删除绑定
+                </button>
               </>
             ) : contextMenu.kind === "team" ? (
               <>
@@ -225,8 +385,38 @@ export function WorkspaceCloneDirectory({
 
       <WorkspaceCloneChannelBindingModal
         state={channelBindingModal}
+        availableAgents={channelBindingAgents}
+        selectedAgentId={channelBindingAgentId}
+        modalLoading={channelBindingModalLoading}
+        modalSaving={channelBindingModalSaving}
+        modalNotice={channelBindingNotice}
+        modalError={channelBindingError}
+        weixinQrStarting={weixinQrStarting}
+        weixinQrPolling={weixinQrPolling}
+        weixinQrUrl={weixinQrUrl}
+        weixinQrDetail={weixinQrDetail}
+        feishuQrRequesting={feishuQrRequesting}
+        feishuQrChecking={feishuQrChecking}
+        feishuQrTargetUrl={feishuQrTargetUrl}
+        feishuQrUserCode={feishuQrUserCode}
+        feishuQrExpiresAtMs={feishuQrExpiresAtMs}
+        feishuAppId={feishuAppId}
+        feishuAppSecret={feishuAppSecret}
+        feishuAppSecretConfigured={feishuAppSecretConfigured}
+        feishuDmPolicy={feishuDmPolicy}
+        feishuAllowFromSessionIds={feishuAllowFromSessionIds}
         onClose={onCloseChannelBindingModal}
         onSelectView={onSelectChannelBindingView}
+        onSelectAgent={onSelectChannelBindingAgent}
+        onStartWeixinQrBinding={onStartWeixinQrBinding}
+        onOpenExternalLink={onOpenExternalBindingLink}
+        onRequestFeishuQr={onRequestFeishuQr}
+        onCheckFeishuQr={onCheckFeishuQr}
+        onChangeFeishuAppId={onChangeFeishuAppId}
+        onChangeFeishuAppSecret={onChangeFeishuAppSecret}
+        onChangeFeishuDmPolicy={onChangeFeishuDmPolicy}
+        onChangeFeishuAllowFrom={onChangeFeishuAllowFrom}
+        onSaveBinding={onSaveChannelBinding}
       />
     </>
   );

@@ -1,4 +1,4 @@
-import type { WorkspaceEntityType, WorkspaceMenuKey } from "../../types";
+import type { WorkspaceChannelId, WorkspaceEntityType, WorkspaceMenuKey } from "../../types";
 
 export type WorkspaceUtilityPanel = "session" | "history" | "logs" | "schedule" | "workbench" | null;
 export type WorkspaceSessionSectionKey = "model" | "memory" | "skills" | "commands" | "tools" | "channel" | "schedule";
@@ -6,7 +6,7 @@ export type WorkspaceRelatedResource = WorkspaceSessionSectionKey | null;
 export type WorkspaceSidebarAdminPanel = "theme" | "language" | null;
 export type WorkspaceComposerModal = "knowledge" | "knowledge-delete" | "slash-command" | "email-binding" | null;
 export type WorkspaceSuggestionMode = "slash" | "mention" | null;
-export type ChannelBindingView = "wechat" | "feishu" | "manual";
+export type ChannelBindingView = "wechat" | "feishu" | "manual" | "placeholder";
 export type WorkspaceModelProviderApi = "openai-completions" | "anthropic-messages";
 export type WorkspaceSkillCategory = "builtIn" | "installed";
 export type WorkspaceToolCategory =
@@ -46,6 +46,30 @@ export interface WorkspaceEntity {
   currentWork?: string;
   recentOutput?: string;
   channelLabel?: string;
+  iconSrc?: string;
+  channelId?: WorkspaceChannelId;
+  channelAccountId?: string | null;
+  runtimeAgentId?: string | null;
+  isBoundChannel?: boolean;
+  isCatalogEntry?: boolean;
+  implemented?: boolean;
+  actionLabel?: string;
+  emptyHint?: string;
+}
+
+export interface WorkspaceChannelCatalogEntry {
+  id: WorkspaceChannelId;
+  name: string;
+  description: string;
+  icon: string;
+  implemented: boolean;
+}
+
+export interface WorkspaceChannelAgentOption {
+  id: string;
+  name: string;
+  model?: string | null;
+  isDefault: boolean;
 }
 
 export interface WorkspaceMessage {
@@ -189,7 +213,9 @@ export interface ChannelBindingModalState {
   open: boolean;
   channelId: string;
   channelName: string;
+  accountId: string;
   view: ChannelBindingView;
+  implemented: boolean;
 }
 
 export type WorkspaceGatewayStatus = "idle" | "connecting" | "connected" | "error";

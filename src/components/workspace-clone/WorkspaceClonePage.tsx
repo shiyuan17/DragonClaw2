@@ -4,13 +4,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { motion } from "framer-motion";
-import type { CurrentConfig, LogEntry, ProviderInfo, SavedProvider, WorkspaceEntityType, WorkspaceMenuKey } from "../../types";
+import type {
+  CurrentConfig,
+  LogEntry,
+  ProviderInfo,
+  SavedProvider,
+  WorkspaceChannelId,
+  WorkspaceEntityType,
+  WorkspaceMenuKey,
+} from "../../types";
 import { useWorkspaceGatewayChat } from "../../hooks/useWorkspaceGatewayChat";
 import { formatUptime } from "../../utils/log-humanizer";
 import {
   buildWorkspaceEntities,
   buildWorkspaceLogs,
-  WORKSPACE_CHANNEL_ITEMS,
   WORKSPACE_COMMAND_ITEMS,
   WORKSPACE_HISTORY,
   WORKSPACE_MENU_ITEMS,
@@ -41,9 +48,8 @@ import { WorkspaceCloneHeader } from "./WorkspaceCloneHeader";
 import { WorkspaceCloneModelConfigModal } from "./WorkspaceCloneModelConfigModal";
 import { WorkspaceCloneOverlayStack } from "./WorkspaceCloneOverlayStack";
 import { WorkspaceCloneSidebar } from "./WorkspaceCloneSidebar";
+import { useWorkspaceChannels } from "./useWorkspaceChannels";
 import type {
-  ChannelBindingModalState,
-  DirectoryContextMenuState,
   WorkspaceEntity,
   WorkspaceAgentSkillConfig,
   WorkspaceAgentSkillSaveResult,
@@ -231,13 +237,6 @@ export function WorkspaceClonePage({
   const [activeSessionSection, setActiveSessionSection] = useState<WorkspaceSessionSectionKey>("model");
   const [adminOpen, setAdminOpen] = useState(false);
   const [adminPanel, setAdminPanel] = useState<WorkspaceSidebarAdminPanel>(null);
-  const [contextMenu, setContextMenu] = useState<DirectoryContextMenuState>(null);
-  const [channelBindingModal, setChannelBindingModal] = useState<ChannelBindingModalState>({
-    open: false,
-    channelId: "",
-    channelName: "",
-    view: "wechat",
-  });
   const [showAgentInfo, setShowAgentInfo] = useState(false);
   const [showMemoryModal, setShowMemoryModal] = useState(false);
   const [showSkillsModal, setShowSkillsModal] = useState(false);
@@ -271,6 +270,8 @@ export function WorkspaceClonePage({
   const [toolNotice, setToolNotice] = useState("");
   const [toolError, setToolError] = useState("");
   const homepageChat = useWorkspaceGatewayChat({ running, servicePort, gatewayToken });
+  const workspaceChannels = useWorkspaceChannels({ configVersion });
+  const { setContextMenu } = workspaceChannels;
   const currentAgentIdRef = useRef<string | null>(null);
   const memoryLoadSeqRef = useRef(0);
   const skillLoadSeqRef = useRef(0);
@@ -338,11 +339,10 @@ export function WorkspaceClonePage({
     () => ({
       ...staticEntitiesByType,
       agents: gatewayAgentEntities,
+      channels: workspaceChannels.channelEntities,
     }),
-    [gatewayAgentEntities, staticEntitiesByType],
+    [gatewayAgentEntities, staticEntitiesByType, workspaceChannels.channelEntities],
   );
-
-  const chatEnabled = activeType === "agents";
 
   const filteredEntities = useMemo(() => {
     const source = entitiesByType[activeType];
@@ -390,7 +390,7 @@ export function WorkspaceClonePage({
       setShowRuntimeLogDetail(false);
       setShowSettingsTextPreview(false);
     }
-  }, [activeMenu]);
+  }, [activeMenu, setContextMenu]);
 
   useEffect(() => {
     const handleDocumentClick = () => {
@@ -409,16 +409,33 @@ export function WorkspaceClonePage({
       document.removeEventListener("click", handleDocumentClick);
       window.removeEventListener("resize", handleWindowResize);
     };
-  }, []);
+  }, [setContextMenu]);
 
   const selectedEntity = useMemo(
     () => entitiesByType[activeType].find((entity) => entity.id === selectedEntityId) ?? filteredEntities[0] ?? null,
     [activeType, entitiesByType, filteredEntities, selectedEntityId],
   );
 
+  const chatEnabled = activeType === "agents"
+    || (activeType === "channels" && Boolean(selectedEntity?.runtimeAgentId));
+
+  const chatDisabledReason = activeType === "channels" && !selectedEntity?.runtimeAgentId
+    ? "channel-unbound"
+    : !chatEnabled
+      ? "unsupported"
+      : undefined;
+
   const currentMemoryAgentId = useMemo(
-    () => activeType === "agents" ? (selectedEntity?.id || selectedEntityId || homepageChat.selectedAgentId || "main") : null,
-    [activeType, homepageChat.selectedAgentId, selectedEntity?.id, selectedEntityId],
+    () => {
+      if (activeType === "agents") {
+        return selectedEntity?.id || selectedEntityId || homepageChat.selectedAgentId || "main";
+      }
+      if (activeType === "channels" && selectedEntity?.runtimeAgentId) {
+        return selectedEntity.runtimeAgentId;
+      }
+      return null;
+    },
+    [activeType, homepageChat.selectedAgentId, selectedEntity?.id, selectedEntity?.runtimeAgentId, selectedEntityId],
   );
 
   useEffect(() => {
@@ -828,17 +845,6 @@ export function WorkspaceClonePage({
   );
   const openModelConfigModal = () => setIsModelConfigOpen(true);
 
-  const openChannelBindingModal = (entityId: string) => {
-    const entity = entitiesByType.channels.find((item) => item.id === entityId);
-    if (!entity) return;
-    setChannelBindingModal({
-      open: true,
-      channelId: entity.id,
-      channelName: entity.name,
-      view: entity.id === "feishu" ? "feishu" : "wechat",
-    });
-  };
-
   const toggleUtilityPanel = (panel: Exclude<WorkspaceUtilityPanel, null>) => {
     setUtilityPanel((current) => current === panel ? null : panel);
   };
@@ -952,14 +958,41 @@ export function WorkspaceClonePage({
             selectedEntityId={selectedEntity?.id || ""}
             isCollapsed={isDirectoryCollapsed}
             searchQuery={searchQuery}
-            contextMenu={contextMenu}
-            channelBindingModal={channelBindingModal}
+            contextMenu={workspaceChannels.contextMenu}
+            channelBindingModal={workspaceChannels.modal}
+            channelBindingAgents={workspaceChannels.agents}
+            channelBindingAgentId={workspaceChannels.selectedAgentId}
+            channelBindingModalLoading={workspaceChannels.modalLoading}
+            channelBindingModalSaving={workspaceChannels.modalSaving}
+            channelBindingNotice={workspaceChannels.modalNotice}
+            channelBindingError={workspaceChannels.modalError}
+            weixinQrStarting={workspaceChannels.weixinQrStarting}
+            weixinQrPolling={workspaceChannels.weixinQrPolling}
+            weixinQrUrl={workspaceChannels.weixinQrSnapshot?.qrUrl?.trim() || ""}
+            weixinQrDetail={workspaceChannels.weixinQrSnapshot?.detail?.trim() || ""}
+            feishuQrRequesting={workspaceChannels.feishuQrRequesting}
+            feishuQrChecking={workspaceChannels.feishuQrChecking}
+            feishuQrTargetUrl={workspaceChannels.feishuQrTargetUrl}
+            feishuQrUserCode={workspaceChannels.feishuQrUserCode}
+            feishuQrExpiresAtMs={workspaceChannels.feishuQrExpiresAtMs}
+            feishuAppId={workspaceChannels.feishuAppId}
+            feishuAppSecret={workspaceChannels.feishuAppSecret}
+            feishuAppSecretConfigured={workspaceChannels.feishuAppSecretConfigured}
+            feishuDmPolicy={workspaceChannels.feishuDmPolicy}
+            feishuAllowFromSessionIds={workspaceChannels.feishuAllowFromSessionIds}
             onToggleCollapsed={() => setIsDirectoryCollapsed((value) => !value)}
             onSelectType={setActiveType}
             onSelectEntity={(entityId) => {
               setSelectedEntityId(entityId);
               if (activeType === "agents") {
                 homepageChat.selectAgent(entityId);
+                return;
+              }
+              if (activeType === "channels") {
+                const entity = filteredEntities.find((item) => item.id === entityId);
+                if (entity?.runtimeAgentId) {
+                  homepageChat.selectAgent(entity.runtimeAgentId);
+                }
               }
             }}
             onSearchChange={setSearchQuery}
@@ -975,9 +1008,44 @@ export function WorkspaceClonePage({
               });
             }}
             onCloseContextMenu={() => setContextMenu(null)}
-            onOpenChannelBindingModal={(entity) => openChannelBindingModal(entity.id)}
-            onCloseChannelBindingModal={() => setChannelBindingModal((prev) => ({ ...prev, open: false }))}
-            onSelectChannelBindingView={(view) => setChannelBindingModal((prev) => ({ ...prev, view }))}
+            onOpenChannelBindingModal={(entity) => {
+              void workspaceChannels.openBindingModal(entity);
+            }}
+            onCloseChannelBindingModal={() => {
+              void workspaceChannels.closeBindingModal();
+            }}
+            onSelectChannelBindingView={(view) =>
+              workspaceChannels.setModal((current) => ({ ...current, view }))
+            }
+            onSelectChannelBindingAgent={workspaceChannels.setSelectedAgentId}
+            onStartWeixinQrBinding={() => {
+              void workspaceChannels.startWeixinQrBindingFlow();
+            }}
+            onOpenExternalBindingLink={(url) => {
+              void workspaceChannels.handleOpenExternalBindingLink(
+                url,
+                (workspaceChannels.modal.channelId as WorkspaceChannelId) || "weixin",
+              );
+            }}
+            onRequestFeishuQr={() => {
+              void workspaceChannels.handleRequestFeishuQr();
+            }}
+            onCheckFeishuQr={() => {
+              void workspaceChannels.handleCheckFeishuQr();
+            }}
+            onChangeFeishuAppId={workspaceChannels.setFeishuAppId}
+            onChangeFeishuAppSecret={workspaceChannels.setFeishuAppSecret}
+            onChangeFeishuDmPolicy={workspaceChannels.setFeishuDmPolicy}
+            onChangeFeishuAllowFrom={workspaceChannels.setFeishuAllowFromSessionIds}
+            onSaveChannelBinding={() => {
+              void workspaceChannels.handleSaveBinding();
+            }}
+            onRemoveChannelBinding={(entityId) => {
+              const target = entitiesByType.channels.find((item) => item.id === entityId);
+              if (target) {
+                void workspaceChannels.handleRemoveBinding(target);
+              }
+            }}
           />
         )}
 
@@ -1002,6 +1070,7 @@ export function WorkspaceClonePage({
               <WorkspaceCloneChatView
                 selectedEntity={selectedEntity}
                 chatEnabled={chatEnabled}
+                chatDisabledReason={chatDisabledReason}
                 messages={chatEnabled ? homepageChat.messages : []}
                 connectionStatus={homepageChat.status}
                 connectionError={homepageChat.error}
@@ -1016,7 +1085,7 @@ export function WorkspaceClonePage({
                 memoryItems={memoryResourceItems}
                 skillItems={skillResourceItems}
                 commandItems={WORKSPACE_COMMAND_ITEMS}
-                channelItems={WORKSPACE_CHANNEL_ITEMS}
+                channelItems={workspaceChannels.channelResourceItems}
                 toolItems={toolResourceItems}
                 currentModelName={workspaceModelName}
                 currentProviderName={workspaceProviderName}
@@ -1093,7 +1162,7 @@ export function WorkspaceClonePage({
           toolError={toolError}
           memoryItems={memoryResourceItems}
           commandItems={WORKSPACE_COMMAND_ITEMS}
-          channelItems={WORKSPACE_CHANNEL_ITEMS}
+          channelItems={workspaceChannels.channelResourceItems}
           scheduleItems={WORKSPACE_SCHEDULES.map((item) => ({
             id: item.id,
             title: item.title,

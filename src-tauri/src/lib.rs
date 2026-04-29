@@ -3,6 +3,7 @@
 // This file is part of DragonClaw. See LICENSE for details.
 mod agent_resource_settings;
 mod agents;
+mod channels;
 mod config;
 mod diagnostics;
 mod download;
@@ -158,6 +159,16 @@ pub fn run() {
             config::save_api_config,
             config::set_default_model,
             config::reset_config,
+            channels::load_openclaw_channel_accounts_snapshot,
+            channels::load_openclaw_channel_form_values,
+            channels::save_openclaw_channel_config,
+            channels::save_openclaw_channel_binding,
+            channels::remove_openclaw_channel_config,
+            channels::start_openclaw_channel_qr_binding,
+            channels::poll_openclaw_channel_qr_binding,
+            channels::clear_openclaw_channel_qr_binding_session,
+            channels::request_feishu_openclaw_qr,
+            channels::poll_feishu_openclaw_qr_result,
             memory::load_memory_file_snapshot,
             memory::save_source_file,
             onboarding::get_skillhub_install_runtime_info,

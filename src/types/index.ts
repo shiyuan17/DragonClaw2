@@ -14,6 +14,15 @@ export type TabId = "dashboard" | "models" | "agents" | "analytics" | "settings"
 export type HomeView = "workspace-clone" | "legacy-tabs";
 export type WorkspaceMenuKey = "chat" | "schedule" | "knowledge" | "employees" | "skills" | "tasks";
 export type WorkspaceEntityType = "agents" | "channels" | "teams";
+export type WorkspaceChannelId =
+    | "weixin"
+    | "feishu"
+    | "wecom"
+    | "dingtalk"
+    | "qq"
+    | "telegram"
+    | "whatsapp"
+    | "discord";
 
 // ===== Data Models =====
 export interface LogEntry {
@@ -144,6 +153,70 @@ export interface SkillHubCommandResult {
     stdout: string;
     stderr: string;
     runtimeInfo: SkillHubInstallRuntimeInfo;
+}
+
+export interface OpenClawChannelAccountSnapshotItem {
+    accountId: string;
+    name: string;
+    configured: boolean;
+    status: string;
+    isDefault: boolean;
+    agentId?: string | null;
+}
+
+export interface OpenClawChannelGroupSnapshotItem {
+    channelType: string;
+    defaultAccountId: string;
+    status: string;
+    accounts: OpenClawChannelAccountSnapshotItem[];
+}
+
+export interface OpenClawChannelAccountsSnapshotResponse {
+    sourcePath: string;
+    detail: string;
+    channels: OpenClawChannelGroupSnapshotItem[];
+}
+
+export interface OpenClawChannelConfigPayload {
+    channelType: string;
+    accountId?: string | null;
+    config: Record<string, string>;
+}
+
+export interface OpenClawChannelBindingPayload {
+    channelType: string;
+    accountId: string;
+    agentId?: string | null;
+    preferredDmScope?: "main" | "per-peer" | "per-channel-peer" | "per-account-channel-peer" | null;
+}
+
+export interface OpenClawChannelQrBindingSessionSnapshot {
+    sessionId: string;
+    channelType: string;
+    status: string;
+    qrUrl?: string | null;
+    qrAscii?: string | null;
+    detail?: string | null;
+    logs: string[];
+    startedAtMs: number;
+    updatedAtMs: number;
+}
+
+export interface FeishuOnboardingQrResponse {
+    qrUrl: string;
+    userCode: string;
+    deviceCode: string;
+    pollIntervalSeconds: number;
+    expiresInSeconds: number;
+    expiresAtMs: number;
+}
+
+export interface FeishuOnboardingPollResponse {
+    status: string;
+    message?: string | null;
+    appId?: string | null;
+    credentialsSaved?: boolean | null;
+    tenantBrand?: string | null;
 }
 
 // ===== UI Constants =====

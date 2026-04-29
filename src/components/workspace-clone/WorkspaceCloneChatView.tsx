@@ -18,6 +18,7 @@ import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
 interface WorkspaceCloneChatViewProps {
   selectedEntity: WorkspaceEntity | null;
   chatEnabled: boolean;
+  chatDisabledReason?: "channel-unbound" | "unsupported";
   messages: WorkspaceMessage[];
   connectionStatus: WorkspaceGatewayStatus;
   connectionError: string | null;
@@ -50,6 +51,7 @@ interface WorkspaceCloneChatViewProps {
 export function WorkspaceCloneChatView({
   selectedEntity,
   chatEnabled,
+  chatDisabledReason,
   messages,
   connectionStatus,
   connectionError,
@@ -82,6 +84,7 @@ export function WorkspaceCloneChatView({
   const showDisconnectedState = !chatEnabled || !running || connectionStatus === "error";
   const showConnectingState = running && connectionStatus === "connecting" && !hasMessages;
   const showMissingTokenState = Boolean(connectionError?.includes("本地网关 token"));
+  const showUnboundChannelState = !chatEnabled && chatDisabledReason === "channel-unbound";
 
   return (
     <div className={`workspace-clone__chat-layout ${utilityPanel ? "drawer-open" : ""}`}>
@@ -95,7 +98,9 @@ export function WorkspaceCloneChatView({
               <div className="workspace-clone__empty-state-copy">
                 <strong>
                   {!chatEnabled
-                    ? "当前仅首页聊天接入数字员工"
+                    ? showUnboundChannelState
+                      ? "当前频道尚未绑定 Agent"
+                      : "当前版本只有数字员工页会接入真实 Agent 会话"
                     : !running
                       ? "服务尚未启动"
                       : showMissingTokenState
@@ -104,7 +109,9 @@ export function WorkspaceCloneChatView({
                 </strong>
                 <p>
                   {!chatEnabled
-                    ? "当前版本只把“数字员工”页签接入真实 Agent 会话，其它区域仍保留工作台骨架。"
+                    ? showUnboundChannelState
+                      ? selectedEntity?.emptyHint || "请先完成频道绑定，绑定成功后首页主聊天区会直接复用目标 Agent 的主会话。"
+                      : "当前阶段只有数字员工页会接入真实 Agent 主会话，其它区域仍保留工作台骨架。"
                     : connectionError || (running
                       ? "正在等待本地网关握手完成，你也可以先打开控制台确认 OpenClaw 状态。"
                       : "启动服务后，这里会自动接入当前 Agent 的主会话。")}
