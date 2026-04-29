@@ -101,6 +101,20 @@ export interface CurrentConfig {
     gateway_token?: string | null;
 }
 
+export interface OnboardingSkillInstallResultItem {
+    name: string;
+    status: string;
+    detail?: string | null;
+}
+
+export interface OnboardingSkillInstallState {
+    required: boolean;
+    completed: boolean;
+    skipped: boolean;
+    results: OnboardingSkillInstallResultItem[];
+    lastAttemptAt?: number | null;
+}
+
 // ===== UI Constants =====
 export const CATEGORY_LABELS: Record<string, { label: string; icon: string }> = {
     free: { label: "免费注册", icon: "gift" },

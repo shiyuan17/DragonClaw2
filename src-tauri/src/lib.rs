@@ -9,6 +9,7 @@ mod download;
 mod environment;
 mod installer;
 mod memory;
+mod onboarding;
 mod paths;
 mod provider_mgr;
 mod providers;
@@ -150,6 +151,8 @@ pub fn run() {
             config::reset_config,
             memory::load_memory_file_snapshot,
             memory::save_source_file,
+            onboarding::get_onboarding_skill_install_state,
+            onboarding::save_onboarding_skill_install_state,
             // Diagnostics
             diagnostics::export_diagnostics_zip,
             // Agent management
