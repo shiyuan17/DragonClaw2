@@ -27,10 +27,6 @@ interface UseSetupOptions {
   setRunning: (r: boolean) => void;
 }
 
-function wait(ms: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
 export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
   const [phase, setPhase] = useState<AppPhase>("checking");
   const [loading, setLoading] = useState(false);
@@ -83,6 +79,19 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
     }
   }, []);
 
+  const configureWorkspace = useCallback(async (nextWorkspacePath?: string | null) => {
+    const trimmedWorkspacePath = typeof nextWorkspacePath === "string"
+      ? nextWorkspacePath.trim()
+      : "";
+
+    await invoke("inject_default_config", {
+      workspacePath: trimmedWorkspacePath || null,
+    });
+    await invoke("inject_default_models");
+    await markOnboardingSkillInstallRequired();
+    return await syncWorkspacePath(trimmedWorkspacePath || undefined);
+  }, [syncWorkspacePath]);
+
   const finalizeStartup = useCallback(async (force = false) => {
     if ((!force && phaseRef.current !== "launching") || startupFinalizingRef.current) {
       return;
@@ -109,7 +118,6 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
         });
         setProgress(99);
         setProgressMsg(installResult.summaryMessage);
-        await wait(900);
       } else {
         setProgress(100);
         setProgressMsg("OpenClaw 服务已就绪");
@@ -204,20 +212,26 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
       if (nodeOk && openclawOk && modulesOk) {
         const configOk = await invoke<boolean>("check_config_exists");
         if (!configOk) {
-          setSetupPhase("workspace");
-          addLog("info", "首次使用，请选择工作区目录");
-          return;
-        }
-
-        await syncWorkspacePath();
-        try {
-          const diagnostics = await getOnboardingSkillInstallDiagnostics();
-          if (diagnostics.shouldBackfill) {
-            addLog("info", "Detected missing onboarding skill install state for an existing user; backfill will run on this launch.");
-            await markOnboardingSkillInstallRequired();
+          addLog("info", "首次使用，正在自动配置默认工作区...");
+          try {
+            const resolvedWorkspacePath = await configureWorkspace(null);
+            addLog("success", `[OK] 已自动配置默认工作区: ${resolvedWorkspacePath || "默认目录"}`);
+          } catch (configError) {
+            setSetupPhase("workspace");
+            addLog("warn", `默认工作区自动配置失败，已切换为手动选择: ${configError}`);
+            return;
           }
-        } catch (diagnosticsError) {
-          addLog("warn", `Onboarding skill install diagnostics failed; skipping backfill check: ${diagnosticsError}`);
+        } else {
+          await syncWorkspacePath();
+          try {
+            const diagnostics = await getOnboardingSkillInstallDiagnostics();
+            if (diagnostics.shouldBackfill) {
+              addLog("info", "Detected missing onboarding skill install state for an existing user; backfill will run on this launch.");
+              await markOnboardingSkillInstallRequired();
+            }
+          } catch (diagnosticsError) {
+            addLog("warn", `Onboarding skill install diagnostics failed; skipping backfill check: ${diagnosticsError}`);
+          }
         }
 
         addLog("success", "[OK] 环境检查通过，所有组件就绪");
@@ -309,13 +323,8 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
     setLoading(true);
 
     try {
-      await invoke("inject_default_config", {
-        workspacePath: workspacePath.trim() || null,
-      });
-      await invoke("inject_default_models");
-      await markOnboardingSkillInstallRequired();
-      await syncWorkspacePath(workspacePath.trim() || undefined);
-      addLog("success", `[OK] 工作区已配置: ${workspacePath || "默认目录"}`);
+      const resolvedWorkspacePath = await configureWorkspace(workspacePath);
+      addLog("success", `[OK] 工作区已配置: ${resolvedWorkspacePath || "默认目录"}`);
       await launchService();
     } catch (err) {
       addLog("error", `配置失败: ${err}`);
@@ -324,7 +333,7 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
         setLoading(false);
       }
     }
-  }, [addLog, launchService, syncWorkspacePath, workspacePath]);
+  }, [addLog, configureWorkspace, launchService, workspacePath]);
 
   const handleSwitchWorkspace = useCallback(async () => {
     const selected = await open({
