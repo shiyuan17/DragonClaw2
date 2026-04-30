@@ -76,6 +76,62 @@ function renderEntityAvatar(entity: WorkspaceEntity) {
   return entity.avatarLabel;
 }
 
+function renderChannelButton(
+  entity: WorkspaceEntity,
+  selectedEntityId: string,
+  onSelectEntity: (entityId: string) => void,
+  onOpenContextMenu: (event: React.MouseEvent<HTMLButtonElement>, entity: WorkspaceEntity) => void,
+  onOpenChannelBindingModal: (entity: WorkspaceEntity) => void,
+) {
+  return (
+    <button
+      key={entity.id}
+      className={[
+        "workspace-clone__entity-item",
+        "workspace-clone__entity-item--channel",
+        entity.isCatalogEntry ? "workspace-clone__entity-item--channel-catalog" : "workspace-clone__entity-item--channel-chat",
+        selectedEntityId === entity.id ? "is-active" : "",
+        entity.isCatalogEntry ? "is-catalog" : "",
+      ].join(" ").trim()}
+      type="button"
+      onClick={() => onSelectEntity(entity.id)}
+      onContextMenu={(event) => {
+        if (!entity.isBoundChannel) {
+          return;
+        }
+        event.preventDefault();
+        onOpenContextMenu(event, entity);
+      }}
+    >
+      <span className="workspace-clone__entity-main workspace-clone__entity-main--channel">
+        <span className="workspace-clone__entity-avatar workspace-clone__entity-avatar--channel">
+          {renderEntityAvatar(entity)}
+        </span>
+        <span className="workspace-clone__entity-text workspace-clone__entity-text--channel">
+          <strong>{entity.isCatalogEntry ? entity.name : entity.channelLabel || entity.name}</strong>
+          {!entity.isCatalogEntry && <small>{entity.subtitle}</small>}
+        </span>
+      </span>
+      <span className="workspace-clone__entity-actions workspace-clone__entity-actions--channel">
+        {entity.isBoundChannel ? (
+          <span
+            className="workspace-clone__entity-link workspace-clone__entity-link--channel"
+            role="button"
+            tabIndex={-1}
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenChannelBindingModal(entity);
+            }}
+          >
+            配置
+          </span>
+        ) : null}
+        <i className={`workspace-clone__entity-status is-${entity.status}`} />
+      </span>
+    </button>
+  );
+}
+
 function renderEntityButton(
   entity: WorkspaceEntity,
   selectedEntityId: string,
@@ -84,6 +140,16 @@ function renderEntityButton(
   onOpenContextMenu: (event: React.MouseEvent<HTMLButtonElement>, entity: WorkspaceEntity) => void,
   onOpenChannelBindingModal: (entity: WorkspaceEntity) => void,
 ) {
+  if (activeType === "channels") {
+    return renderChannelButton(
+      entity,
+      selectedEntityId,
+      onSelectEntity,
+      onOpenContextMenu,
+      onOpenChannelBindingModal,
+    );
+  }
+
   return (
     <button
       key={entity.id}
@@ -106,18 +172,6 @@ function renderEntityButton(
         <small>{entity.subtitle}</small>
       </span>
       <i className={`workspace-clone__entity-status is-${entity.status}`} />
-      {activeType === "channels" && (
-        <button
-          className="workspace-clone__entity-link"
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onOpenChannelBindingModal(entity);
-          }}
-        >
-          {entity.actionLabel || (entity.isBoundChannel ? "查看" : "绑定")}
-        </button>
-      )}
     </button>
   );
 }
@@ -303,16 +357,18 @@ export function WorkspaceCloneDirectory({
                     <strong>频道目录</strong>
                     <small>首批展示 8 个平台</small>
                   </div>
-                  {catalogChannels.map((entity) =>
-                    renderEntityButton(
-                      entity,
-                      selectedEntityId,
-                      activeType,
-                      onSelectEntity,
-                      onOpenContextMenu,
-                      onOpenChannelBindingModal,
-                    ),
-                  )}
+                  <div className="workspace-clone__directory-channel-grid">
+                    {catalogChannels.map((entity) =>
+                      renderEntityButton(
+                        entity,
+                        selectedEntityId,
+                        activeType,
+                        onSelectEntity,
+                        onOpenContextMenu,
+                        onOpenChannelBindingModal,
+                      ),
+                    )}
+                  </div>
                 </div>
               </section>
             ) : (
