@@ -16,7 +16,7 @@ use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
-use crate::{config, environment, paths};
+use crate::{config, openclaw_cli, paths};
 
 const WEIXIN_DEFAULT_BASE_URL: &str = "https://ilinkai.weixin.qq.com";
 const WEIXIN_OFFICIAL_CHANNEL_ID: &str = "openclaw-weixin";
@@ -24,8 +24,6 @@ const WEIXIN_PLUGIN_PACKAGE_RELATIVE_PATH: &str = "extensions/openclaw-weixin/pa
 const WEIXIN_STATE_DIR_NAME: &str = "openclaw-weixin";
 const WEIXIN_ACCOUNTS_DIR_NAME: &str = "accounts";
 const WEIXIN_ACCOUNTS_INDEX_FILE: &str = "accounts.json";
-const WEIXIN_PLUGIN_INSTALL_ARGS: &[&str] =
-    &["plugins", "install", "@tencent-weixin/openclaw-weixin"];
 const WEIXIN_PLUGIN_ENABLE_ARGS: &[&str] = &[
     "config",
     "set",
@@ -33,6 +31,9 @@ const WEIXIN_PLUGIN_ENABLE_ARGS: &[&str] = &[
     "true",
 ];
 const WEIXIN_GATEWAY_RESTART_ARGS: &[&str] = &["gateway", "restart"];
+const WEIXIN_PLUGIN_PACKAGE_LATEST: &str = "@tencent-weixin/openclaw-weixin";
+const WEIXIN_PLUGIN_PACKAGE_LEGACY: &str = "@tencent-weixin/openclaw-weixin@legacy";
+const WEIXIN_PLUGIN_PACKAGE_PRE_2026_3_0: &str = "@tencent-weixin/openclaw-weixin@1.0.0";
 const WEIXIN_QR_START_RETURN_GRACE_MS: u128 = 150;
 const WEIXIN_QR_STATUS_POLL_INTERVAL_MS: u64 = 1_000;
 const WEIXIN_QR_STATUS_LONG_POLL_TIMEOUT_MS: u64 = 35_000;
@@ -174,9 +175,10 @@ struct FeishuOnboardingPollRawResponse {
 }
 
 #[derive(Debug, Clone)]
-struct WeixinPluginHttpMetadata {
-    app_id: String,
-    client_version: u32,
+struct WeixinPluginInstallPlan {
+    npm_spec: &'static str,
+    expected_version: Option<&'static str>,
+    needs_tmpdir_patch: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -355,7 +357,10 @@ fn migrate_legacy_channel_section_to_accounts(section_obj: &mut Map<String, Valu
 
 fn channel_payload_has_content(payload: &Map<String, Value>) -> bool {
     payload.iter().any(|(key, value)| {
-        if matches!(key.as_str(), "enabled" | "name" | "linkedAt" | "channelConfigUpdatedAt") {
+        if matches!(
+            key.as_str(),
+            "enabled" | "name" | "linkedAt" | "channelConfigUpdatedAt"
+        ) {
             return false;
         }
         match value {
@@ -489,7 +494,9 @@ fn ensure_root_object(config_value: &mut Value) -> Result<&mut Map<String, Value
         .ok_or_else(|| channel_error("openclaw.json 根节点格式错误"))
 }
 
-fn ensure_channels_object<'a>(root: &'a mut Map<String, Value>) -> Result<&'a mut Map<String, Value>, String> {
+fn ensure_channels_object<'a>(
+    root: &'a mut Map<String, Value>,
+) -> Result<&'a mut Map<String, Value>, String> {
     if !matches!(root.get("channels"), Some(Value::Object(_))) {
         root.insert("channels".to_string(), Value::Object(Map::new()));
     }
@@ -561,45 +568,40 @@ fn weixin_plugin_package_path() -> Result<PathBuf, String> {
     Ok(resolve_state_dir()?.join(WEIXIN_PLUGIN_PACKAGE_RELATIVE_PATH))
 }
 
-fn openclaw_engine_command(args: &[&str]) -> Result<Output, String> {
-    let node_bin = environment::get_node_binary()?;
-    let engine_dir = paths::engine_dir()?;
-    let run_script = engine_dir.join("scripts").join("run-node.mjs");
-    if !run_script.exists() {
-        return Err(channel_error(format!(
-            "OpenClaw 运行脚本不存在: {}",
-            run_script.display()
-        )));
-    }
-
-    let node_dir = node_bin
+fn resolve_weixin_plugin_dir() -> Result<PathBuf, String> {
+    weixin_plugin_package_path()?
         .parent()
         .map(PathBuf::from)
-        .ok_or_else(|| channel_error("无法解析 Node.js 目录"))?;
+        .ok_or_else(|| channel_error("无法解析微信插件目录"))
+}
 
-    let mut command = Command::new(&node_bin);
+fn openclaw_engine_command(args: &[&str]) -> Result<Output, String> {
+    let mut command = openclaw_cli::create_openclaw_cli_command()
+        .map_err(|error| channel_error(format!("构建 OpenClaw 命令失败: {error}")))?;
     command
-        .arg(&run_script)
         .args(args)
-        .current_dir(&engine_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    #[cfg(target_os = "windows")]
-    command.creation_flags(0x08000000);
-
-    if let Some(current_path) = std::env::var_os("PATH") {
-        let mut path_entries = std::env::split_paths(&current_path).collect::<Vec<_>>();
-        path_entries.insert(0, node_dir);
-        let new_path = std::env::join_paths(path_entries)
-            .map_err(|error| channel_error(format!("构建 PATH 失败: {error}")))?;
-        command.env("PATH", new_path);
-    }
-
     command
         .output()
         .map_err(|error| channel_error(format!("执行 OpenClaw 命令失败: {error}")))
+}
+
+fn run_bundled_npm_cli_command(args: &[&str], current_dir: &Path) -> Result<Output, String> {
+    let mut command = openclaw_cli::create_bundled_npm_cli_command()
+        .map_err(|error| channel_error(format!("构建 npm 命令失败: {error}")))?;
+    command
+        .args(args)
+        .current_dir(current_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    command
+        .output()
+        .map_err(|error| channel_error(format!("执行 npm 命令失败: {error}")))
 }
 
 fn summarize_command_output(output: &Output) -> String {
@@ -613,6 +615,352 @@ fn summarize_command_output(output: &Output) -> String {
         }
     }
     format!("退出码: {:?}", output.status.code())
+}
+
+fn collect_command_output_lines(output: &Output) -> Vec<String> {
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .chain(String::from_utf8_lossy(&output.stderr).lines())
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn append_command_output_to_session_logs(
+    session_state: &SharedQrState,
+    prefix: &str,
+    output: &Output,
+) {
+    if !prefix.trim().is_empty() {
+        update_session_log(session_state, prefix);
+    }
+
+    let lines = collect_command_output_lines(output);
+    if lines.is_empty() {
+        update_session_log(
+            session_state,
+            &format!("命令已结束，退出码: {:?}", output.status.code()),
+        );
+        return;
+    }
+
+    let omitted = lines.len().saturating_sub(24);
+    for line in lines.iter().take(24) {
+        update_session_log(session_state, line);
+    }
+    if omitted > 0 {
+        update_session_log(session_state, &format!("其余 {omitted} 行命令输出已省略。"));
+    }
+}
+
+fn parse_openclaw_release_version(version: &str) -> Option<(u32, u32, u32)> {
+    let normalized = version.trim().trim_start_matches('v');
+    let release = normalized.split('-').next().unwrap_or(normalized);
+    let mut segments = release.split('.');
+    let major = segments.next()?.parse::<u32>().ok()?;
+    let minor = segments.next()?.parse::<u32>().ok()?;
+    let patch = segments.next()?.parse::<u32>().ok()?;
+    Some((major, minor, patch))
+}
+
+fn resolve_weixin_plugin_install_plan() -> Result<WeixinPluginInstallPlan, String> {
+    let engine_version = openclaw_cli::read_openclaw_engine_version()
+        .map_err(|error| channel_error(format!("读取 OpenClaw 版本失败: {error}")))?;
+    let parsed = parse_openclaw_release_version(&engine_version);
+
+    Ok(match parsed {
+        Some(version) if version >= (2026, 3, 22) => WeixinPluginInstallPlan {
+            npm_spec: WEIXIN_PLUGIN_PACKAGE_LATEST,
+            expected_version: None,
+            needs_tmpdir_patch: false,
+        },
+        Some(version) if version >= (2026, 3, 0) => WeixinPluginInstallPlan {
+            npm_spec: WEIXIN_PLUGIN_PACKAGE_LEGACY,
+            expected_version: Some("1.0.3"),
+            needs_tmpdir_patch: false,
+        },
+        Some(version) if version >= (2026, 1, 0) => WeixinPluginInstallPlan {
+            npm_spec: WEIXIN_PLUGIN_PACKAGE_PRE_2026_3_0,
+            expected_version: Some("1.0.0"),
+            needs_tmpdir_patch: true,
+        },
+        _ => WeixinPluginInstallPlan {
+            npm_spec: WEIXIN_PLUGIN_PACKAGE_LATEST,
+            expected_version: None,
+            needs_tmpdir_patch: false,
+        },
+    })
+}
+
+fn read_weixin_plugin_installed_version() -> Result<Option<String>, String> {
+    let package_path = weixin_plugin_package_path()?;
+    if !package_path.exists() {
+        return Ok(None);
+    }
+
+    let raw = std::fs::read_to_string(&package_path)
+        .map_err(|error| channel_error(format!("读取微信插件 package.json 失败: {error}")))?;
+    let parsed = serde_json::from_str::<Value>(&raw)
+        .map_err(|error| channel_error(format!("解析微信插件 package.json 失败: {error}")))?;
+
+    Ok(parsed
+        .get("version")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string))
+}
+
+fn run_tar_extract_command(archive_path: &Path, destination_dir: &Path) -> Result<Output, String> {
+    std::fs::create_dir_all(destination_dir)
+        .map_err(|error| channel_error(format!("创建插件解压目录失败: {error}")))?;
+
+    let mut command = Command::new("tar");
+    command
+        .arg("-xf")
+        .arg(archive_path)
+        .arg("-C")
+        .arg(destination_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(target_os = "windows")]
+    command.creation_flags(0x08000000);
+
+    command
+        .output()
+        .map_err(|error| channel_error(format!("执行 tar 解压失败: {error}")))
+}
+
+fn copy_dir_recursive(source_dir: &Path, target_dir: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(target_dir)
+        .map_err(|error| channel_error(format!("创建插件目录失败: {error}")))?;
+
+    for entry in std::fs::read_dir(source_dir)
+        .map_err(|error| channel_error(format!("读取插件目录失败: {error}")))?
+    {
+        let entry = entry.map_err(|error| channel_error(format!("遍历插件目录失败: {error}")))?;
+        let source_path = entry.path();
+        let target_path = target_dir.join(entry.file_name());
+        let file_type = entry
+            .file_type()
+            .map_err(|error| channel_error(format!("读取插件文件类型失败: {error}")))?;
+
+        if file_type.is_dir() {
+            copy_dir_recursive(&source_path, &target_path)?;
+        } else if file_type.is_file() {
+            std::fs::copy(&source_path, &target_path).map_err(|error| {
+                channel_error(format!(
+                    "复制插件文件失败 ({} -> {}): {error}",
+                    source_path.display(),
+                    target_path.display()
+                ))
+            })?;
+        }
+    }
+
+    Ok(())
+}
+
+fn apply_weixin_pre_2026_3_0_compat_patch(plugin_dir: &Path) -> Result<(), String> {
+    let patch_target = plugin_dir
+        .join("src")
+        .join("messaging")
+        .join("process-message.ts");
+    if !patch_target.exists() {
+        return Err(channel_error(format!(
+            "未找到微信兼容补丁目标文件: {}",
+            patch_target.display()
+        )));
+    }
+
+    let raw = std::fs::read_to_string(&patch_target)
+        .map_err(|error| channel_error(format!("读取微信兼容补丁文件失败: {error}")))?;
+    let line_ending = if raw.contains("\r\n") { "\r\n" } else { "\n" };
+    let mut normalized = raw.replace("\r\n", "\n");
+
+    if !normalized.contains("import os from \"node:os\";") {
+        if let Some(index) = normalized.find("import path from \"node:path\";") {
+            normalized.insert_str(index, "import os from \"node:os\";\n");
+        } else {
+            normalized = format!("import os from \"node:os\";\n{normalized}");
+        }
+    }
+
+    for pattern in [
+        "  resolvePreferredOpenClawTmpDir,\n",
+        "resolvePreferredOpenClawTmpDir,\n",
+        ", resolvePreferredOpenClawTmpDir",
+        "resolvePreferredOpenClawTmpDir, ",
+    ] {
+        normalized = normalized.replace(pattern, "");
+    }
+    normalized = normalized.replace("resolvePreferredOpenClawTmpDir()", "os.tmpdir()");
+
+    if normalized.contains("resolvePreferredOpenClawTmpDir") {
+        return Err(channel_error("微信兼容补丁未能完整移除旧版 tmpDir 依赖"));
+    }
+
+    let serialized = if line_ending == "\r\n" {
+        normalized.replace('\n', "\r\n")
+    } else {
+        normalized
+    };
+
+    std::fs::write(&patch_target, serialized)
+        .map_err(|error| channel_error(format!("写入微信兼容补丁失败: {error}")))?;
+    Ok(())
+}
+
+fn manually_install_weixin_plugin(
+    install_plan: &WeixinPluginInstallPlan,
+    session_state: &SharedQrState,
+) -> Result<(), String> {
+    let target_dir = resolve_weixin_plugin_dir()?;
+    let temp_root = std::env::temp_dir().join(format!(
+        "dragonclaw-weixin-install-{}-{}",
+        std::process::id(),
+        current_timestamp_millis()
+    ));
+    let extract_dir = temp_root.join("extract");
+    std::fs::create_dir_all(&temp_root)
+        .map_err(|error| channel_error(format!("创建临时安装目录失败: {error}")))?;
+
+    let cleanup = || {
+        let _ = std::fs::remove_dir_all(&temp_root);
+    };
+
+    update_session_log(
+        session_state,
+        &format!("正在下载微信插件包: {}", install_plan.npm_spec),
+    );
+    let pack_output =
+        match run_bundled_npm_cli_command(&["pack", install_plan.npm_spec], &temp_root) {
+            Ok(output) => output,
+            Err(error) => {
+                cleanup();
+                return Err(error);
+            }
+        };
+    append_command_output_to_session_logs(session_state, "npm pack 输出：", &pack_output);
+    if !pack_output.status.success() {
+        cleanup();
+        return Err(channel_error(format!(
+            "下载微信插件包失败: {}",
+            summarize_command_output(&pack_output)
+        )));
+    }
+
+    let tarball_name = collect_command_output_lines(&pack_output)
+        .into_iter()
+        .rev()
+        .find(|line| line.ends_with(".tgz"))
+        .ok_or_else(|| channel_error("未从 npm pack 输出中解析到插件压缩包名称"))?;
+    let tarball_path = temp_root.join(&tarball_name);
+    if !tarball_path.exists() {
+        cleanup();
+        return Err(channel_error(format!(
+            "微信插件压缩包不存在: {}",
+            tarball_path.display()
+        )));
+    }
+
+    let extract_output = match run_tar_extract_command(&tarball_path, &extract_dir) {
+        Ok(output) => output,
+        Err(error) => {
+            cleanup();
+            return Err(error);
+        }
+    };
+    append_command_output_to_session_logs(session_state, "tar 解压输出：", &extract_output);
+    if !extract_output.status.success() {
+        cleanup();
+        return Err(channel_error(format!(
+            "解压微信插件包失败: {}",
+            summarize_command_output(&extract_output)
+        )));
+    }
+
+    let package_dir = extract_dir.join("package");
+    if !package_dir.exists() {
+        cleanup();
+        return Err(channel_error(format!(
+            "解压后的微信插件目录不存在: {}",
+            package_dir.display()
+        )));
+    }
+
+    if target_dir.exists() {
+        std::fs::remove_dir_all(&target_dir)
+            .map_err(|error| channel_error(format!("清理旧微信插件目录失败: {error}")))?;
+    }
+    if let Some(parent) = target_dir.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| channel_error(format!("创建微信插件父目录失败: {error}")))?;
+    }
+    copy_dir_recursive(&package_dir, &target_dir)?;
+
+    if install_plan.needs_tmpdir_patch {
+        update_session_log(session_state, "正在应用旧版 OpenClaw 微信插件兼容补丁...");
+        apply_weixin_pre_2026_3_0_compat_patch(&target_dir)?;
+    }
+
+    update_session_log(session_state, "正在安装微信插件运行依赖...");
+    let install_output =
+        match run_bundled_npm_cli_command(&["install", "--omit=dev", "--silent"], &target_dir) {
+            Ok(output) => output,
+            Err(error) => {
+                cleanup();
+                return Err(error);
+            }
+        };
+    append_command_output_to_session_logs(session_state, "npm install 输出：", &install_output);
+    if !install_output.status.success() {
+        cleanup();
+        return Err(channel_error(format!(
+            "安装微信插件依赖失败: {}",
+            summarize_command_output(&install_output)
+        )));
+    }
+
+    cleanup();
+    Ok(())
+}
+
+fn verify_weixin_plugin_loadable(session_state: &SharedQrState) -> Result<(), String> {
+    let output = openclaw_engine_command(&["plugins", "list"])?;
+    append_command_output_to_session_logs(session_state, "plugins list 输出：", &output);
+    if !output.status.success() {
+        return Err(channel_error(format!(
+            "校验微信插件加载状态失败: {}",
+            summarize_command_output(&output)
+        )));
+    }
+
+    let squashed = collect_command_output_lines(&output)
+        .join("")
+        .chars()
+        .filter(|ch| !ch.is_whitespace())
+        .collect::<String>()
+        .to_ascii_lowercase();
+
+    if squashed.contains("openclaw-weixinfailedtoload") {
+        return Err(channel_error(
+            "微信插件已安装，但 OpenClaw 仍报告 failed to load",
+        ));
+    }
+    if squashed.contains("openclaw-weixindisabled") {
+        return Err(channel_error("微信插件仍处于 disabled 状态"));
+    }
+    if squashed.contains("openclaw-weixinloaded") {
+        return Ok(());
+    }
+
+    Err(channel_error(
+        "未在 OpenClaw 插件列表中检测到已加载的微信插件",
+    ))
 }
 
 fn normalize_weixin_account_id(raw: &str) -> String {
@@ -826,7 +1174,10 @@ fn save_weixin_account_state(
         .map_err(|error| channel_error(format!("创建微信状态目录失败: {error}")))?;
 
     let mut payload = Map::<String, Value>::new();
-    payload.insert("token".to_string(), Value::String(bot_token.trim().to_string()));
+    payload.insert(
+        "token".to_string(),
+        Value::String(bot_token.trim().to_string()),
+    );
     payload.insert(
         "savedAt".to_string(),
         Value::String(current_timestamp_millis().to_string()),
@@ -935,50 +1286,16 @@ fn persist_weixin_qr_binding_result(
     payload
         .config
         .insert("botToken".to_string(), bot_token.trim().to_string());
-    payload
-        .config
-        .insert("linkedAt".to_string(), current_timestamp_millis().to_string());
+    payload.config.insert(
+        "linkedAt".to_string(),
+        current_timestamp_millis().to_string(),
+    );
     if let Some(user_id) = normalized_user_id {
         payload.config.insert("ilinkUserId".to_string(), user_id);
     }
     save_openclaw_channel_config(payload)?;
 
     Ok(normalized_account_id)
-}
-
-fn read_weixin_plugin_http_metadata() -> Result<WeixinPluginHttpMetadata, String> {
-    let package_path = weixin_plugin_package_path()?;
-    let raw = std::fs::read_to_string(&package_path)
-        .map_err(|error| channel_error(format!("读取微信插件元数据失败: {error}")))?;
-    let parsed = serde_json::from_str::<Value>(&raw)
-        .map_err(|error| channel_error(format!("解析微信插件元数据失败: {error}")))?;
-    let app_id = parsed
-        .get("ilink_appid")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .unwrap_or_default()
-        .to_string();
-    let version = parsed
-        .get("version")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .unwrap_or("0.0.0");
-    Ok(WeixinPluginHttpMetadata {
-        app_id,
-        client_version: build_weixin_client_version(version),
-    })
-}
-
-fn build_weixin_client_version(version: &str) -> u32 {
-    let mut parts = version
-        .split('.')
-        .take(3)
-        .map(|part| part.parse::<u32>().unwrap_or(0))
-        .collect::<Vec<_>>();
-    while parts.len() < 3 {
-        parts.push(0);
-    }
-    ((parts[0] & 0xff) << 16) | ((parts[1] & 0xff) << 8) | (parts[2] & 0xff)
 }
 
 fn is_weixin_plugin_enabled_in_config() -> bool {
@@ -996,32 +1313,69 @@ fn is_weixin_plugin_enabled_in_config() -> bool {
 }
 
 fn ensure_weixin_plugin_ready(session_state: &SharedQrState) -> Result<(), String> {
-    let package_path = weixin_plugin_package_path()?;
-    if !package_path.exists() {
-        update_session_log(session_state, "未检测到微信插件，正在自动安装...");
-        let install_output = openclaw_engine_command(WEIXIN_PLUGIN_INSTALL_ARGS)?;
-        if !install_output.status.success() {
+    let install_plan = resolve_weixin_plugin_install_plan()?;
+    let installed_version = read_weixin_plugin_installed_version()?;
+    let needs_reinstall = match (&installed_version, install_plan.expected_version) {
+        (None, _) => true,
+        (Some(current), Some(expected)) => current.trim() != expected,
+        (Some(_), None) => false,
+    };
+
+    if needs_reinstall {
+        let reason = match (installed_version.as_deref(), install_plan.expected_version) {
+            (None, _) => "未检测到微信插件，准备安装官方兼容版本。".to_string(),
+            (Some(current), Some(expected)) => {
+                format!("检测到微信插件版本为 {current}，当前宿主要求 {expected}，准备重新安装。")
+            }
+            (Some(current), None) => format!("检测到微信插件版本为 {current}，准备刷新安装。"),
+        };
+        update_session_log(session_state, &reason);
+        manually_install_weixin_plugin(&install_plan, session_state)?;
+    } else if install_plan.needs_tmpdir_patch {
+        update_session_log(session_state, "正在校验旧版微信插件兼容补丁...");
+        apply_weixin_pre_2026_3_0_compat_patch(&resolve_weixin_plugin_dir()?)?;
+    }
+
+    if !is_weixin_plugin_enabled_in_config() {
+        update_session_log(session_state, "微信插件已安装，正在写入 enabled 配置...");
+        let enable_output = openclaw_engine_command(WEIXIN_PLUGIN_ENABLE_ARGS)?;
+        append_command_output_to_session_logs(session_state, "config set 输出：", &enable_output);
+        if !enable_output.status.success() {
             return Err(channel_error(format!(
-                "自动安装微信插件失败: {}",
-                summarize_command_output(&install_output)
+                "启用微信插件失败: {}",
+                summarize_command_output(&enable_output)
             )));
         }
     }
 
-    if is_weixin_plugin_enabled_in_config() {
-        return Ok(());
+    if let Err(error) = verify_weixin_plugin_loadable(session_state) {
+        update_session_log(
+            session_state,
+            &format!("微信插件校验失败，准备重装后重试: {error}"),
+        );
+        manually_install_weixin_plugin(&install_plan, session_state)?;
+        verify_weixin_plugin_loadable(session_state)?;
     }
 
-    update_session_log(session_state, "微信插件已安装但未启用，正在自动启用...");
-    for args in [WEIXIN_PLUGIN_ENABLE_ARGS, WEIXIN_GATEWAY_RESTART_ARGS] {
-        let output = openclaw_engine_command(args)?;
-        if !output.status.success() {
-            return Err(channel_error(format!(
-                "自动修复微信插件状态失败: {}",
-                summarize_command_output(&output)
-            )));
-        }
+    let restart_output = openclaw_engine_command(WEIXIN_GATEWAY_RESTART_ARGS)?;
+    append_command_output_to_session_logs(session_state, "gateway restart 输出：", &restart_output);
+    if !restart_output.status.success() {
+        return Err(channel_error(format!(
+            "重启 OpenClaw Gateway 失败: {}",
+            summarize_command_output(&restart_output)
+        )));
     }
+
+    let restart_text = collect_command_output_lines(&restart_output)
+        .join(" ")
+        .to_ascii_lowercase();
+    if restart_text.contains("gateway service missing") {
+        update_session_log(
+            session_state,
+            "当前 DragonClaw 使用前台托管 Gateway，已跳过官方服务重启要求。",
+        );
+    }
+
     Ok(())
 }
 
@@ -1044,24 +1398,8 @@ fn read_weixin_route_tag_from_config() -> Option<String> {
         .map(|value| value.to_string())
 }
 
-fn build_weixin_request_headers() -> Result<HeaderMap, String> {
-    let metadata = read_weixin_plugin_http_metadata()?;
+fn build_weixin_qr_fetch_headers() -> Result<HeaderMap, String> {
     let mut headers = HeaderMap::new();
-
-    if !metadata.app_id.trim().is_empty() {
-        headers.insert(
-            "iLink-App-Id",
-            HeaderValue::from_str(metadata.app_id.trim())
-                .map_err(|error| channel_error(format!("构建微信请求头失败: {error}")))?,
-        );
-    }
-
-    headers.insert(
-        "iLink-App-ClientVersion",
-        HeaderValue::from_str(&metadata.client_version.to_string())
-            .map_err(|error| channel_error(format!("构建微信请求头失败: {error}")))?,
-    );
-
     if let Some(route_tag) = read_weixin_route_tag_from_config() {
         headers.insert(
             "SKRouteTag",
@@ -1073,11 +1411,17 @@ fn build_weixin_request_headers() -> Result<HeaderMap, String> {
     Ok(headers)
 }
 
+fn build_weixin_qr_status_headers() -> Result<HeaderMap, String> {
+    let mut headers = build_weixin_qr_fetch_headers()?;
+    headers.insert("iLink-App-ClientVersion", HeaderValue::from_static("1"));
+    Ok(headers)
+}
+
 async fn fetch_weixin_qr_ticket(client: &reqwest::Client) -> Result<WeixinQrTicket, String> {
     let url = format!("{WEIXIN_DEFAULT_BASE_URL}/ilink/bot/get_bot_qrcode?bot_type=3");
     let response = client
         .get(url)
-        .headers(build_weixin_request_headers()?)
+        .headers(build_weixin_qr_fetch_headers()?)
         .timeout(Duration::from_secs(15))
         .send()
         .await
@@ -1124,7 +1468,7 @@ async fn fetch_weixin_qr_status(
     let url = format!("{base}/ilink/bot/get_qrcode_status?qrcode={qrcode}");
     let response = client
         .get(url)
-        .headers(build_weixin_request_headers()?)
+        .headers(build_weixin_qr_status_headers()?)
         .timeout(Duration::from_millis(WEIXIN_QR_STATUS_LONG_POLL_TIMEOUT_MS))
         .send()
         .await
@@ -1146,7 +1490,10 @@ async fn fetch_weixin_qr_status(
         .map_err(|error| channel_error(format!("解析微信二维码状态响应失败: {error}")))
 }
 
-fn run_weixin_qr_binding_flow(session_state: &SharedQrState, cancel_flag: &SharedCancelFlag) -> Result<(), String> {
+fn run_weixin_qr_binding_flow(
+    session_state: &SharedQrState,
+    cancel_flag: &SharedCancelFlag,
+) -> Result<(), String> {
     ensure_weixin_plugin_ready(session_state)?;
 
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -1190,7 +1537,11 @@ fn run_weixin_qr_binding_flow(session_state: &SharedQrState, cancel_flag: &Share
 
         let elapsed_ms = current_timestamp_millis().saturating_sub(loop_started_at_ms);
         if elapsed_ms >= WEIXIN_QR_LOGIN_TIMEOUT_MS {
-            set_session_state_message(session_state, "error", "等待微信扫码结果超时，请重新获取二维码。");
+            set_session_state_message(
+                session_state,
+                "error",
+                "等待微信扫码结果超时，请重新获取二维码。",
+            );
             return Err(channel_error("等待微信扫码结果超时"));
         }
 
@@ -1205,7 +1556,10 @@ fn run_weixin_qr_binding_flow(session_state: &SharedQrState, cancel_flag: &Share
             }
             Err(error) => {
                 if last_poll_error != error {
-                    update_session_log(session_state, &format!("二维码状态轮询异常，稍后重试: {error}"));
+                    update_session_log(
+                        session_state,
+                        &format!("二维码状态轮询异常，稍后重试: {error}"),
+                    );
                     last_poll_error = error;
                 }
                 thread::sleep(Duration::from_millis(WEIXIN_QR_STATUS_POLL_INTERVAL_MS));
@@ -1223,10 +1577,18 @@ fn run_weixin_qr_binding_flow(session_state: &SharedQrState, cancel_flag: &Share
 
         match status.as_str() {
             "wait" => {
-                set_session_state_message(session_state, "waiting_scan", "二维码已生成，请使用微信扫码完成绑定。");
+                set_session_state_message(
+                    session_state,
+                    "waiting_scan",
+                    "二维码已生成，请使用微信扫码完成绑定。",
+                );
             }
             "scaned" => {
-                set_session_state_message(session_state, "waiting_scan", "已扫码，请在微信中确认登录。");
+                set_session_state_message(
+                    session_state,
+                    "waiting_scan",
+                    "已扫码，请在微信中确认登录。",
+                );
             }
             "scaned_but_redirect" => {
                 if let Some(next_base_url) = sanitize_weixin_redirect_host(
@@ -1239,7 +1601,11 @@ fn run_weixin_qr_binding_flow(session_state: &SharedQrState, cancel_flag: &Share
             "expired" => {
                 refresh_count = refresh_count.saturating_add(1);
                 if refresh_count > WEIXIN_QR_REFRESH_LIMIT {
-                    set_session_state_message(session_state, "error", "二维码多次过期，请重新获取后再试。");
+                    set_session_state_message(
+                        session_state,
+                        "error",
+                        "二维码多次过期，请重新获取后再试。",
+                    );
                     return Err(channel_error("微信二维码已过期"));
                 }
 
@@ -1285,9 +1651,14 @@ fn run_weixin_qr_binding_flow(session_state: &SharedQrState, cancel_flag: &Share
                 set_session_state_message(
                     session_state,
                     "success",
-                    &format!("微信账号 {normalized_account_id} 绑定成功，请选择接待 Agent 并保存。"),
+                    &format!(
+                        "微信账号 {normalized_account_id} 绑定成功，请选择接待 Agent 并保存。"
+                    ),
                 );
-                update_session_log(session_state, &format!("微信账号 {normalized_account_id} 绑定成功。"));
+                update_session_log(
+                    session_state,
+                    &format!("微信账号 {normalized_account_id} 绑定成功。"),
+                );
                 return Ok(());
             }
             other => {
@@ -1527,7 +1898,9 @@ pub fn load_openclaw_channel_form_values(
             Value::String(text) => text.trim().to_string(),
             Value::Number(number) => number.to_string(),
             Value::Bool(flag) => flag.to_string(),
-            Value::Array(_) if key == "allowFrom" => parse_allow_from_list_from_value(Some(value)).join("\n"),
+            Value::Array(_) if key == "allowFrom" => {
+                parse_allow_from_list_from_value(Some(value)).join("\n")
+            }
             _ => String::new(),
         };
         if normalized.is_empty() {
@@ -1588,7 +1961,10 @@ pub fn save_openclaw_channel_config(payload: OpenClawChannelConfigPayload) -> Re
         if trimmed_value.is_empty() {
             account_obj.remove(trimmed_key);
         } else {
-            account_obj.insert(trimmed_key.to_string(), Value::String(trimmed_value.to_string()));
+            account_obj.insert(
+                trimmed_key.to_string(),
+                Value::String(trimmed_value.to_string()),
+            );
         }
     }
 
@@ -1671,10 +2047,16 @@ pub fn remove_openclaw_channel_config(payload: OpenClawChannelRemovePayload) -> 
     let root = ensure_root_object(&mut config_value)?;
     if let Some(channels_obj) = root.get_mut("channels").and_then(Value::as_object_mut) {
         if let Some(section_key) = resolve_existing_channel_key(channels_obj, &normalized_channel) {
-            if payload.account_id.as_ref().map(|value| value.trim().is_empty()).unwrap_or(true) {
+            if payload
+                .account_id
+                .as_ref()
+                .map(|value| value.trim().is_empty())
+                .unwrap_or(true)
+            {
                 channels_obj.remove(&section_key);
-            } else if let Some(section_obj) =
-                channels_obj.get_mut(&section_key).and_then(Value::as_object_mut)
+            } else if let Some(section_obj) = channels_obj
+                .get_mut(&section_key)
+                .and_then(Value::as_object_mut)
             {
                 migrate_legacy_channel_section_to_accounts(section_obj);
                 let default_account_id_before_remove = section_obj
@@ -1682,9 +2064,13 @@ pub fn remove_openclaw_channel_config(payload: OpenClawChannelRemovePayload) -> 
                     .and_then(Value::as_str)
                     .map(normalize_account_identifier)
                     .unwrap_or_else(|| "default".to_string());
-                if let Some(accounts_obj) = section_obj.get_mut("accounts").and_then(Value::as_object_mut) {
-                    let normalized_account_id =
-                        normalize_account_identifier(payload.account_id.as_deref().unwrap_or("default"));
+                if let Some(accounts_obj) = section_obj
+                    .get_mut("accounts")
+                    .and_then(Value::as_object_mut)
+                {
+                    let normalized_account_id = normalize_account_identifier(
+                        payload.account_id.as_deref().unwrap_or("default"),
+                    );
                     accounts_obj.remove(&normalized_account_id);
                     if accounts_obj.is_empty() {
                         channels_obj.remove(&section_key);
@@ -1773,11 +2159,7 @@ pub fn start_openclaw_channel_qr_binding(
     thread::spawn(move || {
         let result = run_weixin_qr_binding_flow(&session_state_for_thread, &cancel_flag);
         if let Err(error) = result {
-            set_session_state_message(
-                &session_state_for_thread,
-                "error",
-                &error,
-            );
+            set_session_state_message(&session_state_for_thread, "error", &error);
             update_session_log(&session_state_for_thread, &error);
         }
         if let Ok(mut flags) = qr_cancel_flags().lock() {
@@ -2037,11 +2419,15 @@ fn persist_feishu_credentials_from_onboarding(
         account_id: Some(app_id.trim().to_string()),
         config: HashMap::new(),
     };
-    payload.config.insert("appId".to_string(), app_id.trim().to_string());
+    payload
+        .config
+        .insert("appId".to_string(), app_id.trim().to_string());
     payload
         .config
         .insert("appSecret".to_string(), app_secret.trim().to_string());
-    payload.config.insert("domain".to_string(), domain.to_string());
+    payload
+        .config
+        .insert("domain".to_string(), domain.to_string());
     payload
         .config
         .insert("name".to_string(), app_id.trim().to_string());
@@ -2106,11 +2492,7 @@ pub async fn poll_feishu_openclaw_qr_result(
         .map(str::to_string);
 
     if let (Some(app_id), Some(app_secret)) = (app_id, app_secret) {
-        persist_feishu_credentials_from_onboarding(
-            &app_id,
-            &app_secret,
-            tenant_brand.as_deref(),
-        )?;
+        persist_feishu_credentials_from_onboarding(&app_id, &app_secret, tenant_brand.as_deref())?;
         return Ok(FeishuOnboardingPollResponse {
             status: "success".to_string(),
             message: Some("已获取并保存飞书凭证。".to_string()),

@@ -11,6 +11,7 @@ mod environment;
 mod installer;
 mod memory;
 mod onboarding;
+mod openclaw_cli;
 mod paths;
 mod provider_mgr;
 mod providers;

@@ -1,16 +1,17 @@
 // Copyright (C) 2026 shiyuan
 // SPDX-License-Identifier: GPL-3.0-only
 // This file is part of DragonClaw. See LICENSE for details.
-use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
 use std::io::{BufRead, BufReader};
 use std::net::TcpListener;
+use std::process::{Child, Stdio};
+use std::sync::Mutex;
 use tauri::Emitter;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
 use crate::environment;
+use crate::openclaw_cli;
 use crate::paths;
 
 fn resolve_gateway_token() -> String {
@@ -37,7 +38,10 @@ fn ensure_control_ui_built(app: &tauri::AppHandle) {
         Err(_) => return,
     };
 
-    let ui_index = openclaw_dir.join("dist").join("control-ui").join("index.html");
+    let ui_index = openclaw_dir
+        .join("dist")
+        .join("control-ui")
+        .join("index.html");
     if ui_index.exists() {
         return; // Already built — skip (most machines hit this path)
     }
@@ -52,10 +56,13 @@ fn ensure_control_ui_built(app: &tauri::AppHandle) {
         Err(_) => return,
     };
 
-    let _ = app.emit("service-log", serde_json::json!({
-        "level": "info",
-        "message": "Control UI 缺失，正在预构建..."
-    }));
+    let _ = app.emit(
+        "service-log",
+        serde_json::json!({
+            "level": "info",
+            "message": "Control UI 缺失，正在预构建..."
+        }),
+    );
 
     // Build PATH with sandboxed node
     let node_dir = node_bin.parent().unwrap().to_path_buf();
@@ -72,7 +79,8 @@ fn ensure_control_ui_built(app: &tauri::AppHandle) {
     if !ui_node_modules.join("vite").exists() {
         if let Ok(npm_bin) = environment::get_npm_binary() {
             let mut npm_cmd = std::process::Command::new(&node_bin);
-            npm_cmd.arg(&npm_bin)
+            npm_cmd
+                .arg(&npm_bin)
                 .arg("install")
                 .arg("--prefix")
                 .arg(&ui_dir)
@@ -85,10 +93,13 @@ fn ensure_control_ui_built(app: &tauri::AppHandle) {
 
             match npm_cmd.output() {
                 Ok(output) if output.status.success() => {
-                    let _ = app.emit("service-log", serde_json::json!({
-                        "level": "info",
-                        "message": "Control UI 依赖安装完成"
-                    }));
+                    let _ = app.emit(
+                        "service-log",
+                        serde_json::json!({
+                            "level": "info",
+                            "message": "Control UI 依赖安装完成"
+                        }),
+                    );
                 }
                 Ok(output) => {
                     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -99,10 +110,13 @@ fn ensure_control_ui_built(app: &tauri::AppHandle) {
                     return;
                 }
                 Err(e) => {
-                    let _ = app.emit("service-log", serde_json::json!({
-                        "level": "warn",
-                        "message": format!("Control UI 依赖安装异常: {}", e)
-                    }));
+                    let _ = app.emit(
+                        "service-log",
+                        serde_json::json!({
+                            "level": "warn",
+                            "message": format!("Control UI 依赖安装异常: {}", e)
+                        }),
+                    );
                     return;
                 }
             }
@@ -113,17 +127,25 @@ fn ensure_control_ui_built(app: &tauri::AppHandle) {
 
     // Step 2: Run vite build directly via node (no shell, no pnpm)
     // vite's entry point: ui/node_modules/vite/bin/vite.js
-    let vite_js = ui_dir.join("node_modules").join("vite").join("bin").join("vite.js");
+    let vite_js = ui_dir
+        .join("node_modules")
+        .join("vite")
+        .join("bin")
+        .join("vite.js");
     if !vite_js.exists() {
-        let _ = app.emit("service-log", serde_json::json!({
-            "level": "warn",
-            "message": "vite.js 未找到，跳过 Control UI 构建"
-        }));
+        let _ = app.emit(
+            "service-log",
+            serde_json::json!({
+                "level": "warn",
+                "message": "vite.js 未找到，跳过 Control UI 构建"
+            }),
+        );
         return;
     }
 
     let mut build_cmd = std::process::Command::new(&node_bin);
-    build_cmd.arg(&vite_js)
+    build_cmd
+        .arg(&vite_js)
         .arg("build")
         .current_dir(&ui_dir)
         .env("PATH", &sandbox_path)
@@ -135,10 +157,13 @@ fn ensure_control_ui_built(app: &tauri::AppHandle) {
 
     match build_cmd.output() {
         Ok(output) if output.status.success() => {
-            let _ = app.emit("service-log", serde_json::json!({
-                "level": "success",
-                "message": "[OK] Control UI 预构建成功"
-            }));
+            let _ = app.emit(
+                "service-log",
+                serde_json::json!({
+                    "level": "success",
+                    "message": "[OK] Control UI 预构建成功"
+                }),
+            );
         }
         Ok(output) => {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -148,10 +173,13 @@ fn ensure_control_ui_built(app: &tauri::AppHandle) {
             }));
         }
         Err(e) => {
-            let _ = app.emit("service-log", serde_json::json!({
-                "level": "warn",
-                "message": format!("Control UI 构建异常: {}", e)
-            }));
+            let _ = app.emit(
+                "service-log",
+                serde_json::json!({
+                    "level": "warn",
+                    "message": format!("Control UI 构建异常: {}", e)
+                }),
+            );
         }
     }
 }
@@ -172,8 +200,8 @@ fn is_port_available(port: u16) -> bool {
         &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
         std::time::Duration::from_millis(200),
     ) {
-        Ok(_) => false,  // Something is listening — port is NOT available
-        Err(_) => true,   // Nothing responded — port is truly free
+        Ok(_) => false, // Something is listening — port is NOT available
+        Err(_) => true, // Nothing responded — port is truly free
     }
 }
 
@@ -258,7 +286,6 @@ async fn start_service_impl(
     }
 
     // Get paths
-    let node_bin = environment::get_node_binary()?;
     let openclaw_dir = paths::get_openclaw_dir()?;
 
     if !openclaw_dir.join("package.json").exists() {
@@ -279,50 +306,42 @@ async fn start_service_impl(
     }
 
     if chosen_port != 18789 {
-        let _ = app.emit("service-log", serde_json::json!({
-            "level": "warn",
-            "message": format!("⚠️ 默认端口 18789 已占用，自动切换到端口 {}", chosen_port)
-        }));
+        let _ = app.emit(
+            "service-log",
+            serde_json::json!({
+                "level": "warn",
+                "message": format!("⚠️ 默认端口 18789 已占用，自动切换到端口 {}", chosen_port)
+            }),
+        );
     }
 
     // Emit actual port to frontend for display
     let _ = app.emit("service-port", serde_json::json!({ "port": chosen_port }));
 
-    let _ = app.emit("service-log", serde_json::json!({
-        "level": "info",
-        "message": format!("🚀 正在启动 OpenClaw 服务 (端口 {})...", chosen_port)
-    }));
+    let _ = app.emit(
+        "service-log",
+        serde_json::json!({
+            "level": "info",
+            "message": format!("🚀 正在启动 OpenClaw 服务 (端口 {})...", chosen_port)
+        }),
+    );
 
     // Build the start command — use OpenClaw's native entry point directly
-    let node_dir = node_bin.parent().unwrap().to_path_buf();
-    let run_script = openclaw_dir.join("scripts").join("run-node.mjs");
+    let token = resolve_gateway_token();
+    let mut cmd = openclaw_cli::create_openclaw_cli_command()
+        .map_err(|error| format!("构建 OpenClaw 启动命令失败: {error}"))?;
 
     // Auth token for web UI — injected via env var (also set in openclaw.json)
-    let token = resolve_gateway_token();
-
-    let mut cmd = Command::new(&node_bin);
-    cmd.arg(&run_script)
-        .arg("gateway")
+    cmd.arg("gateway")
         .arg("--allow-unconfigured")
         .arg("--port")
         .arg(chosen_port.to_string())
-        .current_dir(&openclaw_dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .env("OPENCLAW_GATEWAY_AUTH_TOKEN", &token);
 
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-
-    // Set PATH to include sandboxed node
-    if let Some(current_path) = std::env::var_os("PATH") {
-        let mut paths = std::env::split_paths(&current_path).collect::<Vec<_>>();
-        paths.insert(0, node_dir);
-        let new_path = std::env::join_paths(paths).unwrap_or_default();
-        cmd.env("PATH", new_path);
-    }
-
-    let mut child = cmd.spawn()
+    let mut child = cmd
+        .spawn()
         .map_err(|e| format!("启动 OpenClaw 失败: {}", e))?;
 
     // Spawn a thread to stream stdout logs to frontend
@@ -332,7 +351,7 @@ async fn start_service_impl(
 
     if let Some(stdout) = stdout {
         let app_out = app_clone.clone();
-        let open_port = chosen_port;  // Copy for thread
+        let open_port = chosen_port; // Copy for thread
         let open_token = token.clone();
         std::thread::spawn(move || {
             let reader = BufReader::new(stdout);
@@ -348,18 +367,27 @@ async fn start_service_impl(
                         let browser_token = open_token.clone();
                         std::thread::spawn(move || {
                             std::thread::sleep(std::time::Duration::from_secs(2));
-                            let _ = app_browser.emit("service-log", serde_json::json!({
-                                "level": "success",
-                                "message": "🌐 正在打开浏览器..."
-                            }));
-                            let _ = open::that(format!("http://localhost:{}?token={}", open_port, browser_token));
+                            let _ = app_browser.emit(
+                                "service-log",
+                                serde_json::json!({
+                                    "level": "success",
+                                    "message": "🌐 正在打开浏览器..."
+                                }),
+                            );
+                            let _ = open::that(format!(
+                                "http://localhost:{}?token={}",
+                                open_port, browser_token
+                            ));
                         });
                     }
 
-                    let _ = app_out.emit("service-log", serde_json::json!({
-                        "level": level,
-                        "message": line
-                    }));
+                    let _ = app_out.emit(
+                        "service-log",
+                        serde_json::json!({
+                            "level": level,
+                            "message": line
+                        }),
+                    );
                 }
             }
         });
@@ -388,19 +416,25 @@ async fn start_service_impl(
             let reader = BufReader::new(stderr);
             for line in reader.lines() {
                 if let Ok(line) = line {
-                    let _ = app_err.emit("service-log", serde_json::json!({
-                        "level": "error",
-                        "message": line
-                    }));
+                    let _ = app_err.emit(
+                        "service-log",
+                        serde_json::json!({
+                            "level": "error",
+                            "message": line
+                        }),
+                    );
                 }
             }
         });
     }
 
-    let _ = app.emit("service-log", serde_json::json!({
-        "level": "info",
-        "message": "✅ OpenClaw 服务已启动！正在监听端口..."
-    }));
+    let _ = app.emit(
+        "service-log",
+        serde_json::json!({
+            "level": "info",
+            "message": "✅ OpenClaw 服务已启动！正在监听端口..."
+        }),
+    );
 
     // Store the child process and port
     {
@@ -423,10 +457,13 @@ pub fn stop_service(
     if let Some(mut child) = guard.take() {
         let _ = child.kill();
         let _ = child.wait();
-        let _ = app.emit("service-log", serde_json::json!({
-            "level": "info",
-            "message": "⏹️ OpenClaw 服务已停止"
-        }));
+        let _ = app.emit(
+            "service-log",
+            serde_json::json!({
+                "level": "info",
+                "message": "⏹️ OpenClaw 服务已停止"
+            }),
+        );
         Ok("Service stopped".to_string())
     } else {
         Ok("Service was not running".to_string())
@@ -436,7 +473,11 @@ pub fn stop_service(
 /// Classify log line into a severity level for frontend display
 fn classify_log_level(line: &str) -> &'static str {
     let lower = line.to_lowercase();
-    if lower.contains("error") || lower.contains("fatal") || lower.contains("panic") || lower.trim_start().starts_with("err_") {
+    if lower.contains("error")
+        || lower.contains("fatal")
+        || lower.contains("panic")
+        || lower.trim_start().starts_with("err_")
+    {
         "error"
     } else if lower.contains("warn") {
         "warn"
@@ -450,8 +491,11 @@ fn classify_log_level(line: &str) -> &'static str {
 /// Detect if a log line indicates the service is ready to accept connections
 fn is_service_ready_signal(line: &str) -> bool {
     let lower = line.to_lowercase();
-    lower.contains("listening") || lower.contains("started on") || lower.contains("ready on")
-        || lower.contains("server is running") || lower.contains("server started")
+    lower.contains("listening")
+        || lower.contains("started on")
+        || lower.contains("ready on")
+        || lower.contains("server is running")
+        || lower.contains("server started")
 }
 
 #[cfg(test)]
@@ -490,7 +534,9 @@ mod tests {
     #[test]
     fn test_service_ready_signal() {
         assert!(is_service_ready_signal("Server started on port 3000"));
-        assert!(is_service_ready_signal("Listening on http://localhost:3000"));
+        assert!(is_service_ready_signal(
+            "Listening on http://localhost:3000"
+        ));
         assert!(is_service_ready_signal("Gateway ready on 0.0.0.0:3000"));
         assert!(is_service_ready_signal("server is running at port 3000"));
         assert!(!is_service_ready_signal("compiling TypeScript..."));
