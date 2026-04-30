@@ -61,3 +61,7 @@
 - 历史 / 日志仍能从次级入口访问
 - `chat` 以外菜单与现有网关聊天链路不回归
 - `npm run build` 可以通过
+
+## 2026-04-30 UI Follow-up
+- Remove the subtitle text under the workspace chat header avatar to keep only the conversation title.
+

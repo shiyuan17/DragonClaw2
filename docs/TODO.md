@@ -264,3 +264,6 @@
 - [x] 为 `DragonClaw2` 新增频道专用 Tauri commands、类型与前端 API 封装，保持与旧仓库协议一致
 - [x] 让已绑定频道在首页复用对应 Agent 主会话，未绑定频道显示空态引导
 
+## 2026-04-30 Pending Acceptance
+- [ ] 2026-04-30: remove workspace-clone chat header subtitle text under the avatar.
+
