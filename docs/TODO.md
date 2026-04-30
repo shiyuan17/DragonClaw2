@@ -142,6 +142,7 @@
 - [x] Windows node-llama-cpp 兼容性增强 (`installer.rs` 扩展检测 + `SKIP_BUILD` 跳过源码编译) `v0.4.4`
 - [x] 发版流程规范化 (`AGENTS.md` 新增版本同步清单 + Release Notes 模板) `v0.4.1`
 - [x] GPL-3.0 许可证切换 + 43 文件版权头 + README_EN 同步 `v0.4.1`
+- [ ] Phase 5.17: 升级内置 OpenClaw 到 `v2026.4.27`，并完成旧安装自动重装、全新安装、gateway 握手与首页聊天链路回归验证
 
 ---
 
