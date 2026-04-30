@@ -79,7 +79,12 @@ pub fn check_node_modules_exists() -> Result<bool, String> {
     let dir = paths::engine_dir()?;
     let node_modules = dir.join("node_modules");
     let marker = node_modules.join(".install_complete");
-    Ok(node_modules.exists() && node_modules.join(".pnpm").exists() && marker.exists())
+    Ok(
+        node_modules.exists()
+            && node_modules.join(".pnpm").exists()
+            && marker.exists()
+            && installer::has_cli_build_output(&dir),
+    )
 }
 
 #[tauri::command]

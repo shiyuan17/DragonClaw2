@@ -16,9 +16,9 @@ use crate::paths;
 
 const OPENCLAW_REPO: &str = "openclaw/openclaw";
 
-/// Pinned OpenClaw version — last stable release before device-identity was mandatory (v2026.2.19+)
-/// See: https://github.com/openclaw/openclaw/releases/tag/v2026.2.6-1
-const PINNED_VERSION: &str = "v2026.2.6-1";
+/// Pinned OpenClaw version validated against DragonClaw's local gateway/chat flow.
+/// See: https://github.com/openclaw/openclaw/releases/tag/v2026.4.27
+const PINNED_VERSION: &str = "v2026.4.27";
 
 /// Quick URL reachability test (3 second timeout)
 pub async fn test_url_reachable(url: &str) -> bool {

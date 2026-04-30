@@ -1,6 +1,6 @@
 # Phase 5.17: 内置 OpenClaw 升级到 v2026.4.27
 
-> 状态：规划中
+> 状态：已完成
 > 类型：后端安装链路升级
 > 前置阶段：Phase 5.7 / Phase 5.15
 
@@ -52,7 +52,13 @@
 - 现有旧安装若 `.openclaw_version` 不匹配，应自动删除旧引擎目录并重新安装新版本
 - 新版本安装完成后继续写入 `.openclaw_version`
 
-### 3. 回归验证
+### 3. 安装兼容修复
+
+- 新版 GitHub source archive 不再自带 `dist/entry.js`，仅做 `pnpm install` 会导致 `openclaw.mjs gateway` 启动失败
+- 安装链路新增 CLI 构建产物检查；若 `dist/entry.js` / `dist/entry.mjs` 缺失，则自动执行 `pnpm build`
+- `check_node_modules_exists()` 现在同时要求依赖标记与 CLI 构建产物都存在，避免半安装状态被误判为可启动
+
+### 4. 回归验证
 
 - 启动 `npm run tauri dev`，确认应用能正常起来
 - 验证旧版本安装会触发升级到 `v2026.4.27`

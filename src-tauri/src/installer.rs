@@ -6,13 +6,18 @@
 /// Installs pnpm via npm, then runs `pnpm install` in the OpenClaw engine directory.
 /// Automatically detects and uses Taobao registry mirror when npmjs.org is slow.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tauri::Emitter;
 
 use crate::environment;
 use crate::paths;
 use crate::download;
+
+pub fn has_cli_build_output(openclaw_dir: &Path) -> bool {
+    openclaw_dir.join("dist").join("entry.js").exists()
+        || openclaw_dir.join("dist").join("entry.mjs").exists()
+}
 
 /// On Windows, hide the CMD window when spawning child processes
 #[cfg(target_os = "windows")]
@@ -32,12 +37,15 @@ pub async fn run_npm_install(app: tauri::AppHandle) -> Result<String, String> {
     let install_marker = node_modules.join(".install_complete");
 
     if node_modules.exists() {
-        if node_modules.join(".pnpm").exists() && install_marker.exists() {
+        if node_modules.join(".pnpm").exists()
+            && install_marker.exists()
+            && has_cli_build_output(&openclaw_dir)
+        {
             return Ok("node_modules already installed (pnpm)".to_string());
         }
         let _ = app.emit("setup-progress", serde_json::json!({
             "stage": "npm_install",
-            "message": "检测到不完整的依赖，正在自动清理后重新安装...",
+            "message": "检测到不完整的依赖或缺失的构建产物，正在自动清理后重新安装...",
             "percent": 86
         }));
         let _ = std::fs::remove_dir_all(&node_modules);
@@ -280,6 +288,45 @@ pub async fn run_npm_install(app: tauri::AppHandle) -> Result<String, String> {
         return Err("pnpm install 执行完毕但 node_modules 目录未创建".to_string());
     }
 
+    if !has_cli_build_output(&openclaw_dir) {
+        let _ = app.emit("setup-progress", serde_json::json!({
+            "stage": "npm_build",
+            "message": "检测到新版 OpenClaw 缺少 CLI 构建产物，正在执行 pnpm build...",
+            "percent": 96
+        }));
+
+        let mut build_cmd = std::process::Command::new(&node_bin);
+        build_cmd.arg(&pnpm_cli)
+            .arg("build")
+            .current_dir(&openclaw_dir)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .env("PATH", &sandbox_path);
+
+        #[cfg(target_os = "windows")]
+        build_cmd.creation_flags(0x08000000);
+
+        if use_mirror {
+            build_cmd.env("npm_config_registry", "https://registry.npmmirror.com");
+        }
+
+        let build_output = build_cmd.output()
+            .map_err(|e| format!("执行 pnpm build 失败: {}", e))?;
+
+        if !build_output.status.success() {
+            let stderr = String::from_utf8_lossy(&build_output.stderr);
+            let stdout = String::from_utf8_lossy(&build_output.stdout);
+            return Err(format!(
+                "pnpm build 失败:\nstdout: {}\nstderr: {}",
+                stdout, stderr
+            ));
+        }
+    }
+
+    if !has_cli_build_output(&openclaw_dir) {
+        return Err("pnpm build 执行完毕但仍未找到 OpenClaw CLI 构建产物".to_string());
+    }
+
     // Write .install_complete marker
     let marker_path = openclaw_dir.join("node_modules").join(".install_complete");
     let timestamp = std::time::SystemTime::now()
@@ -293,9 +340,50 @@ pub async fn run_npm_install(app: tauri::AppHandle) -> Result<String, String> {
 
     let _ = app.emit("setup-progress", serde_json::json!({
         "stage": "npm_done",
-        "message": "✅ 所有依赖安装完成！",
+        "message": "✅ 所有依赖与构建产物已就绪！",
         "percent": 98
     }));
 
     Ok("npm install completed successfully".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::has_cli_build_output;
+
+    fn make_temp_dir(name: &str) -> std::path::PathBuf {
+        let base = std::env::temp_dir().join(format!(
+            "dragonclaw-installer-test-{}-{}",
+            name,
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        base
+    }
+
+    #[test]
+    fn detect_cli_build_output_from_entry_js() {
+        let dir = make_temp_dir("entry-js");
+        std::fs::create_dir_all(dir.join("dist")).unwrap();
+        std::fs::write(dir.join("dist").join("entry.js"), "").unwrap();
+        assert!(has_cli_build_output(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn detect_cli_build_output_from_entry_mjs() {
+        let dir = make_temp_dir("entry-mjs");
+        std::fs::create_dir_all(dir.join("dist")).unwrap();
+        std::fs::write(dir.join("dist").join("entry.mjs"), "").unwrap();
+        assert!(has_cli_build_output(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn missing_cli_build_output_returns_false() {
+        let dir = make_temp_dir("missing-entry");
+        assert!(!has_cli_build_output(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
