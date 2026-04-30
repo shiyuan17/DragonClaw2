@@ -214,6 +214,7 @@ export interface ChannelBindingModalState {
   channelId: string;
   channelName: string;
   accountId: string;
+  accountLabel: string;
   view: ChannelBindingView;
   implemented: boolean;
 }

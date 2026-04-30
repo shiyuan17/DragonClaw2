@@ -968,17 +968,27 @@ export function WorkspaceClonePage({
             channelBindingError={workspaceChannels.modalError}
             weixinQrStarting={workspaceChannels.weixinQrStarting}
             weixinQrPolling={workspaceChannels.weixinQrPolling}
-            weixinQrUrl={workspaceChannels.weixinQrSnapshot?.qrUrl?.trim() || ""}
+            weixinQrUrl={workspaceChannels.weixinQrUrl}
+            weixinQrImageUrl={workspaceChannels.weixinQrImageUrl}
             weixinQrDetail={workspaceChannels.weixinQrSnapshot?.detail?.trim() || ""}
+            weixinQrLogs={workspaceChannels.weixinQrLogs}
+            hasActiveWeixinQrSession={workspaceChannels.hasActiveWeixinQrSession}
+            isCurrentWeixinChannelAlreadyBound={workspaceChannels.isCurrentWeixinChannelAlreadyBound}
+            weixinQrStatusTone={workspaceChannels.weixinQrStatusTone}
+            weixinQrStatusText={workspaceChannels.weixinQrStatusText}
             feishuQrRequesting={workspaceChannels.feishuQrRequesting}
             feishuQrChecking={workspaceChannels.feishuQrChecking}
+            feishuQrVisible={workspaceChannels.feishuQrVisible}
             feishuQrTargetUrl={workspaceChannels.feishuQrTargetUrl}
             feishuQrUserCode={workspaceChannels.feishuQrUserCode}
             feishuQrExpiresAtMs={workspaceChannels.feishuQrExpiresAtMs}
             feishuAppId={workspaceChannels.feishuAppId}
             feishuAppSecret={workspaceChannels.feishuAppSecret}
             feishuAppSecretConfigured={workspaceChannels.feishuAppSecretConfigured}
+            feishuAppSecretVisible={workspaceChannels.feishuAppSecretVisible}
             feishuDmPolicy={workspaceChannels.feishuDmPolicy}
+            feishuManualExpanded={workspaceChannels.feishuManualExpanded}
+            feishuAllowFromDraft={workspaceChannels.feishuAllowFromDraft}
             feishuAllowFromSessionIds={workspaceChannels.feishuAllowFromSessionIds}
             onToggleCollapsed={() => setIsDirectoryCollapsed((value) => !value)}
             onSelectType={setActiveType}
@@ -1014,9 +1024,6 @@ export function WorkspaceClonePage({
             onCloseChannelBindingModal={() => {
               void workspaceChannels.closeBindingModal();
             }}
-            onSelectChannelBindingView={(view) =>
-              workspaceChannels.setModal((current) => ({ ...current, view }))
-            }
             onSelectChannelBindingAgent={workspaceChannels.setSelectedAgentId}
             onStartWeixinQrBinding={() => {
               void workspaceChannels.startWeixinQrBindingFlow();
@@ -1036,7 +1043,11 @@ export function WorkspaceClonePage({
             onChangeFeishuAppId={workspaceChannels.setFeishuAppId}
             onChangeFeishuAppSecret={workspaceChannels.setFeishuAppSecret}
             onChangeFeishuDmPolicy={workspaceChannels.setFeishuDmPolicy}
-            onChangeFeishuAllowFrom={workspaceChannels.setFeishuAllowFromSessionIds}
+            onChangeFeishuAllowFromDraft={workspaceChannels.setFeishuAllowFromDraft}
+            onAddFeishuAllowFromSessionId={workspaceChannels.addFeishuAllowFromSessionId}
+            onRemoveFeishuAllowFromSessionId={workspaceChannels.removeFeishuAllowFromSessionId}
+            onToggleFeishuManualExpanded={workspaceChannels.toggleFeishuManualExpanded}
+            onToggleFeishuAppSecretVisible={workspaceChannels.toggleFeishuAppSecretVisible}
             onSaveChannelBinding={() => {
               void workspaceChannels.handleSaveBinding();
             }}

@@ -27,16 +27,26 @@ interface WorkspaceCloneDirectoryProps {
   weixinQrStarting: boolean;
   weixinQrPolling: boolean;
   weixinQrUrl: string;
+  weixinQrImageUrl: string;
   weixinQrDetail: string;
+  weixinQrLogs: string[];
+  hasActiveWeixinQrSession: boolean;
+  isCurrentWeixinChannelAlreadyBound: boolean;
+  weixinQrStatusTone: string;
+  weixinQrStatusText: string;
   feishuQrRequesting: boolean;
   feishuQrChecking: boolean;
+  feishuQrVisible: boolean;
   feishuQrTargetUrl: string;
   feishuQrUserCode: string;
   feishuQrExpiresAtMs: number | null;
   feishuAppId: string;
   feishuAppSecret: string;
   feishuAppSecretConfigured: boolean;
+  feishuAppSecretVisible: boolean;
   feishuDmPolicy: string;
+  feishuManualExpanded: boolean;
+  feishuAllowFromDraft: string;
   feishuAllowFromSessionIds: string[];
   onToggleCollapsed: () => void;
   onSelectType: (type: WorkspaceEntityType) => void;
@@ -46,7 +56,6 @@ interface WorkspaceCloneDirectoryProps {
   onCloseContextMenu: () => void;
   onOpenChannelBindingModal: (entity: WorkspaceEntity) => void;
   onCloseChannelBindingModal: () => void;
-  onSelectChannelBindingView: (view: ChannelBindingModalState["view"]) => void;
   onSelectChannelBindingAgent: (agentId: string) => void;
   onStartWeixinQrBinding: () => void;
   onOpenExternalBindingLink: (url: string) => void;
@@ -55,7 +64,11 @@ interface WorkspaceCloneDirectoryProps {
   onChangeFeishuAppId: (value: string) => void;
   onChangeFeishuAppSecret: (value: string) => void;
   onChangeFeishuDmPolicy: (value: string) => void;
-  onChangeFeishuAllowFrom: (value: string[]) => void;
+  onChangeFeishuAllowFromDraft: (value: string) => void;
+  onAddFeishuAllowFromSessionId: () => void;
+  onRemoveFeishuAllowFromSessionId: (sessionId: string) => void;
+  onToggleFeishuManualExpanded: () => void;
+  onToggleFeishuAppSecretVisible: () => void;
   onSaveChannelBinding: () => void;
   onRemoveChannelBinding: (entityId: string) => void;
 }
@@ -83,6 +96,13 @@ function renderChannelButton(
   onOpenContextMenu: (event: React.MouseEvent<HTMLButtonElement>, entity: WorkspaceEntity) => void,
   onOpenChannelBindingModal: (entity: WorkspaceEntity) => void,
 ) {
+  const handleClick = () => {
+    onSelectEntity(entity.id);
+    if (entity.isCatalogEntry) {
+      onOpenChannelBindingModal(entity);
+    }
+  };
+
   return (
     <button
       key={entity.id}
@@ -94,7 +114,7 @@ function renderChannelButton(
         entity.isCatalogEntry ? "is-catalog" : "",
       ].join(" ").trim()}
       type="button"
-      onClick={() => onSelectEntity(entity.id)}
+      onClick={handleClick}
       onContextMenu={(event) => {
         if (!entity.isBoundChannel) {
           return;
@@ -194,16 +214,26 @@ export function WorkspaceCloneDirectory({
   weixinQrStarting,
   weixinQrPolling,
   weixinQrUrl,
+  weixinQrImageUrl,
   weixinQrDetail,
+  weixinQrLogs,
+  hasActiveWeixinQrSession,
+  isCurrentWeixinChannelAlreadyBound,
+  weixinQrStatusTone,
+  weixinQrStatusText,
   feishuQrRequesting,
   feishuQrChecking,
+  feishuQrVisible,
   feishuQrTargetUrl,
   feishuQrUserCode,
   feishuQrExpiresAtMs,
   feishuAppId,
   feishuAppSecret,
   feishuAppSecretConfigured,
+  feishuAppSecretVisible,
   feishuDmPolicy,
+  feishuManualExpanded,
+  feishuAllowFromDraft,
   feishuAllowFromSessionIds,
   onToggleCollapsed,
   onSelectType,
@@ -213,7 +243,6 @@ export function WorkspaceCloneDirectory({
   onCloseContextMenu,
   onOpenChannelBindingModal,
   onCloseChannelBindingModal,
-  onSelectChannelBindingView,
   onSelectChannelBindingAgent,
   onStartWeixinQrBinding,
   onOpenExternalBindingLink,
@@ -222,7 +251,11 @@ export function WorkspaceCloneDirectory({
   onChangeFeishuAppId,
   onChangeFeishuAppSecret,
   onChangeFeishuDmPolicy,
-  onChangeFeishuAllowFrom,
+  onChangeFeishuAllowFromDraft,
+  onAddFeishuAllowFromSessionId,
+  onRemoveFeishuAllowFromSessionId,
+  onToggleFeishuManualExpanded,
+  onToggleFeishuAppSecretVisible,
   onSaveChannelBinding,
   onRemoveChannelBinding,
 }: WorkspaceCloneDirectoryProps) {
@@ -272,7 +305,12 @@ export function WorkspaceCloneDirectory({
                   className={`workspace-clone__mini-entity ${selectedEntityId === entity.id ? "is-active" : ""}`}
                   type="button"
                   title={entity.name}
-                  onClick={() => onSelectEntity(entity.id)}
+                  onClick={() => {
+                    onSelectEntity(entity.id);
+                    if (activeType === "channels" && entity.isCatalogEntry) {
+                      onOpenChannelBindingModal(entity);
+                    }
+                  }}
                 >
                   <span className="workspace-clone__mini-entity-avatar">
                     {entity.iconSrc ? <img src={entity.iconSrc} alt="" className="workspace-clone__entity-avatar-image" /> : entity.avatarLabel}
@@ -450,19 +488,28 @@ export function WorkspaceCloneDirectory({
         weixinQrStarting={weixinQrStarting}
         weixinQrPolling={weixinQrPolling}
         weixinQrUrl={weixinQrUrl}
+        weixinQrImageUrl={weixinQrImageUrl}
         weixinQrDetail={weixinQrDetail}
+        weixinQrLogs={weixinQrLogs}
+        hasActiveWeixinQrSession={hasActiveWeixinQrSession}
+        isCurrentWeixinChannelAlreadyBound={isCurrentWeixinChannelAlreadyBound}
+        weixinQrStatusTone={weixinQrStatusTone}
+        weixinQrStatusText={weixinQrStatusText}
         feishuQrRequesting={feishuQrRequesting}
         feishuQrChecking={feishuQrChecking}
+        feishuQrVisible={feishuQrVisible}
         feishuQrTargetUrl={feishuQrTargetUrl}
         feishuQrUserCode={feishuQrUserCode}
         feishuQrExpiresAtMs={feishuQrExpiresAtMs}
         feishuAppId={feishuAppId}
         feishuAppSecret={feishuAppSecret}
         feishuAppSecretConfigured={feishuAppSecretConfigured}
+        feishuAppSecretVisible={feishuAppSecretVisible}
         feishuDmPolicy={feishuDmPolicy}
+        feishuManualExpanded={feishuManualExpanded}
+        feishuAllowFromDraft={feishuAllowFromDraft}
         feishuAllowFromSessionIds={feishuAllowFromSessionIds}
         onClose={onCloseChannelBindingModal}
-        onSelectView={onSelectChannelBindingView}
         onSelectAgent={onSelectChannelBindingAgent}
         onStartWeixinQrBinding={onStartWeixinQrBinding}
         onOpenExternalLink={onOpenExternalBindingLink}
@@ -471,7 +518,11 @@ export function WorkspaceCloneDirectory({
         onChangeFeishuAppId={onChangeFeishuAppId}
         onChangeFeishuAppSecret={onChangeFeishuAppSecret}
         onChangeFeishuDmPolicy={onChangeFeishuDmPolicy}
-        onChangeFeishuAllowFrom={onChangeFeishuAllowFrom}
+        onChangeFeishuAllowFromDraft={onChangeFeishuAllowFromDraft}
+        onAddFeishuAllowFromSessionId={onAddFeishuAllowFromSessionId}
+        onRemoveFeishuAllowFromSessionId={onRemoveFeishuAllowFromSessionId}
+        onToggleFeishuManualExpanded={onToggleFeishuManualExpanded}
+        onToggleFeishuAppSecretVisible={onToggleFeishuAppSecretVisible}
         onSaveBinding={onSaveChannelBinding}
       />
     </>

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import QRCode from "qrcode";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AgentInfo,
@@ -129,6 +130,14 @@ function buildCatalogEntityId(channelId: string) {
   return `catalog:${channelId}`;
 }
 
+function resolveModalAccountLabel(accountId?: string | null) {
+  const value = (accountId ?? "").trim();
+  if (!value || value.toLowerCase() === "default") {
+    return "主账号";
+  }
+  return value;
+}
+
 function resolveChannelAvatarLabel(name: string) {
   return name.trim().slice(0, 1) || "C";
 }
@@ -161,6 +170,7 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
     channelId: "",
     channelName: "",
     accountId: "default",
+    accountLabel: "主账号",
     view: "wechat",
     implemented: false,
   });
@@ -172,6 +182,8 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
   const [weixinQrStarting, setWeixinQrStarting] = useState(false);
   const [weixinQrPolling, setWeixinQrPolling] = useState(false);
   const [weixinQrSnapshot, setWeixinQrSnapshot] = useState<OpenClawChannelQrBindingSessionSnapshot | null>(null);
+  const [weixinQrImageUrl, setWeixinQrImageUrl] = useState("");
+  const [weixinQrRenderError, setWeixinQrRenderError] = useState("");
   const [feishuQrRequesting, setFeishuQrRequesting] = useState(false);
   const [feishuQrChecking, setFeishuQrChecking] = useState(false);
   const [feishuQrTargetUrl, setFeishuQrTargetUrl] = useState("");
@@ -183,6 +195,8 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
   const [feishuAppSecret, setFeishuAppSecret] = useState("");
   const [feishuAppSecretConfigured, setFeishuAppSecretConfigured] = useState(false);
   const [feishuDmPolicy, setFeishuDmPolicy] = useState("open");
+  const [feishuManualExpanded, setFeishuManualExpanded] = useState(false);
+  const [feishuAppSecretVisible, setFeishuAppSecretVisible] = useState(false);
   const [feishuAllowFromDraft, setFeishuAllowFromDraft] = useState("");
   const [feishuAllowFromSessionIds, setFeishuAllowFromSessionIds] = useState<string[]>([]);
 
@@ -215,6 +229,8 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
       setWeixinQrStarting(false);
       const previousSessionId = weixinQrSnapshot?.sessionId?.trim() || "";
       setWeixinQrSnapshot(null);
+      setWeixinQrImageUrl("");
+      setWeixinQrRenderError("");
       if (clearSession && previousSessionId) {
         await clearOpenClawChannelQrBindingSession(previousSessionId).catch(() => undefined);
       }
@@ -235,6 +251,8 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
     setFeishuAppSecret("");
     setFeishuAppSecretConfigured(false);
     setFeishuDmPolicy("open");
+    setFeishuManualExpanded(false);
+    setFeishuAppSecretVisible(false);
     setFeishuAllowFromDraft("");
     setFeishuAllowFromSessionIds([]);
   }, [clearFeishuQrTimer]);
@@ -371,13 +389,79 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
     }));
   }, [channelEntities]);
 
+  const sanitizeWeixinQrSnapshot = useCallback((snapshot: OpenClawChannelQrBindingSessionSnapshot) => {
+    const rawUrl = snapshot.qrUrl?.trim() ?? "";
+    if (!rawUrl) {
+      return snapshot;
+    }
+    const validated = validateExternalUrl(rawUrl, WEIXIN_LINK_POLICY);
+    if (!validated.ok) {
+      return {
+        ...snapshot,
+        status: "error",
+        qrUrl: null,
+        detail: `已拦截不安全二维码链接: ${validated.reason}`,
+      };
+    }
+    return {
+      ...snapshot,
+      qrUrl: validated.url.toString(),
+    };
+  }, []);
+
+  const weixinQrUrl = useMemo(() => (weixinQrSnapshot?.qrUrl ?? "").trim(), [weixinQrSnapshot?.qrUrl]);
+
+  const hasActiveWeixinQrSession = useMemo(
+    () =>
+      weixinQrStarting
+      || weixinQrPolling
+      || Boolean(weixinQrSnapshot?.sessionId?.trim())
+      || Boolean(weixinQrUrl),
+    [weixinQrPolling, weixinQrSnapshot?.sessionId, weixinQrStarting, weixinQrUrl],
+  );
+
+  useEffect(() => {
+    if (!weixinQrUrl) {
+      setWeixinQrImageUrl("");
+      setWeixinQrRenderError("");
+      return;
+    }
+    let disposed = false;
+    void QRCode.toDataURL(weixinQrUrl, {
+      errorCorrectionLevel: "M",
+      margin: 1,
+      width: 260,
+    })
+      .then((imageUrl) => {
+        if (disposed) {
+          return;
+        }
+        setWeixinQrImageUrl(imageUrl);
+        setWeixinQrRenderError("");
+      })
+      .catch(() => {
+        if (disposed) {
+          return;
+        }
+        setWeixinQrImageUrl("");
+        setWeixinQrRenderError("二维码渲染失败，请刷新二维码后重试。");
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [weixinQrUrl]);
+
   const startWeixinPolling = useCallback((sessionId: string) => {
+    const normalizedSessionId = sessionId.trim();
+    if (!normalizedSessionId) {
+      return;
+    }
     clearWeixinQrTimer();
     setWeixinQrPolling(true);
-    weixinQrTimerRef.current = window.setInterval(() => {
+    const runPoll = () => {
       void (async () => {
         try {
-          const nextSnapshot = await pollOpenClawChannelQrBinding(sessionId);
+          const nextSnapshot = sanitizeWeixinQrSnapshot(await pollOpenClawChannelQrBinding(normalizedSessionId));
           setWeixinQrSnapshot(nextSnapshot);
           const status = (nextSnapshot.status || "").trim().toLowerCase();
           if (status === "success") {
@@ -385,7 +469,11 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
             const nextConfig = await refreshChannels();
             const group = nextConfig.channels.find((item) => item.channelType === "weixin");
             const accountId = group?.defaultAccountId || group?.accounts[0]?.accountId || "default";
-            setModal((current) => ({ ...current, accountId }));
+            setModal((current) => ({
+              ...current,
+              accountId,
+              accountLabel: resolveModalAccountLabel(accountId),
+            }));
             setModalNotice(nextSnapshot.detail?.trim() || "微信二维码绑定成功，请选择 Agent 并保存。");
             setModalError("");
           } else if (status === "error") {
@@ -399,22 +487,28 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
           setModalError(toMessage(error, "读取微信二维码状态失败。"));
         }
       })();
-    }, WEIXIN_QR_POLL_INTERVAL_MS);
-  }, [clearWeixinQrTimer, refreshChannels]);
+    };
+    runPoll();
+    weixinQrTimerRef.current = window.setInterval(runPoll, WEIXIN_QR_POLL_INTERVAL_MS);
+  }, [clearWeixinQrTimer, refreshChannels, sanitizeWeixinQrSnapshot]);
 
   const startWeixinQrBindingFlow = useCallback(async () => {
     resetModalFeedback();
     setWeixinQrStarting(true);
     await resetWeixinState(true);
     try {
-      const nextSnapshot = await startOpenClawChannelQrBinding("weixin");
+      const nextSnapshot = sanitizeWeixinQrSnapshot(await startOpenClawChannelQrBinding("weixin"));
       setWeixinQrSnapshot(nextSnapshot);
       const status = (nextSnapshot.status || "").trim().toLowerCase();
       if (status === "success") {
         const nextConfig = await refreshChannels();
         const group = nextConfig.channels.find((item) => item.channelType === "weixin");
         const accountId = group?.defaultAccountId || group?.accounts[0]?.accountId || "default";
-        setModal((current) => ({ ...current, accountId }));
+        setModal((current) => ({
+          ...current,
+          accountId,
+          accountLabel: resolveModalAccountLabel(accountId),
+        }));
         setModalNotice(nextSnapshot.detail?.trim() || "微信二维码绑定成功，请选择 Agent 并保存。");
         return;
       }
@@ -431,7 +525,7 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
     } finally {
       setWeixinQrStarting(false);
     }
-  }, [refreshChannels, resetModalFeedback, resetWeixinState, startWeixinPolling]);
+  }, [refreshChannels, resetModalFeedback, resetWeixinState, sanitizeWeixinQrSnapshot, startWeixinPolling]);
 
   const applyFeishuPollResult = useCallback(async (pollResult: Awaited<ReturnType<typeof pollFeishuOpenClawQrResult>>) => {
     const normalizedStatus = (pollResult.status ?? "").trim().toLowerCase();
@@ -440,7 +534,12 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
 
     if (normalizedStatus === "success" && appId) {
       clearFeishuQrTimer();
-      setModal((current) => ({ ...current, accountId: appId, view: "manual" }));
+      setModal((current) => ({
+        ...current,
+        accountId: appId,
+        accountLabel: resolveModalAccountLabel(appId),
+        view: "manual",
+      }));
       setFeishuAppId(appId);
       setFeishuAppSecret("");
       setFeishuAppSecretConfigured(true);
@@ -509,6 +608,7 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
       channelId: entity.channelId,
       channelName: resolveWorkspaceChannelName(entity.channelId),
       accountId: entity.channelAccountId || "default",
+      accountLabel: resolveModalAccountLabel(entity.channelLabel || entity.channelAccountId || "default"),
       view: resolveChannelView(entity.channelId, entity.channelId === "feishu" ? "feishu" : "wechat"),
       implemented: Boolean(entity.implemented),
     });
@@ -527,7 +627,11 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
           accountId: entity.channelAccountId || "default",
         });
         const nextAccountId = values.appId?.trim() || entity.channelAccountId || "default";
-        setModal((current) => ({ ...current, accountId: nextAccountId }));
+        setModal((current) => ({
+          ...current,
+          accountId: nextAccountId,
+          accountLabel: resolveModalAccountLabel(nextAccountId),
+        }));
         setFeishuAppId(values.appId ?? "");
         setFeishuAppSecret("");
         setFeishuAppSecretConfigured((values.appSecretConfigured ?? "").trim().toLowerCase() === "true");
@@ -542,15 +646,35 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
           setModalNotice("已检测到飞书凭证，你可以直接保存绑定，或手动更新凭证。");
         }
       }
-      if (entity.channelId === "weixin" && !entity.channelAccountId) {
-        void startWeixinQrBindingFlow();
+      if (entity.channelId === "weixin") {
+        const nextAccountId = entity.channelAccountId || channelGroupMap.get("weixin")?.defaultAccountId || "default";
+        const hasConfiguredAccount = channelGroupMap
+          .get("weixin")
+          ?.accounts.some((account) => account.accountId === nextAccountId && account.configured) || false;
+        setModal((current) => ({
+          ...current,
+          accountId: nextAccountId,
+          accountLabel: resolveModalAccountLabel(nextAccountId),
+        }));
+        if (hasConfiguredAccount) {
+          setModalNotice("当前微信频道已绑定，可点击下方按钮刷新二维码重新绑定。");
+        }
       }
     } catch (error) {
       setModalError(toMessage(error, "读取频道配置失败。"));
     } finally {
       setModalLoading(false);
     }
-  }, [agents, resetFeishuState, resetModalFeedback, resetWeixinState, startWeixinQrBindingFlow]);
+    if (entity.channelId === "weixin") {
+      const nextAccountId = entity.channelAccountId || channelGroupMap.get("weixin")?.defaultAccountId || "default";
+      const hasConfiguredAccount = channelGroupMap
+        .get("weixin")
+        ?.accounts.some((account) => account.accountId === nextAccountId && account.configured) || false;
+      if (!hasConfiguredAccount) {
+        void startWeixinQrBindingFlow();
+      }
+    }
+  }, [agents, channelGroupMap, resetFeishuState, resetModalFeedback, resetWeixinState, startWeixinQrBindingFlow]);
 
   const closeBindingModal = useCallback(async () => {
     setModal((current) => ({ ...current, open: false }));
@@ -624,6 +748,115 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
       setFeishuQrChecking(false);
     }
   }, [applyFeishuPollResult, feishuAppId, feishuAppSecret, feishuAppSecretConfigured, feishuQrDeviceCode]);
+
+  const setFeishuAllowFromDraftValue = useCallback((value: string) => {
+    setFeishuAllowFromDraft(value);
+  }, []);
+
+  const toggleFeishuManualExpanded = useCallback(() => {
+    setFeishuManualExpanded((current) => !current);
+  }, []);
+
+  const toggleFeishuAppSecretVisible = useCallback(() => {
+    setFeishuAppSecretVisible((current) => !current);
+  }, []);
+
+  const addFeishuAllowFromSessionId = useCallback(() => {
+    const nextValue = feishuAllowFromDraft.trim();
+    if (!nextValue) {
+      return;
+    }
+    setFeishuAllowFromSessionIds((current) =>
+      current.some((item) => item.toLowerCase() === nextValue.toLowerCase()) ? current : [...current, nextValue],
+    );
+    setFeishuAllowFromDraft("");
+  }, [feishuAllowFromDraft]);
+
+  const removeFeishuAllowFromSessionId = useCallback((sessionId: string) => {
+    setFeishuAllowFromSessionIds((current) => current.filter((item) => item !== sessionId));
+  }, []);
+
+  const activeWeixinGroup = useMemo(
+    () => (modal.channelId === "weixin" ? channelGroupMap.get("weixin") : null),
+    [channelGroupMap, modal.channelId],
+  );
+
+  const isCurrentWeixinChannelAlreadyBound = useMemo(() => {
+    if (!activeWeixinGroup) {
+      return false;
+    }
+    const currentAccountId = modal.accountId.trim() || activeWeixinGroup.defaultAccountId || "default";
+    return activeWeixinGroup.accounts.some(
+      (account) => account.accountId === currentAccountId && account.configured,
+    );
+  }, [activeWeixinGroup, modal.accountId]);
+
+  const weixinQrStatusTone = useMemo(() => {
+    if (modal.channelId !== "weixin") {
+      return "pending";
+    }
+    if (modalError.trim() || weixinQrRenderError.trim()) {
+      return "error";
+    }
+    const status = (weixinQrSnapshot?.status || "").trim().toLowerCase();
+    if (status === "success" || (isCurrentWeixinChannelAlreadyBound && !hasActiveWeixinQrSession)) {
+      return "success";
+    }
+    return "pending";
+  }, [
+    hasActiveWeixinQrSession,
+    isCurrentWeixinChannelAlreadyBound,
+    modal.channelId,
+    modalError,
+    weixinQrRenderError,
+    weixinQrSnapshot?.status,
+  ]);
+
+  const weixinQrStatusText = useMemo(() => {
+    if (modal.channelId !== "weixin") {
+      return "";
+    }
+    if (modalError.trim()) {
+      return modalError.trim();
+    }
+    if (weixinQrRenderError.trim()) {
+      return weixinQrRenderError.trim();
+    }
+    if (weixinQrStarting) {
+      return "正在获取二维码，请稍候...";
+    }
+    if (weixinQrUrl) {
+      return weixinQrSnapshot?.detail?.trim() || "等待扫码...";
+    }
+    if (hasActiveWeixinQrSession) {
+      return "二维码加载中...";
+    }
+    if (isCurrentWeixinChannelAlreadyBound) {
+      return modalNotice.trim() || "当前微信频道已绑定，可刷新二维码重新绑定。";
+    }
+    return modalNotice.trim() || "二维码加载中...";
+  }, [
+    hasActiveWeixinQrSession,
+    isCurrentWeixinChannelAlreadyBound,
+    modal.channelId,
+    modalError,
+    modalNotice,
+    weixinQrSnapshot?.detail,
+    weixinQrRenderError,
+    weixinQrStarting,
+    weixinQrUrl,
+  ]);
+
+  const weixinQrLogs = useMemo(
+    () =>
+      (weixinQrSnapshot?.logs || [])
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .slice(-3),
+    [weixinQrSnapshot?.logs],
+  );
+
+  const feishuQrVisible = useMemo(() => Boolean(feishuQrTargetUrl.trim()), [feishuQrTargetUrl]);
 
   const handleSaveBinding = useCallback(async () => {
     if (!modal.channelId || !modal.implemented) {
@@ -750,8 +983,16 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
     weixinQrStarting,
     weixinQrPolling,
     weixinQrSnapshot,
+    weixinQrImageUrl,
+    weixinQrUrl,
+    weixinQrLogs,
+    hasActiveWeixinQrSession,
+    isCurrentWeixinChannelAlreadyBound,
+    weixinQrStatusTone,
+    weixinQrStatusText,
     feishuQrRequesting,
     feishuQrChecking,
+    feishuQrVisible,
     feishuQrTargetUrl,
     feishuQrDeviceCode,
     feishuQrUserCode,
@@ -764,10 +1005,16 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
     feishuAppSecretConfigured,
     feishuDmPolicy,
     setFeishuDmPolicy,
+    feishuManualExpanded,
+    feishuAppSecretVisible,
+    toggleFeishuManualExpanded,
+    toggleFeishuAppSecretVisible,
     feishuAllowFromDraft,
-    setFeishuAllowFromDraft,
+    setFeishuAllowFromDraft: setFeishuAllowFromDraftValue,
     feishuAllowFromSessionIds,
     setFeishuAllowFromSessionIds,
+    addFeishuAllowFromSessionId,
+    removeFeishuAllowFromSessionId,
     refreshChannels,
     openBindingModal,
     closeBindingModal,
