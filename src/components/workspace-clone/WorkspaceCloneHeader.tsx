@@ -55,7 +55,6 @@ export function WorkspaceCloneHeader({
 
         <div className="workspace-clone__header-copy">
           <h2>{selectedEntity?.name || "请选择会话"}</h2>
-          <p>{selectedEntity?.subtitle || "待命中"}</p>
         </div>
       </div>
 
