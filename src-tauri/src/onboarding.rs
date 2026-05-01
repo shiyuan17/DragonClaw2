@@ -6,18 +6,78 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
-use crate::{agents, config, paths};
+use crate::{agents, config, openclaw_cli, paths};
 
 const FIND_SKILLS_NAME: &str = "find-skills";
 const SKILLHUB_PREFERENCE_NAME: &str = "skillhub-preference";
-const TARGET_SKILLS: &[&str] = &[
-    "Summarize",
-    "agent browser",
-    "imap-smtp-email",
-    "opencli",
-    "Humanizer",
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OnboardingSkillSource {
+    SkillHub,
+    GitHub,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct TargetSkill {
+    display_name: &'static str,
+    aliases: &'static [&'static str],
+    source: OnboardingSkillSource,
+    skillhub_slug_candidates: &'static [&'static str],
+    github_repo_url: Option<&'static str>,
+    github_skill_name: Option<&'static str>,
+}
+
+const TARGET_SKILLS: &[TargetSkill] = &[
+    TargetSkill {
+        display_name: "Summarize",
+        aliases: &["Summarize"],
+        source: OnboardingSkillSource::SkillHub,
+        skillhub_slug_candidates: &["summarize"],
+        github_repo_url: None,
+        github_skill_name: None,
+    },
+    TargetSkill {
+        display_name: "agent browser",
+        aliases: &["agent browser", "agent-browser"],
+        source: OnboardingSkillSource::SkillHub,
+        skillhub_slug_candidates: &["agent-browser"],
+        github_repo_url: None,
+        github_skill_name: None,
+    },
+    TargetSkill {
+        display_name: "imap-smtp-email",
+        aliases: &["imap-smtp-email"],
+        source: OnboardingSkillSource::SkillHub,
+        skillhub_slug_candidates: &["imap-smtp-email"],
+        github_repo_url: None,
+        github_skill_name: None,
+    },
+    TargetSkill {
+        display_name: "Humanizer",
+        aliases: &["Humanizer", "humanizer"],
+        source: OnboardingSkillSource::SkillHub,
+        skillhub_slug_candidates: &["humanizer"],
+        github_repo_url: None,
+        github_skill_name: None,
+    },
+    TargetSkill {
+        display_name: "opencli-agent",
+        aliases: &["opencli-agent", "opencli-adapter-author", "opencli"],
+        source: OnboardingSkillSource::GitHub,
+        skillhub_slug_candidates: &[],
+        github_repo_url: Some("jackwener/opencli"),
+        github_skill_name: Some("opencli-adapter-author"),
+    },
+    TargetSkill {
+        display_name: "html-ppt-skill",
+        aliases: &["html-ppt-skill", "html-ppt"],
+        source: OnboardingSkillSource::GitHub,
+        skillhub_slug_candidates: &[],
+        github_repo_url: Some("https://github.com/lewislulu/html-ppt-skill"),
+        github_skill_name: None,
+    },
 ];
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -99,7 +159,67 @@ fn is_skill_match(installed_name: &str, expected_name: &str) -> bool {
         return true;
     }
 
+    let opencli_aliases = ["opencliagent", "opencliadapterauthor", "opencli"];
+    if opencli_aliases.contains(&installed.as_str()) && opencli_aliases.contains(&expected.as_str())
+    {
+        return true;
+    }
+
+    let html_ppt_aliases = ["htmlpptskill", "htmlppt"];
+    if html_ppt_aliases.contains(&installed.as_str())
+        && html_ppt_aliases.contains(&expected.as_str())
+    {
+        return true;
+    }
+
     expected_name == "agent browser" && installed.contains("agentbrowser")
+}
+
+fn find_target_skill_by_display_name(display_name: &str) -> Option<&'static TargetSkill> {
+    TARGET_SKILLS.iter().find(|target| {
+        target
+            .display_name
+            .eq_ignore_ascii_case(display_name.trim())
+    })
+}
+
+fn find_target_skill_by_skillhub_slug(slug: &str) -> Option<&'static TargetSkill> {
+    TARGET_SKILLS.iter().find(|target| {
+        target
+            .skillhub_slug_candidates
+            .iter()
+            .any(|candidate| candidate.eq_ignore_ascii_case(slug.trim()))
+    })
+}
+
+fn aliases_match_installed_names(installed_names: &[String], aliases: &[&str]) -> bool {
+    aliases.iter().any(|alias| {
+        installed_names
+            .iter()
+            .any(|name| is_skill_match(name, alias))
+    })
+}
+
+fn build_alias_candidates<'a>(
+    display_name: &'a str,
+    secondary_name: Option<&'a str>,
+) -> Vec<&'a str> {
+    let mut aliases = Vec::new();
+    let trimmed_display_name = display_name.trim();
+    if !trimmed_display_name.is_empty() {
+        aliases.push(trimmed_display_name);
+    }
+
+    if let Some(name) = secondary_name
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if !aliases.iter().any(|alias| alias.eq_ignore_ascii_case(name)) {
+            aliases.push(name);
+        }
+    }
+
+    aliases
 }
 
 fn load_state_with_presence() -> Result<(bool, OnboardingSkillInstallState), String> {
@@ -345,19 +465,45 @@ fn validate_official_skillhub_install(
     Ok(())
 }
 
-fn validate_recommended_skill_install(slug: &str) -> Result<(), String> {
-    let skill_path = paths::main_workspace_dir()?
-        .join("skills")
-        .join(slug)
-        .join("SKILL.md");
-    if skill_path.is_file() {
+fn validate_target_skill_install(aliases: &[&str]) -> Result<(), String> {
+    let installed_skills = agents::list_skills()?;
+    let installed_names: Vec<String> = installed_skills
+        .into_iter()
+        .map(|skill| skill.name)
+        .collect();
+
+    if aliases_match_installed_names(&installed_names, aliases) {
         return Ok(());
     }
 
     Err(format!(
-        "推荐技能未安装到主工作区 skills 目录: {}",
-        skill_path.display()
+        "推荐技能未出现在主工作区技能列表中: {}",
+        aliases.join(", ")
     ))
+}
+
+fn build_github_skill_install_args(repo_url: &str, skill_name: Option<&str>) -> Vec<String> {
+    let mut args = vec![
+        "exec".to_string(),
+        "--yes".to_string(),
+        "--package".to_string(),
+        "skills".to_string(),
+        "--".to_string(),
+        "skills".to_string(),
+        "add".to_string(),
+        repo_url.trim().to_string(),
+        "-a".to_string(),
+        "openclaw".to_string(),
+        "--copy".to_string(),
+        "-y".to_string(),
+    ];
+
+    if let Some(name) = skill_name.map(str::trim).filter(|value| !value.is_empty()) {
+        args.push("--skill".to_string());
+        args.push(name.to_string());
+    }
+
+    args
 }
 
 fn build_command_result(
@@ -445,7 +591,92 @@ pub fn install_skillhub_recommended_skill(
         ));
     }
 
-    validate_recommended_skill_install(&slug).map_err(|error| {
+    let alias_candidates = find_target_skill_by_display_name(&display_name)
+        .or_else(|| find_target_skill_by_skillhub_slug(&slug))
+        .map(|target| target.aliases.to_vec())
+        .unwrap_or_else(|| build_alias_candidates(&display_name, Some(&slug)));
+
+    validate_target_skill_install(&alias_candidates).map_err(|error| {
+        format!(
+            "{}\nstdout:\n{}\n\nstderr:\n{}",
+            error, result.stdout, result.stderr
+        )
+    })?;
+
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn install_github_skill_from_url(
+    repo_url: String,
+    display_name: String,
+    skill_name: Option<String>,
+) -> Result<SkillHubCommandResult, String> {
+    let repo_url = repo_url.trim().to_string();
+    let display_name = display_name.trim().to_string();
+    let trimmed_skill_name = skill_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+
+    if repo_url.is_empty() || display_name.is_empty() {
+        return Err("GitHub 技能安装参数不能为空".to_string());
+    }
+
+    let known_target = find_target_skill_by_display_name(&display_name)
+        .filter(|target| target.source == OnboardingSkillSource::GitHub);
+    if let Some(target) = known_target {
+        if let Some(expected_repo_url) = target.github_repo_url {
+            if expected_repo_url != repo_url {
+                return Err(format!(
+                    "GitHub 技能仓库与预期不一致: expected {}, got {}",
+                    expected_repo_url, repo_url
+                ));
+            }
+        }
+
+        let expected_skill_name = target.github_skill_name.map(str::trim);
+        let actual_skill_name = trimmed_skill_name.as_deref().map(str::trim);
+        if expected_skill_name != actual_skill_name {
+            return Err(format!(
+                "GitHub 技能安装名与预期不一致: expected {:?}, got {:?}",
+                expected_skill_name, actual_skill_name
+            ));
+        }
+    }
+
+    let runtime_info = build_runtime_info()?;
+    let workspace_dir = paths::main_workspace_dir()?;
+    fs::create_dir_all(&workspace_dir).map_err(|error| format!("创建主工作区目录失败: {error}"))?;
+
+    let mut command = openclaw_cli::create_bundled_npm_cli_command()
+        .map_err(|error| format!("构建 npm 命令失败: {error}"))?;
+    let args = build_github_skill_install_args(&repo_url, trimmed_skill_name.as_deref());
+    command
+        .args(&args)
+        .current_dir(&workspace_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let output = command
+        .output()
+        .map_err(|error| format!("执行 GitHub 技能安装命令失败: {error}"))?;
+    let result = build_command_result(runtime_info, output);
+
+    if !result.success {
+        return Err(format!(
+            "GitHub 安装 {display_name} 失败。\nstdout:\n{}\n\nstderr:\n{}",
+            result.stdout, result.stderr
+        ));
+    }
+
+    let alias_candidates = known_target
+        .map(|target| target.aliases.to_vec())
+        .unwrap_or_else(|| build_alias_candidates(&display_name, trimmed_skill_name.as_deref()));
+
+    validate_target_skill_install(&alias_candidates).map_err(|error| {
         format!(
             "{}\nstdout:\n{}\n\nstderr:\n{}",
             error, result.stdout, result.stderr
@@ -495,11 +726,7 @@ pub fn get_onboarding_skill_install_diagnostics(
 
     let installed_target_skill_count = TARGET_SKILLS
         .iter()
-        .filter(|target| {
-            installed_names
-                .iter()
-                .any(|name| is_skill_match(name, target))
-        })
+        .filter(|target| aliases_match_installed_names(&installed_names, target.aliases))
         .count();
 
     let should_backfill =
@@ -514,4 +741,72 @@ pub fn get_onboarding_skill_install_diagnostics(
         installed_target_skill_count,
         should_backfill,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{build_github_skill_install_args, is_skill_match};
+
+    #[test]
+    fn skill_alias_matching_supports_opencli_agent_chain() {
+        assert!(is_skill_match("opencli-agent", "opencli-agent"));
+        assert!(is_skill_match("opencli-adapter-author", "opencli-agent"));
+        assert!(is_skill_match("opencli", "opencli-agent"));
+    }
+
+    #[test]
+    fn skill_alias_matching_supports_html_ppt_variants() {
+        assert!(is_skill_match("html-ppt-skill", "html-ppt-skill"));
+        assert!(is_skill_match("html-ppt", "html-ppt-skill"));
+    }
+
+    #[test]
+    fn github_install_args_include_openclaw_copy_flags_and_skill_name() {
+        let args =
+            build_github_skill_install_args("jackwener/opencli", Some("opencli-adapter-author"));
+
+        assert_eq!(
+            args,
+            vec![
+                "exec",
+                "--yes",
+                "--package",
+                "skills",
+                "--",
+                "skills",
+                "add",
+                "jackwener/opencli",
+                "-a",
+                "openclaw",
+                "--copy",
+                "-y",
+                "--skill",
+                "opencli-adapter-author",
+            ]
+        );
+    }
+
+    #[test]
+    fn github_install_args_omit_skill_flag_when_not_provided() {
+        let args =
+            build_github_skill_install_args("https://github.com/lewislulu/html-ppt-skill", None);
+
+        assert_eq!(
+            args,
+            vec![
+                "exec",
+                "--yes",
+                "--package",
+                "skills",
+                "--",
+                "skills",
+                "add",
+                "https://github.com/lewislulu/html-ppt-skill",
+                "-a",
+                "openclaw",
+                "--copy",
+                "-y",
+            ]
+        );
+    }
 }

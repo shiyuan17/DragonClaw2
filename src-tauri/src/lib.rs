@@ -175,6 +175,7 @@ pub fn run() {
             onboarding::get_skillhub_install_runtime_info,
             onboarding::install_official_skillhub,
             onboarding::install_skillhub_recommended_skill,
+            onboarding::install_github_skill_from_url,
             onboarding::get_onboarding_skill_install_state,
             onboarding::get_onboarding_skill_install_diagnostics,
             onboarding::save_onboarding_skill_install_state,

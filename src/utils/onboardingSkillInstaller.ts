@@ -8,13 +8,56 @@ import type {
   SkillInfo,
 } from "../types";
 
+type OnboardingTargetSkillSource = "skillhub" | "github";
+
+type OnboardingTargetSkill = {
+  displayName: string;
+  aliases: readonly string[];
+  source: OnboardingTargetSkillSource;
+  skillhubSlugCandidates?: readonly string[];
+  githubRepoUrl?: string;
+  githubSkillName?: string;
+};
+
 const TARGET_SKILLS = [
-  { name: "Summarize", slug: "summarize" },
-  { name: "agent browser", slug: "agent-browser" },
-  { name: "imap-smtp-email", slug: "imap-smtp-email" },
-  { name: "opencli", slug: "opencli" },
-  { name: "Humanizer", slug: "humanizer" },
-] as const;
+  {
+    displayName: "Summarize",
+    aliases: ["Summarize"],
+    source: "skillhub",
+    skillhubSlugCandidates: ["summarize"],
+  },
+  {
+    displayName: "agent browser",
+    aliases: ["agent browser", "agent-browser"],
+    source: "skillhub",
+    skillhubSlugCandidates: ["agent-browser"],
+  },
+  {
+    displayName: "imap-smtp-email",
+    aliases: ["imap-smtp-email"],
+    source: "skillhub",
+    skillhubSlugCandidates: ["imap-smtp-email"],
+  },
+  {
+    displayName: "Humanizer",
+    aliases: ["Humanizer", "humanizer"],
+    source: "skillhub",
+    skillhubSlugCandidates: ["humanizer"],
+  },
+  {
+    displayName: "opencli-agent",
+    aliases: ["opencli-agent", "opencli-adapter-author", "opencli"],
+    source: "github",
+    githubRepoUrl: "jackwener/opencli",
+    githubSkillName: "opencli-adapter-author",
+  },
+  {
+    displayName: "html-ppt-skill",
+    aliases: ["html-ppt-skill", "html-ppt"],
+    source: "github",
+    githubRepoUrl: "https://github.com/lewislulu/html-ppt-skill",
+  },
+] as const satisfies readonly OnboardingTargetSkill[];
 
 type ExecuteOnboardingSkillInstallOptions = {
   servicePort: number;
@@ -26,19 +69,29 @@ function normalizeSkillName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
-function isInstalledSkill(installedNames: string[], expectedName: string) {
+function isInstalledSkill(installedNames: string[], aliases: readonly string[]) {
   const normalizedInstalled = installedNames.map(normalizeSkillName);
-  const expected = normalizeSkillName(expectedName);
+  const normalizedAliases = aliases.map(normalizeSkillName).filter(Boolean);
 
-  if (normalizedInstalled.includes(expected)) {
-    return true;
+  return normalizedAliases.some((expected) =>
+    normalizedInstalled.some((name) => name === expected || name.includes(expected) || expected.includes(name)),
+  );
+}
+
+function getPreferredSkillHubSlug(skill: OnboardingTargetSkill) {
+  const slug = skill.skillhubSlugCandidates?.find((candidate) => candidate.trim().length > 0);
+  if (!slug) {
+    throw new Error(`${skill.displayName} 缺少 SkillHub slug 配置`);
   }
+  return slug;
+}
 
-  if (expectedName === "agent browser") {
-    return normalizedInstalled.some((name) => name.includes("agentbrowser"));
+function getGithubRepoUrl(skill: OnboardingTargetSkill) {
+  const repoUrl = skill.githubRepoUrl?.trim();
+  if (!repoUrl) {
+    throw new Error(`${skill.displayName} 缺少 GitHub 仓库配置`);
   }
-
-  return normalizedInstalled.some((name) => name.includes(expected) || expected.includes(name));
+  return repoUrl;
 }
 
 function summarizeCommandResult(result: SkillHubCommandResult) {
@@ -163,7 +216,7 @@ export async function runOnboardingSkillInstall({
 
       for (const skill of TARGET_SKILLS) {
         results.push({
-          name: skill.name,
+          name: skill.displayName,
           status: "failed",
           detail: "SkillHub 官方安装未完成，后续技能未执行",
         });
@@ -187,39 +240,47 @@ export async function runOnboardingSkillInstall({
     for (let index = 0; index < TARGET_SKILLS.length; index += 1) {
       const skill = TARGET_SKILLS[index];
       const progress = 98 + Math.min(1, (index + 1) / TARGET_SKILLS.length);
+      const installerLabel = skill.source === "github" ? "GitHub" : "SkillHub";
 
-      if (isInstalledSkill(installedNames, skill.name)) {
+      if (isInstalledSkill(installedNames, skill.aliases)) {
         results.push({
-          name: skill.name,
+          name: skill.displayName,
           status: "installed",
           detail: "已在本地技能目录中检测到该技能",
         });
-        addLog("info", `${skill.name} 已存在，跳过重复安装`);
+        addLog("info", `${skill.displayName} 已存在，跳过重复安装`);
         continue;
       }
 
-      onProgress(`SkillHub 正在安装 ${skill.name}...`, progress);
-      addLog("info", `开始通过 SkillHub CLI 安装 ${skill.name}`);
+      onProgress(`${installerLabel} 正在安装 ${skill.displayName}...`, progress);
+      addLog("info", `开始通过 ${installerLabel} 安装 ${skill.displayName}`);
 
       try {
-        const installResult = await invoke<SkillHubCommandResult>("install_skillhub_recommended_skill", {
-          slug: skill.slug,
-          displayName: skill.name,
-        });
+        const installResult =
+          skill.source === "github"
+            ? await invoke<SkillHubCommandResult>("install_github_skill_from_url", {
+                repoUrl: getGithubRepoUrl(skill),
+                displayName: skill.displayName,
+                skillName: "githubSkillName" in skill ? skill.githubSkillName ?? null : null,
+              })
+            : await invoke<SkillHubCommandResult>("install_skillhub_recommended_skill", {
+                slug: getPreferredSkillHubSlug(skill),
+                displayName: skill.displayName,
+              });
         results.push({
-          name: skill.name,
+          name: skill.displayName,
           status: "installed",
           detail: summarizeCommandResult(installResult),
         });
-        addLog("success", `${skill.name} 安装完成`);
+        addLog("success", `${skill.displayName} 安装完成`);
       } catch (error) {
         const detail = toErrorDetail(error);
         results.push({
-          name: skill.name,
+          name: skill.displayName,
           status: "failed",
           detail,
         });
-        addLog("error", `${skill.name} 安装失败: ${detail}`);
+        addLog("error", `${skill.displayName} 安装失败: ${detail}`);
       }
 
       installedNames = await getInstalledSkillNames();
@@ -228,7 +289,7 @@ export async function runOnboardingSkillInstall({
     const detail = toErrorDetail(error);
     addLog("error", `首次技能安装流程异常: ${detail}`);
 
-    const pendingNames = ["SkillHub", ...TARGET_SKILLS.map((item) => item.name)].filter(
+    const pendingNames = ["SkillHub", ...TARGET_SKILLS.map((item) => item.displayName)].filter(
       (name) => !results.some((item) => item.name === name),
     );
     for (const name of pendingNames) {
