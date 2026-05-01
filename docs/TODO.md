@@ -266,4 +266,6 @@
 
 ## 2026-04-30 Pending Acceptance
 - [ ] 2026-04-30: remove workspace-clone chat header subtitle text under the avatar.
+- [ ] 2026-04-30: fix weixin QR binding readiness/response normalization regression so installed/enabled plugins skip blocking revalidation and generated `qr_url` renders in the binding modal.
+- [ ] 2026-04-30: align workspace-clone weixin QR binding with DragonClaw fallback flow, including CLI login fallback and automatic Agent binding after scan success.
 
