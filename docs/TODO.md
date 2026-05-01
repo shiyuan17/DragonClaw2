@@ -268,6 +268,7 @@
 - [x] 让已绑定频道在首页复用对应 Agent 主会话，未绑定频道显示空态引导
 
 ## 2026-04-30 Pending Acceptance
+- [ ] Phase 5.17.2: fix startup white-screen by showing an immediate boot splash and lazy-loading ready-page modules/styles without changing startup business logic.
 - [ ] Phase 5.15.10: remove native Windows titlebar and restore custom titlebar window controls permissions/behavior
 - [ ] 2026-04-30: remove workspace-clone chat header subtitle text under the avatar.
 - [x] 2026-04-30: fix weixin QR binding readiness/response normalization regression so installed/enabled plugins skip blocking revalidation and generated `qr_url` renders in the binding modal.
