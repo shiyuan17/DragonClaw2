@@ -5,9 +5,207 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DragonClaw</title>
+    <style>
+      :root {
+        color: #214f8d;
+        background:
+          radial-gradient(circle at 50% 24%, rgba(229, 240, 255, 0.92), transparent 32%),
+          radial-gradient(circle at 22% 18%, rgba(215, 233, 255, 0.9), transparent 34%),
+          radial-gradient(circle at 82% 72%, rgba(220, 238, 255, 0.78), transparent 28%),
+          linear-gradient(180deg, #f9fbff 0%, #eef5ff 100%);
+        font-family: Inter, "Segoe UI", sans-serif;
+      }
+
+      html,
+      body,
+      #root {
+        height: 100%;
+        min-height: 100vh;
+      }
+
+      body {
+        margin: 0;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 50% 24%, rgba(229, 240, 255, 0.92), transparent 32%),
+          radial-gradient(circle at 22% 18%, rgba(215, 233, 255, 0.9), transparent 34%),
+          radial-gradient(circle at 82% 72%, rgba(220, 238, 255, 0.78), transparent 28%),
+          linear-gradient(180deg, #f9fbff 0%, #eef5ff 100%);
+      }
+
+      #boot-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 40px 24px;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 50% 24%, rgba(229, 240, 255, 0.92), transparent 32%),
+          radial-gradient(circle at 22% 18%, rgba(215, 233, 255, 0.9), transparent 34%),
+          radial-gradient(circle at 82% 72%, rgba(220, 238, 255, 0.78), transparent 28%),
+          linear-gradient(180deg, #f9fbff 0%, #eef5ff 100%);
+        transition: opacity 220ms ease, transform 220ms ease;
+      }
+
+      #boot-splash::before,
+      #boot-splash::after {
+        content: "";
+        position: absolute;
+        border-radius: 999px;
+        pointer-events: none;
+        filter: blur(48px);
+        opacity: 0.95;
+      }
+
+      #boot-splash::before {
+        top: 8%;
+        left: 10%;
+        width: min(42vw, 560px);
+        height: min(26vw, 320px);
+        background: radial-gradient(circle, rgba(210, 228, 255, 0.82) 0%, rgba(210, 228, 255, 0) 72%);
+        animation: boot-splash-drift-left 11s ease-in-out infinite alternate;
+      }
+
+      #boot-splash::after {
+        right: 6%;
+        bottom: 8%;
+        width: min(38vw, 520px);
+        height: min(24vw, 300px);
+        background: radial-gradient(circle, rgba(226, 239, 255, 0.78) 0%, rgba(226, 239, 255, 0) 74%);
+        animation: boot-splash-drift-right 14s ease-in-out infinite alternate;
+      }
+
+      #boot-splash.is-leaving {
+        opacity: 0;
+        transform: scale(1.015);
+        pointer-events: none;
+      }
+
+      .boot-splash__card {
+        position: relative;
+        z-index: 1;
+        width: min(100%, 520px);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        text-align: center;
+      }
+
+      .boot-splash__badge {
+        width: 96px;
+        height: 96px;
+        border-radius: 28px;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(135deg, rgba(47, 103, 173, 0.16), rgba(79, 137, 202, 0.24));
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.65),
+          0 18px 38px rgba(169, 196, 228, 0.28);
+        color: #2f67ad;
+        font-size: 34px;
+        font-weight: 700;
+        letter-spacing: -0.06em;
+      }
+
+      .boot-splash__title {
+        margin: 0;
+        color: #214f8d;
+        font-size: clamp(28px, 3vw, 34px);
+        line-height: 1.06;
+        letter-spacing: -0.04em;
+      }
+
+      .boot-splash__subtitle {
+        margin: 0;
+        color: rgba(78, 116, 167, 0.88);
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .boot-splash__progress {
+        width: min(100%, 320px);
+        height: 10px;
+        margin-top: 6px;
+        padding: 1px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.72);
+        border: 1px solid rgba(176, 201, 233, 0.56);
+        box-shadow:
+          inset 0 1px 1px rgba(255, 255, 255, 0.65),
+          0 12px 32px rgba(190, 213, 240, 0.18);
+      }
+
+      .boot-splash__progress-fill {
+        height: 100%;
+        width: 38%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, rgba(111, 160, 225, 0.86), rgba(191, 224, 255, 0.96));
+        box-shadow:
+          0 0 0 1px rgba(255, 255, 255, 0.28),
+          0 8px 18px rgba(133, 179, 231, 0.28);
+        background-size: 180% 100%;
+        animation: boot-splash-shimmer 2.4s linear infinite;
+      }
+
+      .boot-splash__version {
+        position: absolute;
+        right: 22px;
+        bottom: 16px;
+        z-index: 1;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        color: rgba(112, 142, 181, 0.72);
+      }
+
+      @keyframes boot-splash-shimmer {
+        0% {
+          background-position: -180% center;
+        }
+
+        100% {
+          background-position: 180% center;
+        }
+      }
+
+      @keyframes boot-splash-drift-left {
+        0% {
+          transform: translate3d(0, 0, 0) scale(1);
+        }
+
+        100% {
+          transform: translate3d(42px, 18px, 0) scale(1.08);
+        }
+      }
+
+      @keyframes boot-splash-drift-right {
+        0% {
+          transform: translate3d(0, 0, 0) scale(1);
+        }
+
+        100% {
+          transform: translate3d(-38px, -16px, 0) scale(1.06);
+        }
+      }
+    </style>
   </head>
 
   <body>
+    <div id="boot-splash" aria-hidden="true">
+      <div class="boot-splash__card">
+        <div class="boot-splash__badge">DC</div>
+        <h1 class="boot-splash__title">DragonClaw</h1>
+        <p class="boot-splash__subtitle">正在准备启动界面与工作台，请稍候。</p>
+        <div class="boot-splash__progress">
+          <div class="boot-splash__progress-fill"></div>
+        </div>
+      </div>
+      <div class="boot-splash__version">Booting...</div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

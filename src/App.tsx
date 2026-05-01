@@ -1,7 +1,7 @@
 // Copyright (C) 2026 shiyuan
 // SPDX-License-Identifier: GPL-3.0-only
 // This file is part of DragonClaw. See LICENSE for details.
-import { useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -14,17 +14,56 @@ import type { HomeView, TabId } from "./types";
 import { ApiKeyModal } from "./components/ApiKeyModal";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { Header } from "./components/Header";
-import { LegacyHomeShell } from "./components/LegacyHomeShell";
 import { ModelSwitchModal } from "./components/ModelSwitchModal";
 import { RepairToast } from "./components/RepairToast";
 import { SetupWizard } from "./components/SetupWizard";
 import { StartupOverlay } from "./components/StartupOverlay";
-import { WorkspaceClonePage } from "./components/workspace-clone/WorkspaceClonePage";
 import { Modal } from "./components/ui/Modal";
 import { useConfig } from "./hooks/useConfig";
 import { useLogs } from "./hooks/useLogs";
 import { useService } from "./hooks/useService";
 import { useSetup } from "./hooks/useSetup";
+
+const WorkspaceCloneReadyPage = lazy(() => import("./components/ready/WorkspaceCloneReadyPage"));
+const LegacyHomeReadyPage = lazy(() => import("./components/ready/LegacyHomeReadyPage"));
+
+function dismissBootSplash() {
+  if (typeof document === "undefined") return;
+
+  const bootSplash = document.getElementById("boot-splash");
+  if (!bootSplash || bootSplash.dataset.dismissed === "true") {
+    return;
+  }
+
+  bootSplash.dataset.dismissed = "true";
+
+  const removeBootSplash = () => {
+    bootSplash.removeEventListener("transitionend", removeBootSplash);
+    bootSplash.remove();
+  };
+
+  requestAnimationFrame(() => {
+    bootSplash.classList.add("is-leaving");
+    bootSplash.addEventListener("transitionend", removeBootSplash, { once: true });
+    window.setTimeout(removeBootSplash, 320);
+  });
+}
+
+function ReadyPageFallback() {
+  return (
+    <div className="startup-container">
+      <div className="startup-box">
+        <h1 className="startup-title">DragonClaw 正在打开工作台</h1>
+        <div className="startup-progress-group" aria-hidden="true">
+          <div className="startup-progress-bar">
+            <div className="startup-progress-fill" style={{ width: "42%" }} />
+          </div>
+        </div>
+        <p className="startup-description">首页模块正在加载，请稍候。</p>
+      </div>
+    </div>
+  );
+}
 
 function App() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
@@ -39,6 +78,10 @@ function App() {
 
   useEffect(() => {
     getVersion().then((version) => setAppVersion(version)).catch(() => { });
+  }, []);
+
+  useEffect(() => {
+    dismissBootSplash();
   }, []);
 
   const {
@@ -251,82 +294,86 @@ function App() {
             onSelectFolder={handleSelectFolder}
             onConfirmWorkspace={handleConfirmWorkspace}
           />
-        ) : showWorkspaceCloneHome ? (
-          <WorkspaceClonePage
-            running={running}
-            loading={loading}
-            servicePort={servicePort}
-            gatewayToken={gatewayToken}
-            consoleUrl={consoleUrl}
-            uptime={uptime}
-            currentModelName={currentModelName}
-            currentProviderName={currentProviderName}
-            currentConfig={currentConfig}
-            configVersion={configVersion}
-            providers={providers}
-            workspacePath={workspacePath}
-            logs={logs}
-            handleStart={handleStart}
-            handleStop={handleStop}
-            refreshCurrentConfig={refreshCurrentConfig}
-            handleSetModel={handleSetModel}
-            handleUpsertSavedProviderConfig={handleUpsertSavedProviderConfig}
-            handleDeleteSavedProviderConfig={handleDeleteSavedProviderConfig}
-          />
         ) : (
-          <LegacyHomeShell
-            activeTab={activeTab}
-            setActiveTab={setActiveTab}
-            activeSettingsTab={activeSettingsTab}
-            setActiveSettingsTab={setActiveSettingsTab}
-            running={running}
-            loading={loading}
-            appVersion={appVersion}
-            servicePort={servicePort}
-            consoleUrl={consoleUrl}
-            uptime={uptime}
-            currentModelName={currentModelName}
-            currentProviderName={currentProviderName}
-            workspacePath={workspacePath}
-            currentConfig={currentConfig}
-            providers={providers}
-            filteredProviders={filteredProviders}
-            selectedCategory={selectedCategory}
-            setSelectedCategory={setSelectedCategory}
-            selectedProvider={selectedProvider}
-            setSelectedProvider={setSelectedProvider}
-            apiKeyInput={apiKeyInput}
-            setApiKeyInput={setApiKeyInput}
-            baseUrlInput={baseUrlInput}
-            setBaseUrlInput={setBaseUrlInput}
-            selectedModel={selectedModel}
-            setSelectedModel={setSelectedModel}
-            configSaving={configSaving}
-            setConfigStatus={setConfigStatus}
-            configVersion={configVersion}
-            resetModalState={resetModalState}
-            checkApiKey={checkApiKey}
-            handleSaveConfig={handleSaveConfig}
-            logs={logs}
-            logRef={logRef}
-            setShowKeyModal={setShowKeyModal}
-            setShowModelSwitchModal={setShowModelSwitchModal}
-            setStartingUp={setStartingUp}
-            setRunning={setRunning}
-            addLog={addLog}
-            reinstalling={reinstalling}
-            repairing={repairing}
-            handleStart={handleStart}
-            handleStop={handleStop}
-            handleSwitchWorkspace={handleSwitchWorkspace}
-            handleReinstall={handleReinstall}
-            handleRepairConnection={handleRepairConnection}
-            handleReset={handleReset}
-            setInfoModalTitle={setInfoModalTitle}
-            onExportDiagnostics={handleExportDiagnostics}
-            onCheckUpdate={handleCheckUpdate}
-            checkingUpdate={checkingUpdate}
-          />
+          <Suspense fallback={<ReadyPageFallback />}>
+            {showWorkspaceCloneHome ? (
+              <WorkspaceCloneReadyPage
+                running={running}
+                loading={loading}
+                servicePort={servicePort}
+                gatewayToken={gatewayToken}
+                consoleUrl={consoleUrl}
+                uptime={uptime}
+                currentModelName={currentModelName}
+                currentProviderName={currentProviderName}
+                currentConfig={currentConfig}
+                configVersion={configVersion}
+                providers={providers}
+                workspacePath={workspacePath}
+                logs={logs}
+                handleStart={handleStart}
+                handleStop={handleStop}
+                refreshCurrentConfig={refreshCurrentConfig}
+                handleSetModel={handleSetModel}
+                handleUpsertSavedProviderConfig={handleUpsertSavedProviderConfig}
+                handleDeleteSavedProviderConfig={handleDeleteSavedProviderConfig}
+              />
+            ) : (
+              <LegacyHomeReadyPage
+                activeTab={activeTab}
+                setActiveTab={setActiveTab}
+                activeSettingsTab={activeSettingsTab}
+                setActiveSettingsTab={setActiveSettingsTab}
+                running={running}
+                loading={loading}
+                appVersion={appVersion}
+                servicePort={servicePort}
+                consoleUrl={consoleUrl}
+                uptime={uptime}
+                currentModelName={currentModelName}
+                currentProviderName={currentProviderName}
+                workspacePath={workspacePath}
+                currentConfig={currentConfig}
+                providers={providers}
+                filteredProviders={filteredProviders}
+                selectedCategory={selectedCategory}
+                setSelectedCategory={setSelectedCategory}
+                selectedProvider={selectedProvider}
+                setSelectedProvider={setSelectedProvider}
+                apiKeyInput={apiKeyInput}
+                setApiKeyInput={setApiKeyInput}
+                baseUrlInput={baseUrlInput}
+                setBaseUrlInput={setBaseUrlInput}
+                selectedModel={selectedModel}
+                setSelectedModel={setSelectedModel}
+                configSaving={configSaving}
+                setConfigStatus={setConfigStatus}
+                configVersion={configVersion}
+                resetModalState={resetModalState}
+                checkApiKey={checkApiKey}
+                handleSaveConfig={handleSaveConfig}
+                logs={logs}
+                logRef={logRef}
+                setShowKeyModal={setShowKeyModal}
+                setShowModelSwitchModal={setShowModelSwitchModal}
+                setStartingUp={setStartingUp}
+                setRunning={setRunning}
+                addLog={addLog}
+                reinstalling={reinstalling}
+                repairing={repairing}
+                handleStart={handleStart}
+                handleStop={handleStop}
+                handleSwitchWorkspace={handleSwitchWorkspace}
+                handleReinstall={handleReinstall}
+                handleRepairConnection={handleRepairConnection}
+                handleReset={handleReset}
+                setInfoModalTitle={setInfoModalTitle}
+                onExportDiagnostics={handleExportDiagnostics}
+                onCheckUpdate={handleCheckUpdate}
+                checkingUpdate={checkingUpdate}
+              />
+            )}
+          </Suspense>
         )}
       </div>
 
