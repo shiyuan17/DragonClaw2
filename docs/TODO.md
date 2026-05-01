@@ -3,6 +3,9 @@
 ## Phase 5.15.9: 首页收缩侧边栏视觉重设计
 - [x] `workspace-clone` 首页收缩态侧边栏改为参考图风格的双轨轻量导航，统一左侧菜单轨与右侧迷你目录轨的卡片节奏、间距、阴影和选中态
 
+## Phase 5.15.11: `workspace-clone` 全域悬浮高亮统一
+- [ ] 为 `workspace-clone` 左侧菜单、第二栏、主区头部、drawer、composer、popover 与专属弹层统一可用态 hover / focus-visible 高亮反馈，并保持 `active > hover > default`、`muted/disabled` 语义不变
+
 ## Phase 5.11: 旧 logo 切换为新 logo 引用
 - [ ] 前端所有旧 `logo.jpg` 展示位统一切换到新的 DragonClaw 龙形 logo，并移除默认 Vite favicon 引用
 
