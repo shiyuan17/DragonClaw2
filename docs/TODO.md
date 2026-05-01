@@ -275,4 +275,5 @@
 - [x] 2026-05-01: move the workspace-clone sidebar collapse toggle onto the divider edge between the menu rail and directory rail.
 - [x] 2026-05-01: center the workspace-clone sidebar edge toggle on the divider and reveal it only on edge hover/focus.
 - [x] 2026-05-01: move the workspace-clone primary sidebar menu upward by removing the empty topbar spacing.
+- [ ] 2026-05-01: align the primary sidebar menu top edge with the directory search box top edge.
 
