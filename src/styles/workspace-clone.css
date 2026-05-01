@@ -120,14 +120,13 @@
 }
 
 .workspace-clone__sidebar-topbar {
-  min-height: 32px;
-  display: flex;
-  justify-content: flex-end;
+  min-height: 0;
+  height: 0;
+  display: block;
 }
 
 .workspace-clone__sidebar-topbar.is-collapsed {
-  justify-content: center;
-  width: 100%;
+  width: 0;
 }
 
 .workspace-clone__toggle-btn--edge {
@@ -255,7 +254,7 @@
 }
 
 .workspace-clone__sidebar-menu {
-  margin-top: 4px;
+  margin-top: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;

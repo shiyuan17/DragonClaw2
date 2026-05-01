@@ -274,5 +274,5 @@
 - [x] 2026-04-30: align workspace-clone weixin QR binding with DragonClaw fallback flow, including CLI login fallback and automatic Agent binding after scan success.
 - [x] 2026-05-01: move the workspace-clone sidebar collapse toggle onto the divider edge between the menu rail and directory rail.
 - [x] 2026-05-01: center the workspace-clone sidebar edge toggle on the divider and reveal it only on edge hover/focus.
-- [ ] 2026-05-01: move the workspace-clone primary sidebar menu upward by removing the empty topbar spacing.
+- [x] 2026-05-01: move the workspace-clone primary sidebar menu upward by removing the empty topbar spacing.
 
