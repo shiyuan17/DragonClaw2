@@ -511,6 +511,9 @@ export function WorkspaceCloneChannelBindingModal({
                 {agentMenu}
               </div>
             </div>
+            {isWeixinModalTarget ? (
+              <p className="channel-agent-inline__hint">扫码授权完成后，将自动关联当前所选数字员工。</p>
+            ) : null}
 
             {isFeishuModalTarget ? (
               <div className="channel-feishu-access">
@@ -634,7 +637,7 @@ export function WorkspaceCloneChannelBindingModal({
             </section>
           ) : null}
 
-          {state.implemented ? (
+          {state.implemented && !isWeixinModalTarget ? (
             <div className="workspace-channel-modal__footer">
               <button className="workspace-channel-modal__primary" type="button" disabled={!canSaveBinding || modalSaving} onClick={onSaveBinding}>
                 {modalSaving ? "保存中..." : "保存绑定"}

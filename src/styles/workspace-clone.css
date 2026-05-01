@@ -2132,6 +2132,13 @@
   flex-shrink: 0;
 }
 
+.channel-agent-inline__hint {
+  margin: -2px 0 0;
+  font-size: 12px;
+  color: #7a8aa3;
+  line-height: 1.45;
+}
+
 .channel-agent-picker {
   position: relative;
   flex: 1 1 auto;

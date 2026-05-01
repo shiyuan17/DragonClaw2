@@ -10,6 +10,69 @@ import type {
 
 const CHANNEL_CONFIG_LOAD_TIMEOUT_MS = 5000;
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function readString(candidate: Record<string, unknown>, camelKey: string, snakeKey?: string) {
+  const raw = candidate[camelKey] ?? (snakeKey ? candidate[snakeKey] : undefined);
+  return typeof raw === "string" ? raw : "";
+}
+
+function readOptionalString(candidate: Record<string, unknown>, camelKey: string, snakeKey?: string) {
+  const value = readString(candidate, camelKey, snakeKey).trim();
+  return value ? value : null;
+}
+
+function readWeixinQrBindingQrUrl(candidate: Record<string, unknown>): string | null {
+  const primary = readOptionalString(candidate, "qrUrl", "qr_url");
+  if (primary) {
+    return primary;
+  }
+  for (const key of ["QRUrl", "QrUrl", "qrURL"] as const) {
+    const raw = candidate[key];
+    if (typeof raw === "string" && raw.trim()) {
+      return raw.trim();
+    }
+  }
+  return null;
+}
+
+function readStringArray(candidate: Record<string, unknown>, camelKey: string, snakeKey?: string) {
+  const raw = candidate[camelKey] ?? (snakeKey ? candidate[snakeKey] : undefined);
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw.filter((item): item is string => typeof item === "string");
+}
+
+function readNumber(candidate: Record<string, unknown>, camelKey: string, snakeKey?: string) {
+  const raw = candidate[camelKey] ?? (snakeKey ? candidate[snakeKey] : undefined);
+  return typeof raw === "number" && Number.isFinite(raw) ? raw : 0;
+}
+
+function normalizeOpenClawChannelQrBindingSessionSnapshot(raw: unknown): OpenClawChannelQrBindingSessionSnapshot {
+  const candidate = asRecord(raw);
+  if (!candidate) {
+    throw new Error("二维码绑定响应格式无效。");
+  }
+
+  return {
+    sessionId: readString(candidate, "sessionId", "session_id"),
+    channelType: readString(candidate, "channelType", "channel_type"),
+    status: readString(candidate, "status"),
+    qrUrl: readWeixinQrBindingQrUrl(candidate),
+    qrAscii: readOptionalString(candidate, "qrAscii", "qr_ascii"),
+    detail: readOptionalString(candidate, "detail"),
+    logs: readStringArray(candidate, "logs"),
+    startedAtMs: readNumber(candidate, "startedAtMs", "started_at_ms"),
+    updatedAtMs: readNumber(candidate, "updatedAtMs", "updated_at_ms"),
+  };
+}
+
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = window.setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
@@ -111,9 +174,10 @@ export async function removeOpenClawChannelConfig(payload: {
 
 export async function startOpenClawChannelQrBinding(channelType: string) {
   try {
-    return await invoke<OpenClawChannelQrBindingSessionSnapshot>("start_openclaw_channel_qr_binding", {
+    const snapshot = await invoke<unknown>("start_openclaw_channel_qr_binding", {
       channelType: channelType.trim(),
     });
+    return normalizeOpenClawChannelQrBindingSessionSnapshot(snapshot);
   } catch (error) {
     throw new Error(toMessage(error, "二维码绑定启动失败。"));
   }
@@ -121,9 +185,10 @@ export async function startOpenClawChannelQrBinding(channelType: string) {
 
 export async function pollOpenClawChannelQrBinding(sessionId: string) {
   try {
-    return await invoke<OpenClawChannelQrBindingSessionSnapshot>("poll_openclaw_channel_qr_binding", {
+    const snapshot = await invoke<unknown>("poll_openclaw_channel_qr_binding", {
       sessionId: sessionId.trim(),
     });
+    return normalizeOpenClawChannelQrBindingSessionSnapshot(snapshot);
   } catch (error) {
     throw new Error(toMessage(error, "二维码绑定状态读取失败。"));
   }

@@ -32,7 +32,7 @@ import type {
 const WEIXIN_LINK_POLICY = {
   allowedSchemes: new Set(["https:", "http:"]),
   allowedHosts: new Set(["localhost", "127.0.0.1", "::1", "[::1]"]),
-  allowedHostSuffixes: ["weixin.qq.com", "qq.com"],
+  allowedHostSuffixes: ["weixin.qq.com", "qq.com", "servicewechat.com", "wechat.com"],
   allowHttpLocalhost: true,
 };
 
@@ -201,6 +201,13 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
   const [feishuAllowFromSessionIds, setFeishuAllowFromSessionIds] = useState<string[]>([]);
 
   const weixinQrTimerRef = useRef<number>(0);
+  const weixinQrSnapshotRef = useRef<OpenClawChannelQrBindingSessionSnapshot | null>(null);
+  /** Bumped in resetWeixinState so late invoke/poll responses never overwrite a newer binding attempt. */
+  const weixinQrBindingGenerationRef = useRef(0);
+  /** Cleared when polling stops; stale poll callbacks must not apply snapshots from an old sessionId. */
+  const weixinQrActivePollSessionRef = useRef<string>("");
+  /** Latest closeBindingModal; success handler runs later so it calls via ref. */
+  const closeBindingModalRef = useRef<(() => Promise<void>) | null>(null);
   const feishuQrTimerRef = useRef<number>(0);
 
   const clearWeixinQrTimer = useCallback(() => {
@@ -209,6 +216,7 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
       weixinQrTimerRef.current = 0;
     }
     setWeixinQrPolling(false);
+    weixinQrActivePollSessionRef.current = "";
   }, []);
 
   const clearFeishuQrTimer = useCallback(() => {
@@ -223,20 +231,19 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
     setModalError("");
   }, []);
 
-  const resetWeixinState = useCallback(
-    async (clearSession = true) => {
-      clearWeixinQrTimer();
-      setWeixinQrStarting(false);
-      const previousSessionId = weixinQrSnapshot?.sessionId?.trim() || "";
-      setWeixinQrSnapshot(null);
-      setWeixinQrImageUrl("");
-      setWeixinQrRenderError("");
-      if (clearSession && previousSessionId) {
-        await clearOpenClawChannelQrBindingSession(previousSessionId).catch(() => undefined);
-      }
-    },
-    [clearWeixinQrTimer, weixinQrSnapshot?.sessionId],
-  );
+  const resetWeixinState = useCallback(async (clearSession = true) => {
+    weixinQrBindingGenerationRef.current += 1;
+    clearWeixinQrTimer();
+    setWeixinQrStarting(false);
+    const previousSessionId = weixinQrSnapshotRef.current?.sessionId?.trim() || "";
+    weixinQrSnapshotRef.current = null;
+    setWeixinQrSnapshot(null);
+    setWeixinQrImageUrl("");
+    setWeixinQrRenderError("");
+    if (clearSession && previousSessionId) {
+      await clearOpenClawChannelQrBindingSession(previousSessionId).catch(() => undefined);
+    }
+  }, [clearWeixinQrTimer]);
 
   const resetFeishuState = useCallback(() => {
     clearFeishuQrTimer();
@@ -389,25 +396,46 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
     }));
   }, [channelEntities]);
 
-  const sanitizeWeixinQrSnapshot = useCallback((snapshot: OpenClawChannelQrBindingSessionSnapshot) => {
-    const rawUrl = snapshot.qrUrl?.trim() ?? "";
+  const sanitizeWeixinQrSnapshot = useCallback((
+    snapshot: OpenClawChannelQrBindingSessionSnapshot,
+    previousSnapshot?: OpenClawChannelQrBindingSessionSnapshot | null,
+  ) => {
+    const previous = previousSnapshot ?? null;
+    const normalizedStatus = (snapshot.status || "").trim().toLowerCase();
+    const shouldPreserveActiveQr = normalizedStatus !== "success" && normalizedStatus !== "error";
+    const rawUrl = snapshot.qrUrl?.trim()
+      || (shouldPreserveActiveQr ? previous?.qrUrl?.trim() || "" : "");
+    const nextSnapshot: OpenClawChannelQrBindingSessionSnapshot = {
+      ...snapshot,
+      sessionId: snapshot.sessionId?.trim() || previous?.sessionId?.trim() || "",
+      channelType: snapshot.channelType?.trim() || previous?.channelType?.trim() || "weixin",
+      qrUrl: rawUrl || null,
+      qrAscii: snapshot.qrAscii?.trim() || (shouldPreserveActiveQr ? previous?.qrAscii?.trim() || "" : "") || null,
+    };
     if (!rawUrl) {
-      return snapshot;
+      return nextSnapshot;
     }
     const validated = validateExternalUrl(rawUrl, WEIXIN_LINK_POLICY);
     if (!validated.ok) {
       return {
-        ...snapshot,
+        ...nextSnapshot,
         status: "error",
         qrUrl: null,
         detail: `已拦截不安全二维码链接: ${validated.reason}`,
       };
     }
     return {
-      ...snapshot,
+      ...nextSnapshot,
       qrUrl: validated.url.toString(),
     };
   }, []);
+
+  const applyWeixinQrSnapshot = useCallback((snapshot: OpenClawChannelQrBindingSessionSnapshot) => {
+    const nextSnapshot = sanitizeWeixinQrSnapshot(snapshot, weixinQrSnapshotRef.current);
+    weixinQrSnapshotRef.current = nextSnapshot;
+    setWeixinQrSnapshot(nextSnapshot);
+    return nextSnapshot;
+  }, [sanitizeWeixinQrSnapshot]);
 
   const weixinQrUrl = useMemo(() => (weixinQrSnapshot?.qrUrl ?? "").trim(), [weixinQrSnapshot?.qrUrl]);
 
@@ -419,6 +447,54 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
       || Boolean(weixinQrUrl),
     [weixinQrPolling, weixinQrSnapshot?.sessionId, weixinQrStarting, weixinQrUrl],
   );
+
+  const resolveSelectedAgentForAutoBinding = useCallback(() => {
+    const normalized = selectedAgentId.trim();
+    if (normalized && agents.some((item) => item.id === normalized)) {
+      return normalized;
+    }
+    return agents.find((item) => item.isDefault)?.id || agents[0]?.id || "";
+  }, [agents, selectedAgentId]);
+
+  const applySuccessfulWeixinQrBinding = useCallback(async (
+    snapshot: OpenClawChannelQrBindingSessionSnapshot,
+  ) => {
+    const nextConfig = await refreshChannels();
+    const group = nextConfig.channels.find((item) => item.channelType === "weixin");
+    const accountId = group?.defaultAccountId || group?.accounts[0]?.accountId || "default";
+    setModal((current) => ({
+      ...current,
+      accountId,
+      accountLabel: resolveModalAccountLabel(accountId),
+    }));
+
+    const targetAgentId = resolveSelectedAgentForAutoBinding();
+    if (!targetAgentId) {
+      setModalNotice(
+        snapshot.detail?.trim()
+        || "微信已绑定成功，但未检测到可用数字员工，请先在「数字员工」中创建后再打开本弹窗完成关联。",
+      );
+      setModalError("");
+      return;
+    }
+
+    await saveOpenClawChannelBinding({
+      channelType: "weixin",
+      accountId,
+      agentId: targetAgentId,
+      preferredDmScope: "per-channel-peer",
+    });
+    await refreshChannels();
+    setSelectedAgentId(targetAgentId);
+    const successHint =
+      snapshot.detail?.trim()
+      || `绑定成功，已关联数字员工「${targetAgentId}」。`;
+    setModalNotice(successHint);
+    setModalError("");
+    globalThis.setTimeout(() => {
+      void closeBindingModalRef.current?.();
+    }, 1100);
+  }, [refreshChannels, resolveSelectedAgentForAutoBinding]);
 
   useEffect(() => {
     if (!weixinQrUrl) {
@@ -458,31 +534,30 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
     }
     clearWeixinQrTimer();
     setWeixinQrPolling(true);
+    weixinQrActivePollSessionRef.current = normalizedSessionId;
     const runPoll = () => {
       void (async () => {
+        const polledSessionId = normalizedSessionId;
         try {
-          const nextSnapshot = sanitizeWeixinQrSnapshot(await pollOpenClawChannelQrBinding(normalizedSessionId));
-          setWeixinQrSnapshot(nextSnapshot);
+          const rawSnapshot = await pollOpenClawChannelQrBinding(polledSessionId);
+          if (weixinQrActivePollSessionRef.current !== polledSessionId) {
+            return;
+          }
+          const nextSnapshot = applyWeixinQrSnapshot(rawSnapshot);
           const status = (nextSnapshot.status || "").trim().toLowerCase();
           if (status === "success") {
             clearWeixinQrTimer();
-            const nextConfig = await refreshChannels();
-            const group = nextConfig.channels.find((item) => item.channelType === "weixin");
-            const accountId = group?.defaultAccountId || group?.accounts[0]?.accountId || "default";
-            setModal((current) => ({
-              ...current,
-              accountId,
-              accountLabel: resolveModalAccountLabel(accountId),
-            }));
-            setModalNotice(nextSnapshot.detail?.trim() || "微信二维码绑定成功，请选择 Agent 并保存。");
-            setModalError("");
+            await applySuccessfulWeixinQrBinding(nextSnapshot);
           } else if (status === "error") {
             clearWeixinQrTimer();
             setModalError(nextSnapshot.detail?.trim() || "微信二维码绑定失败，请重试。");
-          } else {
+          } else if ((nextSnapshot.qrUrl ?? "").trim()) {
             setModalNotice(nextSnapshot.detail?.trim() || "二维码已生成，请使用微信扫码。");
           }
         } catch (error) {
+          if (weixinQrActivePollSessionRef.current !== polledSessionId) {
+            return;
+          }
           clearWeixinQrTimer();
           setModalError(toMessage(error, "读取微信二维码状态失败。"));
         }
@@ -490,26 +565,22 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
     };
     runPoll();
     weixinQrTimerRef.current = window.setInterval(runPoll, WEIXIN_QR_POLL_INTERVAL_MS);
-  }, [clearWeixinQrTimer, refreshChannels, sanitizeWeixinQrSnapshot]);
+  }, [applySuccessfulWeixinQrBinding, applyWeixinQrSnapshot, clearWeixinQrTimer]);
 
   const startWeixinQrBindingFlow = useCallback(async () => {
     resetModalFeedback();
-    setWeixinQrStarting(true);
     await resetWeixinState(true);
+    const bindingGeneration = weixinQrBindingGenerationRef.current;
+    setWeixinQrStarting(true);
     try {
-      const nextSnapshot = sanitizeWeixinQrSnapshot(await startOpenClawChannelQrBinding("weixin"));
-      setWeixinQrSnapshot(nextSnapshot);
+      const rawSnapshot = await startOpenClawChannelQrBinding("weixin");
+      if (bindingGeneration !== weixinQrBindingGenerationRef.current) {
+        return;
+      }
+      const nextSnapshot = applyWeixinQrSnapshot(rawSnapshot);
       const status = (nextSnapshot.status || "").trim().toLowerCase();
       if (status === "success") {
-        const nextConfig = await refreshChannels();
-        const group = nextConfig.channels.find((item) => item.channelType === "weixin");
-        const accountId = group?.defaultAccountId || group?.accounts[0]?.accountId || "default";
-        setModal((current) => ({
-          ...current,
-          accountId,
-          accountLabel: resolveModalAccountLabel(accountId),
-        }));
-        setModalNotice(nextSnapshot.detail?.trim() || "微信二维码绑定成功，请选择 Agent 并保存。");
+        await applySuccessfulWeixinQrBinding(nextSnapshot);
         return;
       }
       if (status === "error") {
@@ -519,13 +590,19 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
       if (nextSnapshot.sessionId) {
         startWeixinPolling(nextSnapshot.sessionId);
       }
-      setModalNotice(nextSnapshot.detail?.trim() || "二维码已生成，请使用微信扫码。");
+      if ((nextSnapshot.qrUrl ?? "").trim()) {
+        setModalNotice(nextSnapshot.detail?.trim() || "二维码已生成，请使用微信扫码。");
+      }
     } catch (error) {
-      setModalError(toMessage(error, "启动微信二维码绑定失败。"));
+      if (bindingGeneration === weixinQrBindingGenerationRef.current) {
+        setModalError(toMessage(error, "启动微信二维码绑定失败。"));
+      }
     } finally {
-      setWeixinQrStarting(false);
+      if (bindingGeneration === weixinQrBindingGenerationRef.current) {
+        setWeixinQrStarting(false);
+      }
     }
-  }, [refreshChannels, resetModalFeedback, resetWeixinState, sanitizeWeixinQrSnapshot, startWeixinPolling]);
+  }, [applySuccessfulWeixinQrBinding, applyWeixinQrSnapshot, resetModalFeedback, resetWeixinState, startWeixinPolling]);
 
   const applyFeishuPollResult = useCallback(async (pollResult: Awaited<ReturnType<typeof pollFeishuOpenClawQrResult>>) => {
     const normalizedStatus = (pollResult.status ?? "").trim().toLowerCase();
@@ -657,7 +734,7 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
           accountLabel: resolveModalAccountLabel(nextAccountId),
         }));
         if (hasConfiguredAccount) {
-          setModalNotice("当前微信频道已绑定，可点击下方按钮刷新二维码重新绑定。");
+          setModalNotice("当前微信频道已绑定，可在上方刷新二维码重新绑定。");
         }
       }
     } catch (error) {
@@ -684,6 +761,8 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
     await resetWeixinState(true);
     resetFeishuState();
   }, [resetFeishuState, resetModalFeedback, resetWeixinState]);
+
+  closeBindingModalRef.current = closeBindingModal;
 
   const handleOpenExternalBindingLink = useCallback(async (rawUrl: string, channelId: WorkspaceChannelId | string) => {
     const policy = channelId === "feishu" ? FEISHU_LINK_POLICY : WEIXIN_LINK_POLICY;
