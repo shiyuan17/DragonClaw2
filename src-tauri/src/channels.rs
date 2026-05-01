@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // This file is part of DragonClaw. See LICENSE for details.
 use std::collections::{HashMap, HashSet};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -34,7 +35,8 @@ const WEIXIN_GATEWAY_RESTART_ARGS: &[&str] = &["gateway", "restart"];
 const WEIXIN_PLUGIN_PACKAGE_LATEST: &str = "@tencent-weixin/openclaw-weixin";
 const WEIXIN_PLUGIN_PACKAGE_LEGACY: &str = "@tencent-weixin/openclaw-weixin@legacy";
 const WEIXIN_PLUGIN_PACKAGE_PRE_2026_3_0: &str = "@tencent-weixin/openclaw-weixin@1.0.0";
-const WEIXIN_QR_START_RETURN_GRACE_MS: u128 = 150;
+const WEIXIN_QR_START_EXPECT_TIMEOUT_MS: u128 = 20_000;
+const WEIXIN_QR_START_RETURN_GRACE_MS: u128 = 4_000;
 const WEIXIN_QR_STATUS_POLL_INTERVAL_MS: u64 = 1_000;
 const WEIXIN_QR_STATUS_LONG_POLL_TIMEOUT_MS: u64 = 35_000;
 const WEIXIN_QR_LOGIN_TIMEOUT_MS: u128 = 480_000;
@@ -929,6 +931,41 @@ fn manually_install_weixin_plugin(
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WeixinPluginListStatus {
+    Enabled,
+    Disabled,
+    FailedToLoad,
+    Missing,
+    Unknown,
+}
+
+fn parse_weixin_plugin_list_status(raw: &str) -> WeixinPluginListStatus {
+    let squashed = raw
+        .chars()
+        .filter(|ch| !ch.is_whitespace())
+        .collect::<String>()
+        .to_ascii_lowercase();
+
+    if let Some(index) = squashed.find("openclaw-weixin") {
+        let window_end = (index + 160).min(squashed.len());
+        let window = &squashed[index..window_end];
+        if window.contains("failedtoload") {
+            return WeixinPluginListStatus::FailedToLoad;
+        }
+        if window.contains("disabled") {
+            return WeixinPluginListStatus::Disabled;
+        }
+        if window.contains("enabled") || window.contains("loaded") {
+            return WeixinPluginListStatus::Enabled;
+        }
+
+        return WeixinPluginListStatus::Unknown;
+    }
+
+    WeixinPluginListStatus::Missing
+}
+
 fn verify_weixin_plugin_loadable(session_state: &SharedQrState) -> Result<(), String> {
     let output = openclaw_engine_command(&["plugins", "list"])?;
     append_command_output_to_session_logs(session_state, "plugins list 输出：", &output);
@@ -939,28 +976,19 @@ fn verify_weixin_plugin_loadable(session_state: &SharedQrState) -> Result<(), St
         )));
     }
 
-    let squashed = collect_command_output_lines(&output)
-        .join("")
-        .chars()
-        .filter(|ch| !ch.is_whitespace())
-        .collect::<String>()
-        .to_ascii_lowercase();
-
-    if squashed.contains("openclaw-weixinfailedtoload") {
-        return Err(channel_error(
+    match parse_weixin_plugin_list_status(&collect_command_output_lines(&output).join("\n")) {
+        WeixinPluginListStatus::Enabled => Ok(()),
+        WeixinPluginListStatus::Disabled => Err(channel_error("微信插件仍处于 disabled 状态")),
+        WeixinPluginListStatus::FailedToLoad => Err(channel_error(
             "微信插件已安装，但 OpenClaw 仍报告 failed to load",
-        ));
+        )),
+        WeixinPluginListStatus::Missing => {
+            Err(channel_error("未在 OpenClaw 插件列表中检测到微信插件"))
+        }
+        WeixinPluginListStatus::Unknown => {
+            Err(channel_error("已找到微信插件，但暂时无法确认当前加载状态"))
+        }
     }
-    if squashed.contains("openclaw-weixindisabled") {
-        return Err(channel_error("微信插件仍处于 disabled 状态"));
-    }
-    if squashed.contains("openclaw-weixinloaded") {
-        return Ok(());
-    }
-
-    Err(channel_error(
-        "未在 OpenClaw 插件列表中检测到已加载的微信插件",
-    ))
 }
 
 fn normalize_weixin_account_id(raw: &str) -> String {
@@ -1030,6 +1058,154 @@ fn set_session_state_message(session_state: &SharedQrState, status: &str, detail
     if let Ok(mut state) = session_state.lock() {
         state.status = status.to_string();
         state.detail = Some(detail.to_string());
+        state.updated_at_ms = current_timestamp_millis();
+    }
+}
+
+fn session_has_qr_url(session_state: &SharedQrState) -> bool {
+    session_state
+        .lock()
+        .ok()
+        .and_then(|state| state.qr_url.clone())
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false)
+}
+
+fn strip_ansi_escape_sequences(raw: &str) -> String {
+    let mut output = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '\u{1b}' {
+            output.push(ch);
+            continue;
+        }
+
+        if chars.peek() == Some(&'[') {
+            let _ = chars.next();
+            for next in chars.by_ref() {
+                if next.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        }
+    }
+    output
+}
+
+fn extract_http_url_from_text(raw: &str) -> Option<String> {
+    let cleaned = strip_ansi_escape_sequences(raw);
+    let start = cleaned
+        .find("https://")
+        .or_else(|| cleaned.find("http://"))?;
+    let candidate = cleaned[start..]
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .trim_matches(|ch: char| {
+            matches!(
+                ch,
+                '"' | '\''
+                    | '<'
+                    | '>'
+                    | '('
+                    | ')'
+                    | '['
+                    | ']'
+                    | '{'
+                    | '}'
+                    | ','
+                    | '.'
+                    | ';'
+                    | ':'
+                    | '。'
+                    | '，'
+                    | '；'
+                    | '：'
+                    | '、'
+                    | '）'
+                    | '】'
+                    | '》'
+            )
+        });
+    if candidate.is_empty() {
+        None
+    } else {
+        Some(candidate.to_string())
+    }
+}
+
+fn update_qr_session_from_cli_line(session_state: &SharedQrState, raw_line: &str) {
+    let cleaned = strip_ansi_escape_sequences(raw_line)
+        .replace('\r', "")
+        .trim()
+        .to_string();
+    if cleaned.is_empty() {
+        return;
+    }
+
+    if let Ok(mut state) = session_state.lock() {
+        append_session_log(&mut state, cleaned.clone());
+
+        if state
+            .qr_url
+            .as_ref()
+            .map(|value| value.trim().is_empty())
+            .unwrap_or(true)
+        {
+            if let Some(url) = extract_http_url_from_text(&cleaned) {
+                state.qr_url = Some(url);
+                if state.status.trim().eq_ignore_ascii_case("running") {
+                    state.status = "waiting_scan".to_string();
+                }
+                if state.detail.as_deref().map(str::trim).unwrap_or_default().is_empty()
+                    || state.detail.as_deref().unwrap_or_default().contains("已启动微信绑定流程")
+                {
+                    state.detail =
+                        Some("二维码已生成，请使用手机微信扫码完成绑定。".to_string());
+                }
+            }
+        }
+
+        let cleaned_lower = cleaned.to_ascii_lowercase();
+        if (cleaned.contains("等待扫码")
+            || cleaned.contains("请使用微信扫码")
+            || cleaned_lower.contains("scan the qr")
+            || cleaned_lower.contains("waiting for scan")
+            || cleaned_lower.contains("waiting for qr"))
+            && state.status.trim().eq_ignore_ascii_case("running")
+        {
+            state.status = "waiting_scan".to_string();
+            state.detail = Some("二维码已生成，请使用手机微信扫码完成绑定。".to_string());
+        }
+
+        if cleaned.contains("扫码成功")
+            || cleaned.contains("连接成功")
+            || cleaned_lower.contains("login successful")
+            || cleaned_lower.contains("logged in")
+        {
+            state.status = "success".to_string();
+            state.detail = Some("微信二维码绑定成功，请选择接待 Agent 并保存。".to_string());
+            state.updated_at_ms = current_timestamp_millis();
+            return;
+        }
+
+        if cleaned_lower.contains("unsupported channel: openclaw-weixin")
+            || cleaned_lower.contains("unsupported channel: weixin")
+        {
+            state.status = "error".to_string();
+            state.detail =
+                Some("未检测到微信插件 openclaw-weixin，请先安装并启用插件后再重试。".to_string());
+            state.updated_at_ms = current_timestamp_millis();
+            return;
+        }
+
+        if cleaned.contains("失败")
+            || cleaned_lower.contains("error")
+            || cleaned_lower.contains("failed")
+        {
+            state.detail = Some(cleaned);
+        }
+
         state.updated_at_ms = current_timestamp_millis();
     }
 }
@@ -1315,6 +1491,7 @@ fn is_weixin_plugin_enabled_in_config() -> bool {
 fn ensure_weixin_plugin_ready(session_state: &SharedQrState) -> Result<(), String> {
     let install_plan = resolve_weixin_plugin_install_plan()?;
     let installed_version = read_weixin_plugin_installed_version()?;
+    let mut plugin_state_changed = false;
     let needs_reinstall = match (&installed_version, install_plan.expected_version) {
         (None, _) => true,
         (Some(current), Some(expected)) => current.trim() != expected,
@@ -1331,6 +1508,7 @@ fn ensure_weixin_plugin_ready(session_state: &SharedQrState) -> Result<(), Strin
         };
         update_session_log(session_state, &reason);
         manually_install_weixin_plugin(&install_plan, session_state)?;
+        plugin_state_changed = true;
     } else if install_plan.needs_tmpdir_patch {
         update_session_log(session_state, "正在校验旧版微信插件兼容补丁...");
         apply_weixin_pre_2026_3_0_compat_patch(&resolve_weixin_plugin_dir()?)?;
@@ -1346,17 +1524,21 @@ fn ensure_weixin_plugin_ready(session_state: &SharedQrState) -> Result<(), Strin
                 summarize_command_output(&enable_output)
             )));
         }
+        plugin_state_changed = true;
     }
 
-    if let Err(error) = verify_weixin_plugin_loadable(session_state) {
+    if !plugin_state_changed {
         update_session_log(
             session_state,
-            &format!("微信插件校验失败，准备重装后重试: {error}"),
+            "微信插件已安装且已启用，跳过阻断式校验与重启，直接获取二维码...",
         );
-        manually_install_weixin_plugin(&install_plan, session_state)?;
-        verify_weixin_plugin_loadable(session_state)?;
+        return Ok(());
     }
 
+    update_session_log(
+        session_state,
+        "微信插件状态已更新，正在重启 Gateway 以应用配置...",
+    );
     let restart_output = openclaw_engine_command(WEIXIN_GATEWAY_RESTART_ARGS)?;
     append_command_output_to_session_logs(session_state, "gateway restart 输出：", &restart_output);
     if !restart_output.status.success() {
@@ -1374,6 +1556,14 @@ fn ensure_weixin_plugin_ready(session_state: &SharedQrState) -> Result<(), Strin
             session_state,
             "当前 DragonClaw 使用前台托管 Gateway，已跳过官方服务重启要求。",
         );
+    }
+
+    match verify_weixin_plugin_loadable(session_state) {
+        Ok(()) => update_session_log(session_state, "微信插件状态校验通过，准备获取二维码..."),
+        Err(error) => update_session_log(
+            session_state,
+            &format!("微信插件状态校验未通过，将继续尝试获取二维码: {error}"),
+        ),
     }
 
     Ok(())
@@ -1490,24 +1680,188 @@ async fn fetch_weixin_qr_status(
         .map_err(|error| channel_error(format!("解析微信二维码状态响应失败: {error}")))
 }
 
+fn run_openclaw_channel_login_fallback(
+    session_state: &SharedQrState,
+    cancel_flag: &SharedCancelFlag,
+) -> Result<(), String> {
+    update_session_log(
+        session_state,
+        "微信 iLink 直连未生成二维码，回退到 OpenClaw CLI 登录流程...",
+    );
+    let mut command = openclaw_cli::create_openclaw_cli_command()
+        .map_err(|error| channel_error(format!("构建 OpenClaw 登录命令失败: {error}")))?;
+    command
+        .args(["channels", "login", "--channel", WEIXIN_OFFICIAL_CHANNEL_ID])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = command
+        .spawn()
+        .map_err(|error| channel_error(format!("启动 OpenClaw 微信登录失败: {error}")))?;
+
+    if let Some(stdout) = child.stdout.take() {
+        let session_state_clone = session_state.clone();
+        thread::spawn(move || {
+            let reader = BufReader::new(stdout);
+            for line in reader.lines().map_while(Result::ok) {
+                update_qr_session_from_cli_line(&session_state_clone, &line);
+            }
+        });
+    }
+
+    if let Some(stderr) = child.stderr.take() {
+        let session_state_clone = session_state.clone();
+        thread::spawn(move || {
+            let reader = BufReader::new(stderr);
+            for line in reader.lines().map_while(Result::ok) {
+                update_qr_session_from_cli_line(&session_state_clone, &format!("[stderr] {line}"));
+            }
+        });
+    }
+
+    let started_at_ms = current_timestamp_millis();
+    let exit_status = loop {
+        if cancel_flag.load(Ordering::Relaxed) {
+            let _ = child.kill();
+            let _ = child.wait();
+            set_session_state_message(
+                session_state,
+                "error",
+                "已取消本次二维码绑定，请重新尝试。",
+            );
+            return Err(channel_error("二维码绑定已取消"));
+        }
+
+        if !session_has_qr_url(session_state) {
+            let elapsed_ms = current_timestamp_millis().saturating_sub(started_at_ms);
+            if elapsed_ms >= WEIXIN_QR_START_EXPECT_TIMEOUT_MS {
+                let _ = child.kill();
+                let _ = child.wait();
+                set_session_state_message(
+                    session_state,
+                    "error",
+                    &format!(
+                        "二维码生成超时（{} 秒），请检查微信插件、网络与网关状态后重试。",
+                        WEIXIN_QR_START_EXPECT_TIMEOUT_MS / 1000
+                    ),
+                );
+                return Err(channel_error("二维码生成超时"));
+            }
+        }
+
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
+                thread::sleep(Duration::from_millis(180));
+            }
+            Err(error) => {
+                return Err(channel_error(format!("等待 OpenClaw 登录进程失败: {error}")));
+            }
+        }
+    };
+
+    if exit_status.success() {
+        if let Ok(mut state) = session_state.lock() {
+            if state.status.trim().eq_ignore_ascii_case("running")
+                || state.status.trim().eq_ignore_ascii_case("waiting_scan")
+            {
+                state.status = "success".to_string();
+                state.detail = Some("微信二维码绑定成功，请选择接待 Agent 并保存。".to_string());
+                state.updated_at_ms = current_timestamp_millis();
+            }
+        }
+        Ok(())
+    } else {
+        Err(channel_error(format!(
+            "OpenClaw 微信登录失败，退出码: {:?}",
+            exit_status.code()
+        )))
+    }
+}
+
 fn run_weixin_qr_binding_flow(
     session_state: &SharedQrState,
     cancel_flag: &SharedCancelFlag,
 ) -> Result<(), String> {
-    ensure_weixin_plugin_ready(session_state)?;
+    eprintln!("[weixin-qr] entering binding flow dispatcher");
+    let direct_result = run_weixin_qr_binding_direct_flow(session_state, cancel_flag);
+    match direct_result {
+        Ok(()) => {
+            eprintln!("[weixin-qr] direct flow completed successfully");
+            Ok(())
+        }
+        Err(error) if !session_has_qr_url(session_state) => {
+            eprintln!("[weixin-qr] direct flow failed without QR URL, falling back to CLI: {error}");
+            update_session_log(
+                session_state,
+                &format!("微信 iLink 直连失败，准备尝试 CLI fallback: {error}"),
+            );
+            run_openclaw_channel_login_fallback(session_state, cancel_flag)
+        }
+        Err(error) => {
+            eprintln!("[weixin-qr] direct flow ended after QR URL was set: {error}");
+            update_session_log(
+                session_state,
+                &format!("微信 iLink 流程结束，已保留当前二维码会话状态: {error}"),
+            );
+            Ok(())
+        }
+    }
+}
 
-    let runtime = tokio::runtime::Builder::new_current_thread()
+fn run_weixin_qr_binding_direct_flow(
+    session_state: &SharedQrState,
+    cancel_flag: &SharedCancelFlag,
+) -> Result<(), String> {
+    eprintln!("[weixin-qr] direct flow: ensuring plugin readiness");
+    set_session_state_message(
+        session_state,
+        "running",
+        "正在校验微信插件状态，准备拉起二维码...",
+    );
+    ensure_weixin_plugin_ready(session_state)?;
+    eprintln!("[weixin-qr] direct flow: plugin ready, building tokio runtime");
+    set_session_state_message(
+        session_state,
+        "running",
+        "微信插件就绪，正在通过微信官方接口拉起二维码...",
+    );
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
         .enable_all()
+        .thread_name("weixin-qr-net")
         .build()
-        .map_err(|error| channel_error(format!("创建微信网络运行时失败: {error}")))?;
+        .map_err(|error| {
+            eprintln!("[weixin-qr] failed to build tokio runtime: {error}");
+            channel_error(format!("创建微信网络运行时失败: {error}"))
+        })?;
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(8))
+        .timeout(Duration::from_secs(20))
         .build()
-        .map_err(|error| channel_error(format!("创建微信网络客户端失败: {error}")))?;
+        .map_err(|error| {
+            eprintln!("[weixin-qr] failed to build reqwest client: {error}");
+            channel_error(format!("创建微信网络客户端失败: {error}"))
+        })?;
 
     update_session_log(session_state, "正在通过微信官方接口拉起二维码...");
+    eprintln!("[weixin-qr] direct flow: requesting iLink QR ticket");
     let fetch_started_at_ms = current_timestamp_millis();
-    let mut qr_ticket = runtime.block_on(fetch_weixin_qr_ticket(&client))?;
+    let mut qr_ticket = match runtime.block_on(fetch_weixin_qr_ticket(&client)) {
+        Ok(ticket) => {
+            eprintln!(
+                "[weixin-qr] direct flow: received QR ticket in {}ms",
+                current_timestamp_millis().saturating_sub(fetch_started_at_ms)
+            );
+            ticket
+        }
+        Err(error) => {
+            eprintln!("[weixin-qr] direct flow: QR ticket request failed: {error}");
+            return Err(error);
+        }
+    };
     {
         if let Ok(mut state) = session_state.lock() {
             state.qr_url = Some(qr_ticket.qr_url.clone());
@@ -2156,14 +2510,55 @@ pub fn start_openclaw_channel_qr_binding(
 
     let session_state_for_thread = session_state.clone();
     let session_id_for_thread = session_id.clone();
+    eprintln!(
+        "[weixin-qr] spawning binding worker (session_id={})",
+        session_id_for_thread
+    );
     thread::spawn(move || {
-        let result = run_weixin_qr_binding_flow(&session_state_for_thread, &cancel_flag);
-        if let Err(error) = result {
-            set_session_state_message(&session_state_for_thread, "error", &error);
-            update_session_log(&session_state_for_thread, &error);
+        let session_state_for_panic = session_state_for_thread.clone();
+        let session_id_for_panic = session_id_for_thread.clone();
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            run_weixin_qr_binding_flow(&session_state_for_thread, &cancel_flag)
+        }));
+
+        match outcome {
+            Ok(Ok(())) => {
+                eprintln!(
+                    "[weixin-qr] worker finished cleanly (session_id={})",
+                    session_id_for_panic
+                );
+            }
+            Ok(Err(error)) => {
+                eprintln!(
+                    "[weixin-qr] worker returned error (session_id={}): {}",
+                    session_id_for_panic, error
+                );
+                set_session_state_message(&session_state_for_panic, "error", &error);
+                update_session_log(&session_state_for_panic, &error);
+            }
+            Err(payload) => {
+                let panic_message = if let Some(message) = payload.downcast_ref::<String>() {
+                    message.clone()
+                } else if let Some(message) = payload.downcast_ref::<&'static str>() {
+                    (*message).to_string()
+                } else {
+                    "未知 panic".to_string()
+                };
+                let detail = format!(
+                    "微信二维码绑定流程发生意外错误，请稍后重试 (panic: {})",
+                    panic_message
+                );
+                eprintln!(
+                    "[weixin-qr] worker panicked (session_id={}): {}",
+                    session_id_for_panic, panic_message
+                );
+                set_session_state_message(&session_state_for_panic, "error", &detail);
+                update_session_log(&session_state_for_panic, &detail);
+            }
         }
+
         if let Ok(mut flags) = qr_cancel_flags().lock() {
-            flags.remove(&session_id_for_thread);
+            flags.remove(&session_id_for_panic);
         }
     });
 
@@ -2522,4 +2917,38 @@ pub async fn poll_feishu_openclaw_qr_result(
         credentials_saved: None,
         tenant_brand,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_weixin_plugin_list_status, WeixinPluginListStatus};
+
+    #[test]
+    fn parses_enabled_weixin_plugin_from_current_cli_table_output() {
+        let output = r#"
+| @tencent-weixin/openclaw-weixin   | openclaw-      | openclaw | enabled  | global:openclaw-weixin/index. | 1.0.0     |
+|                                   | weixin         |          |          | ts                            |           |
+"#;
+
+        assert_eq!(
+            parse_weixin_plugin_list_status(output),
+            WeixinPluginListStatus::Enabled
+        );
+    }
+
+    #[test]
+    fn parses_disabled_weixin_plugin_status() {
+        assert_eq!(
+            parse_weixin_plugin_list_status("openclaw-weixin disabled"),
+            WeixinPluginListStatus::Disabled
+        );
+    }
+
+    #[test]
+    fn parses_failed_to_load_weixin_plugin_status() {
+        assert_eq!(
+            parse_weixin_plugin_list_status("openclaw-weixin failed to load"),
+            WeixinPluginListStatus::FailedToLoad
+        );
+    }
 }
