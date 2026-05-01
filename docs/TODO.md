@@ -273,4 +273,5 @@
 - [x] 2026-04-30: fix weixin QR binding readiness/response normalization regression so installed/enabled plugins skip blocking revalidation and generated `qr_url` renders in the binding modal.
 - [x] 2026-04-30: align workspace-clone weixin QR binding with DragonClaw fallback flow, including CLI login fallback and automatic Agent binding after scan success.
 - [x] 2026-05-01: move the workspace-clone sidebar collapse toggle onto the divider edge between the menu rail and directory rail.
+- [ ] 2026-05-01: center the workspace-clone sidebar edge toggle on the divider and reveal it only on edge hover/focus.
 
