@@ -3,6 +3,12 @@ import { Modal } from "../ui/Modal";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
 import type { WorkspaceSkillCategory, WorkspaceSkillOption } from "./workspaceCloneTypes";
 
+const SKILL_STATUS_LABELS: Partial<Record<WorkspaceSkillOption["tag"], string>> = {
+  Disabled: "已禁用",
+  Blocked: "受限",
+  Configured: "仅配置中",
+};
+
 interface WorkspaceCloneSkillsModalProps {
   show: boolean;
   agentName: string;
@@ -153,24 +159,35 @@ export function WorkspaceCloneSkillsModal({
             ) : activeItems.length === 0 ? (
               <div className="workspace-resource-modal__empty">当前分类下没有匹配的技能。</div>
             ) : (
-              activeItems.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={`workspace-resource-modal__item ${item.selected ? "is-selected" : ""}`}
-                  onClick={() => onToggleSkill(item.id)}
-                  disabled={saving}
-                >
-                  <span className={`workspace-resource-modal__checkbox ${item.selected ? "is-selected" : ""}`} aria-hidden="true" />
-                  <div className="workspace-resource-modal__item-copy">
-                    <div className="workspace-resource-modal__item-head">
-                      <strong>{item.title}</strong>
-                      <span className="workspace-clone__resource-tag">{item.selected ? "已启用" : item.tag}</span>
+              activeItems.map((item) => {
+                const statusLabel = SKILL_STATUS_LABELS[item.tag];
+
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`workspace-resource-modal__item ${item.selected ? "is-selected" : ""}`}
+                    onClick={() => onToggleSkill(item.id)}
+                    disabled={saving}
+                  >
+                    <span
+                      className={`workspace-resource-modal__checkbox ${item.selected ? "is-selected" : ""}`}
+                      aria-hidden="true"
+                    />
+                    <div className="workspace-resource-modal__item-copy">
+                      <div className="workspace-resource-modal__item-head">
+                        <strong>{item.title}</strong>
+                      </div>
+                      <p>{item.description}</p>
+                      {statusLabel ? (
+                        <div className="workspace-resource-modal__item-meta">
+                          <span className="workspace-resource-modal__item-chip">{statusLabel}</span>
+                        </div>
+                      ) : null}
                     </div>
-                    <p>{item.description}</p>
-                  </div>
-                </button>
-              ))
+                  </button>
+                );
+              })
             )}
           </div>
 

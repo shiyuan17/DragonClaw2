@@ -83,16 +83,6 @@
   overflow: visible;
 }
 
-.workspace-clone__sidebar::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: -10px;
-  bottom: 0;
-  width: 20px;
-  z-index: 6;
-}
-
 .workspace-clone__directory {
   border-right: 1px solid var(--workspace-line);
   padding: 12px 12px 14px;
@@ -135,6 +125,16 @@
 
 .workspace-clone__sidebar-topbar.is-collapsed {
   width: 0;
+}
+
+.workspace-clone__sidebar::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: -10px;
+  bottom: 0;
+  width: 20px;
+  z-index: 6;
 }
 
 .workspace-clone__toggle-btn--edge {
@@ -3805,6 +3805,8 @@
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 0;
+  flex: 1 1 auto;
+  height: 100%;
   color: var(--workspace-ink);
   min-height: 0;
 }
@@ -4022,15 +4024,16 @@
 }
 
 .workspace-resource-modal__list {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-height: 0;
   overflow: auto;
   display: grid;
   gap: 8px;
-  padding-right: 2px;
+  padding: 6px 10px 12px 4px;
   align-content: start;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  scroll-padding: 10px 0 18px;
 }
 
 .workspace-resource-modal__item {
@@ -4100,18 +4103,22 @@
 .workspace-resource-modal__item-copy {
   display: grid;
   gap: 8px;
+  min-width: 0;
 }
 
 .workspace-resource-modal__item-head {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  align-items: flex-start;
+  justify-content: flex-start;
   gap: 8px;
 }
 
 .workspace-resource-modal__item-head strong {
   font-size: 13px;
+  line-height: 1.4;
   color: #2a4a73;
+  min-width: 0;
+  word-break: break-word;
 }
 
 .workspace-resource-modal__item.is-selected .workspace-resource-modal__item-head strong {
@@ -4125,8 +4132,35 @@
   line-height: 1.55;
 }
 
+.workspace-resource-modal__item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workspace-resource-modal__item-chip {
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(194, 216, 245, 0.96);
+  background: rgba(241, 247, 255, 0.94);
+  color: #5b7fae;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
 .workspace-resource-modal__item.is-selected .workspace-resource-modal__item-copy p {
   color: #5276a1;
+}
+
+.workspace-resource-modal__item.is-selected .workspace-resource-modal__item-chip {
+  border-color: rgba(122, 168, 233, 0.72);
+  background: rgba(226, 238, 255, 0.9);
+  color: #356cbe;
 }
 
 .workspace-resource-modal__empty {
