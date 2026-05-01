@@ -31,7 +31,7 @@ export function WorkspaceCloneSidebar({
       <div className="workspace-clone__sidebar-rail">
         <div className={`workspace-clone__sidebar-topbar ${isCollapsed ? "is-collapsed" : ""}`}>
           <button
-            className="workspace-clone__toggle-btn"
+            className="workspace-clone__toggle-btn workspace-clone__toggle-btn--edge"
             type="button"
             onClick={onToggleCollapsed}
             title={isCollapsed ? "展开侧栏" : "收起侧栏"}

@@ -71,6 +71,8 @@
   padding: 10px 12px 12px;
   display: flex;
   flex-direction: column;
+  position: relative;
+  overflow: visible;
 }
 
 .workspace-clone__directory {
@@ -111,11 +113,22 @@
   min-height: 32px;
   display: flex;
   justify-content: flex-end;
+  position: relative;
 }
 
 .workspace-clone__sidebar-topbar.is-collapsed {
   justify-content: center;
   width: 100%;
+}
+
+.workspace-clone__toggle-btn--edge {
+  position: absolute;
+  top: 0;
+  right: -16px;
+  background: rgba(255, 255, 255, 0.96);
+  border-color: rgba(214, 227, 244, 0.92);
+  box-shadow: var(--workspace-rail-card-shadow);
+  z-index: 7;
 }
 
 .workspace-clone__sidebar.is-collapsed .workspace-clone__toggle-btn {
@@ -125,6 +138,13 @@
   background: rgba(255, 255, 255, 0.94);
   border-color: rgba(214, 227, 244, 0.92);
   box-shadow: var(--workspace-rail-card-shadow);
+}
+
+.workspace-clone__sidebar.is-collapsed .workspace-clone__toggle-btn--edge {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  right: -16px;
 }
 
 .workspace-clone__toggle-btn,
