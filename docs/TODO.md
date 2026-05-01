@@ -269,6 +269,7 @@
 
 ## 2026-04-30 Pending Acceptance
 - [x] 2026-05-02: update onboarding recommended skill installs to support the `opencli-agent` alias chain and add GitHub-based `html-ppt-skill`.
+- [ ] 2026-05-02: polish the workspace-clone skills modal so skill card hover/selection is fully visible, remove redundant Installed/Built-in row badges, and align built-in skill rows with the installed list styling.
 - [ ] Phase 5.17.2: fix startup white-screen by showing an immediate boot splash and lazy-loading ready-page modules/styles without changing startup business logic.
 - [ ] Phase 5.15.10: remove native Windows titlebar and restore custom titlebar window controls permissions/behavior
 - [ ] 2026-04-30: remove workspace-clone chat header subtitle text under the avatar.
