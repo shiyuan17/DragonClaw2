@@ -14,12 +14,13 @@
 1. 启动 OpenClaw 服务
 2. 通过官方命令 `curl -fsSL https://skillhub.cn/install/install.sh | bash` 安装 SkillHub
 3. 校验官方 CLI 与 bootstrap 技能已落到 DragonClaw 实际使用的 Windows 路径
-4. 通过 SkillHub CLI 安装推荐技能：
+4. 安装推荐技能：
    - `Summarize`
    - `agent browser`
    - `imap-smtp-email`
-   - `opencli`
    - `Humanizer`
+   - `opencli-agent`
+   - `html-ppt-skill`
 5. 安装收尾完成后进入 DragonClaw 主界面
 
 ## 范围
@@ -62,12 +63,33 @@
 ### 3. 推荐技能安装与状态持久化
 
 - 推荐技能不再通过网关里的 `SkillHub` agent skill 安装
-- 改为使用官方安装出的 SkillHub CLI，固定 slug 为：
-  - `Summarize` -> `summarize`
-  - `agent browser` -> `agent-browser`
-  - `imap-smtp-email` -> `imap-smtp-email`
-  - `opencli` -> `opencli`
-  - `Humanizer` -> `humanizer`
+- 推荐技能定义升级为“来源感知”结构，固定字段：
+  - `displayName`
+  - `aliases`
+  - `source`
+  - `skillhubSlugCandidates?`
+  - `githubRepoUrl?`
+  - `githubSkillName?`
+- 首次引导按以下固定清单安装：
+  - `Summarize` -> SkillHub `summarize`
+  - `agent browser` -> SkillHub `agent-browser`
+  - `imap-smtp-email` -> SkillHub `imap-smtp-email`
+  - `Humanizer` -> SkillHub `humanizer`
+  - `opencli-agent` -> GitHub `jackwener/opencli`，安装 skill `opencli-adapter-author`
+  - `html-ppt-skill` -> GitHub `https://github.com/lewislulu/html-ppt-skill`
+- 前端继续通过 `runOnboardingSkillInstall` 串联整轮安装，但按来源分发：
+  - SkillHub 项继续调用 `install_skillhub_recommended_skill(slug, displayName)`
+  - GitHub 项调用新增命令 `install_github_skill_from_url(repoUrl, displayName, skillName?)`
+- GitHub 来源固定等价执行：
+  - `npx skills add <repo> -a openclaw --copy -y`
+  - 传入 `skillName` 时追加 `--skill <skillName>`
+- `opencli-agent` 的匹配别名固定为：
+  - `opencli-agent`
+  - `opencli-adapter-author`
+  - `opencli`
+- `html-ppt-skill` 的匹配别名固定为：
+  - `html-ppt-skill`
+  - `html-ppt`
 - 每个技能安装目标目录固定到 `paths::main_workspace_dir()/skills`
 - onboarding state 继续保存在 `paths::user_config_dir()/dragonclaw-onboarding.json`
 - 若本轮全部成功，写入 `required=false, completed=true`
@@ -91,3 +113,5 @@
 - 在线 `skills.status` 返回不完整时，主技能库仍能通过 `list_skills()` 看到本地安装技能
 - 缺失 state 且未安装技能的旧用户启动后会自动补跑一次
 - 已完成安装的用户重复启动时不再重复安装
+- `opencli-agent` 已装旧名 `opencli` 时不会误判为缺失
+- `html-ppt-skill` 安装后即使本地目录名表现为 `html-ppt`，仍会被识别为已安装
