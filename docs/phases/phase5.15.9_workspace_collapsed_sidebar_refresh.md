@@ -60,3 +60,6 @@
 - 右侧迷你目录轨的入口与头像按钮具有更清晰的层次、留白和选中反馈
 - 仅修改 `workspace-clone` 相关 `.tsx` / `.css`，不引入 `invoke()`、hooks 或 Rust 逻辑回归
 - `npm run build` 可通过，且未出现新的 TypeScript / CSS 引用错误
+## 2026-05-02 Update
+- The sidebar and directory collapse toggles share the same edge-button treatment, sit at 25% divider height, and stay hidden until the divider hot zone is hovered or focused.
+- Remove the translucent DragonClaw watermark block from the bottom of the primary sidebar rail so only navigation and action items remain.

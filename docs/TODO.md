@@ -270,6 +270,7 @@
 ## 2026-04-30 Pending Acceptance
 - [x] 2026-05-02: update onboarding recommended skill installs to support the `opencli-agent` alias chain and add GitHub-based `html-ppt-skill`.
 - [ ] 2026-05-02: polish the workspace-clone skills modal so skill card hover/selection is fully visible, remove redundant Installed/Built-in row badges, and align built-in skill rows with the installed list styling.
+- [ ] 2026-05-02: unify the workspace-clone sidebar and directory collapse toggles, pin both to 25% divider height, and reveal them only on divider hover/focus.
 - [ ] Phase 5.17.2: fix startup white-screen by showing an immediate boot splash and lazy-loading ready-page modules/styles without changing startup business logic.
 - [ ] Phase 5.15.10: remove native Windows titlebar and restore custom titlebar window controls permissions/behavior
 - [ ] 2026-04-30: remove workspace-clone chat header subtitle text under the avatar.
@@ -279,4 +280,5 @@
 - [x] 2026-05-01: center the workspace-clone sidebar edge toggle on the divider and reveal it only on edge hover/focus.
 - [x] 2026-05-01: move the workspace-clone primary sidebar menu upward by removing the empty topbar spacing.
 - [x] 2026-05-01: align the primary sidebar menu top edge with the directory search box top edge.
+- [ ] 2026-05-02: remove the translucent DragonClaw logo watermark from the bottom of the workspace-clone sidebar rail.
 
