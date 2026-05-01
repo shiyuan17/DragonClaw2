@@ -13,6 +13,7 @@ import qrWechat from "./assets/qr-wechat.jpg";
 import type { HomeView, TabId } from "./types";
 import { ApiKeyModal } from "./components/ApiKeyModal";
 import { ConfirmModal } from "./components/ConfirmModal";
+import { Header } from "./components/Header";
 import { LegacyHomeShell } from "./components/LegacyHomeShell";
 import { ModelSwitchModal } from "./components/ModelSwitchModal";
 import { RepairToast } from "./components/RepairToast";
@@ -175,13 +176,6 @@ function App() {
     };
   }, [addLog, handleStart, handleStop, running]);
 
-  const getStatusClass = () => {
-    if (loading) return "loading";
-    if (running) return "running";
-    if (phase !== "ready") return "loading";
-    return "idle";
-  };
-
   const currentProviderName = currentConfig?.provider
     ? providers.find((provider) => provider.id === currentConfig.provider)?.name
       || (currentConfig.provider === "custom" ? "自定义中转站" : currentConfig.provider)
@@ -236,107 +230,105 @@ function App() {
     }
   };
 
-  if (phase !== "ready") {
-    return (
-      <SetupWizard
-        phase={phase}
-        progress={progress}
-        progressMsg={progressMsg}
-        workspacePath={workspacePath}
-        loading={loading}
-        appVersion={appVersion}
-        setupError={setupError}
-        onDismissError={clearSetupError}
-        onRetry={retrySetup}
-        onSelectFolder={handleSelectFolder}
-        onConfirmWorkspace={handleConfirmWorkspace}
-      />
-    );
-  }
-
-  const showWorkspaceCloneHome = homeView === "workspace-clone";
+  const showWorkspaceCloneHome = phase === "ready" && homeView === "workspace-clone";
 
   return (
     <div className={`app ${showWorkspaceCloneHome ? "app--workspace-clone" : ""}`}>
-      {showWorkspaceCloneHome ? (
-        <WorkspaceClonePage
-          running={running}
-          loading={loading}
-          servicePort={servicePort}
-          gatewayToken={gatewayToken}
-          consoleUrl={consoleUrl}
-          uptime={uptime}
-          currentModelName={currentModelName}
-          currentProviderName={currentProviderName}
-          currentConfig={currentConfig}
-          configVersion={configVersion}
-          providers={providers}
-          workspacePath={workspacePath}
-          logs={logs}
-          handleStart={handleStart}
-          handleStop={handleStop}
-          refreshCurrentConfig={refreshCurrentConfig}
-          handleSetModel={handleSetModel}
-          handleUpsertSavedProviderConfig={handleUpsertSavedProviderConfig}
-          handleDeleteSavedProviderConfig={handleDeleteSavedProviderConfig}
-        />
-      ) : (
-        <LegacyHomeShell
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          activeSettingsTab={activeSettingsTab}
-          setActiveSettingsTab={setActiveSettingsTab}
-          running={running}
-          phase={phase}
-          loading={loading}
-          statusClass={getStatusClass()}
-          appVersion={appVersion}
-          servicePort={servicePort}
-          consoleUrl={consoleUrl}
-          uptime={uptime}
-          currentModelName={currentModelName}
-          currentProviderName={currentProviderName}
-          workspacePath={workspacePath}
-          currentConfig={currentConfig}
-          providers={providers}
-          filteredProviders={filteredProviders}
-          selectedCategory={selectedCategory}
-          setSelectedCategory={setSelectedCategory}
-          selectedProvider={selectedProvider}
-          setSelectedProvider={setSelectedProvider}
-          apiKeyInput={apiKeyInput}
-          setApiKeyInput={setApiKeyInput}
-          baseUrlInput={baseUrlInput}
-          setBaseUrlInput={setBaseUrlInput}
-          selectedModel={selectedModel}
-          setSelectedModel={setSelectedModel}
-          configSaving={configSaving}
-          setConfigStatus={setConfigStatus}
-          configVersion={configVersion}
-          resetModalState={resetModalState}
-          checkApiKey={checkApiKey}
-          handleSaveConfig={handleSaveConfig}
-          logs={logs}
-          logRef={logRef}
-          setShowKeyModal={setShowKeyModal}
-          setShowModelSwitchModal={setShowModelSwitchModal}
-          setStartingUp={setStartingUp}
-          setRunning={setRunning}
-          addLog={addLog}
-          reinstalling={reinstalling}
-          repairing={repairing}
-          handleStart={handleStart}
-          handleStop={handleStop}
-          handleSwitchWorkspace={handleSwitchWorkspace}
-          handleReinstall={handleReinstall}
-          handleRepairConnection={handleRepairConnection}
-          handleReset={handleReset}
-          setInfoModalTitle={setInfoModalTitle}
-          onExportDiagnostics={handleExportDiagnostics}
-          onCheckUpdate={handleCheckUpdate}
-          checkingUpdate={checkingUpdate}
-        />
-      )}
+      <Header />
+
+      <div className="app-content">
+        {phase !== "ready" ? (
+          <SetupWizard
+            phase={phase}
+            progress={progress}
+            progressMsg={progressMsg}
+            workspacePath={workspacePath}
+            loading={loading}
+            appVersion={appVersion}
+            setupError={setupError}
+            onDismissError={clearSetupError}
+            onRetry={retrySetup}
+            onSelectFolder={handleSelectFolder}
+            onConfirmWorkspace={handleConfirmWorkspace}
+          />
+        ) : showWorkspaceCloneHome ? (
+          <WorkspaceClonePage
+            running={running}
+            loading={loading}
+            servicePort={servicePort}
+            gatewayToken={gatewayToken}
+            consoleUrl={consoleUrl}
+            uptime={uptime}
+            currentModelName={currentModelName}
+            currentProviderName={currentProviderName}
+            currentConfig={currentConfig}
+            configVersion={configVersion}
+            providers={providers}
+            workspacePath={workspacePath}
+            logs={logs}
+            handleStart={handleStart}
+            handleStop={handleStop}
+            refreshCurrentConfig={refreshCurrentConfig}
+            handleSetModel={handleSetModel}
+            handleUpsertSavedProviderConfig={handleUpsertSavedProviderConfig}
+            handleDeleteSavedProviderConfig={handleDeleteSavedProviderConfig}
+          />
+        ) : (
+          <LegacyHomeShell
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            activeSettingsTab={activeSettingsTab}
+            setActiveSettingsTab={setActiveSettingsTab}
+            running={running}
+            loading={loading}
+            appVersion={appVersion}
+            servicePort={servicePort}
+            consoleUrl={consoleUrl}
+            uptime={uptime}
+            currentModelName={currentModelName}
+            currentProviderName={currentProviderName}
+            workspacePath={workspacePath}
+            currentConfig={currentConfig}
+            providers={providers}
+            filteredProviders={filteredProviders}
+            selectedCategory={selectedCategory}
+            setSelectedCategory={setSelectedCategory}
+            selectedProvider={selectedProvider}
+            setSelectedProvider={setSelectedProvider}
+            apiKeyInput={apiKeyInput}
+            setApiKeyInput={setApiKeyInput}
+            baseUrlInput={baseUrlInput}
+            setBaseUrlInput={setBaseUrlInput}
+            selectedModel={selectedModel}
+            setSelectedModel={setSelectedModel}
+            configSaving={configSaving}
+            setConfigStatus={setConfigStatus}
+            configVersion={configVersion}
+            resetModalState={resetModalState}
+            checkApiKey={checkApiKey}
+            handleSaveConfig={handleSaveConfig}
+            logs={logs}
+            logRef={logRef}
+            setShowKeyModal={setShowKeyModal}
+            setShowModelSwitchModal={setShowModelSwitchModal}
+            setStartingUp={setStartingUp}
+            setRunning={setRunning}
+            addLog={addLog}
+            reinstalling={reinstalling}
+            repairing={repairing}
+            handleStart={handleStart}
+            handleStop={handleStop}
+            handleSwitchWorkspace={handleSwitchWorkspace}
+            handleReinstall={handleReinstall}
+            handleRepairConnection={handleRepairConnection}
+            handleReset={handleReset}
+            setInfoModalTitle={setInfoModalTitle}
+            onExportDiagnostics={handleExportDiagnostics}
+            onCheckUpdate={handleCheckUpdate}
+            checkingUpdate={checkingUpdate}
+          />
+        )}
+      </div>
 
       <Modal show={!!infoModalTitle} onClose={() => setInfoModalTitle("")} title={infoModalTitle} maxWidth={360}>
         <div

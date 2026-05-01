@@ -12,12 +12,17 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "DragonClaw",
         "width": 1280,
         "height": 800,
         "minWidth": 860,
         "minHeight": 640,
-        "center": true
+        "center": true,
+        "resizable": true,
+        "decorations": false,
+        "transparent": false,
+        "shadow": true
       }
     ],
     "security": {

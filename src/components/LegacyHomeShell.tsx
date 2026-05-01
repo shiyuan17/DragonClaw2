@@ -7,7 +7,6 @@ import { Activity, BarChart3, Bot, Network, SlidersHorizontal } from "lucide-rea
 import { AgentsTab } from "./AgentsTab";
 import { AnalyticsTab } from "./AnalyticsTab";
 import { DashboardTab } from "./DashboardTab";
-import { Header } from "./Header";
 import { ModelsTab } from "./ModelsTab";
 import { SettingsTab } from "./SettingsTab";
 import type { CurrentConfig, LogEntry, ProviderInfo, TabId } from "../types";
@@ -18,9 +17,7 @@ interface LegacyHomeShellProps {
   activeSettingsTab: "general" | "logs" | "about";
   setActiveSettingsTab: (tab: "general" | "logs" | "about") => void;
   running: boolean;
-  phase: string;
   loading: boolean;
-  statusClass: string;
   appVersion: string;
   servicePort: number;
   consoleUrl: string | null;
@@ -82,9 +79,7 @@ export function LegacyHomeShell({
   activeSettingsTab,
   setActiveSettingsTab,
   running,
-  phase,
   loading,
-  statusClass,
   appVersion,
   servicePort,
   consoleUrl,
@@ -133,8 +128,6 @@ export function LegacyHomeShell({
 }: LegacyHomeShellProps) {
   return (
     <>
-      <Header running={running} phase={phase} statusClass={statusClass} appVersion={appVersion} />
-
       <nav className="tab-nav">
         {LEGACY_TABS.map((tab) => (
           <button
