@@ -127,31 +127,32 @@
   width: 0;
 }
 
-.workspace-clone__sidebar::after {
-  content: "";
+.workspace-clone__edge-trigger {
   position: absolute;
   top: 0;
   right: -10px;
   bottom: 0;
   width: 20px;
-  z-index: 6;
+  z-index: 8;
 }
 
-.workspace-clone__toggle-btn--edge {
+.workspace-clone__edge-trigger--sidebar {
+  right: -12px;
+  width: 24px;
+}
+
+.workspace-clone__directory-edge-btn {
   position: absolute;
-  top: 50%;
-  right: -16px;
-  width: 32px;
-  height: 32px;
+  top: 25%;
+  left: 50%;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.96);
+  background: rgba(255, 255, 255, 0.94);
   border-color: rgba(214, 227, 244, 0.92);
   box-shadow: var(--workspace-rail-card-shadow);
-  z-index: 7;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transform: translateY(-50%) scale(0.92);
+  transform: translate(-50%, -50%) scale(0.92);
   transition:
     opacity 140ms ease,
     visibility 140ms ease,
@@ -162,28 +163,16 @@
     box-shadow 160ms ease;
 }
 
-.workspace-clone__sidebar.is-collapsed .workspace-clone__toggle-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.94);
-  border-color: rgba(214, 227, 244, 0.92);
-  box-shadow: var(--workspace-rail-card-shadow);
+.workspace-clone__directory-edge-btn--sidebar {
+  top: 25%;
 }
 
-.workspace-clone__sidebar.is-collapsed .workspace-clone__toggle-btn--edge {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  right: -16px;
-}
-
-.workspace-clone__sidebar:hover .workspace-clone__toggle-btn--edge,
-.workspace-clone__sidebar:focus-within .workspace-clone__toggle-btn--edge {
+.workspace-clone__edge-trigger:hover .workspace-clone__directory-edge-btn,
+.workspace-clone__edge-trigger:focus-within .workspace-clone__directory-edge-btn {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
-  transform: translateY(-50%) scale(1) !important;
+  transform: translate(-50%, -50%) scale(1);
 }
 
 .workspace-clone__toggle-btn,
@@ -766,7 +755,7 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
-  margin-top: 12px;
+  margin-top: 0;
   padding: 3px;
   border-radius: 14px;
   background: rgba(239, 245, 255, 0.72);
@@ -1085,14 +1074,6 @@
 .workspace-clone__directory-section-head small {
   color: var(--workspace-muted);
   font-size: 12px;
-}
-
-.workspace-clone__directory-edge-btn {
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.96);
-  border-color: rgba(214, 227, 244, 0.92);
-  box-shadow: var(--workspace-rail-card-shadow);
-  z-index: 5;
 }
 
 .workspace-clone__directory-edge-btn--inline {
@@ -2920,6 +2901,10 @@
   transform: translateY(-1px);
 }
 
+.workspace-clone__directory-edge-btn:not(:disabled):hover {
+  transform: translate(-50%, calc(-50% - 1px)) scale(1);
+}
+
 .workspace-clone__composer-send:not(:disabled):hover {
   background: linear-gradient(135deg, #8bb7ee 0%, #679ce4 100%);
   box-shadow: var(--workspace-hover-shadow-strong);
@@ -4317,7 +4302,7 @@
   .workspace-clone__directory-mini-head,
   .workspace-clone__mini-tabs,
   .workspace-clone__mini-entities,
-  .workspace-clone__directory-edge-btn {
+  .workspace-clone__edge-trigger {
     display: none;
   }
 

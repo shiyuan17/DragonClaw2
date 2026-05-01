@@ -1,4 +1,3 @@
-import logo from "../../assets/dragonclaw-logo.png";
 import type { WorkspaceMenuKey } from "../../types";
 import type { WorkspaceMenuItem, WorkspaceSidebarAdminPanel } from "./workspaceCloneTypes";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
@@ -30,14 +29,21 @@ export function WorkspaceCloneSidebar({
     <aside className={`workspace-clone__sidebar ${isCollapsed ? "is-collapsed" : ""}`}>
       <div className="workspace-clone__sidebar-rail">
         <div className={`workspace-clone__sidebar-topbar ${isCollapsed ? "is-collapsed" : ""}`}>
-          <button
-            className="workspace-clone__toggle-btn workspace-clone__toggle-btn--edge"
+          <div className="workspace-clone__edge-trigger workspace-clone__edge-trigger--sidebar">
+            <button
+              className="workspace-clone__directory-edge-btn workspace-clone__directory-edge-btn--sidebar"
             type="button"
             onClick={onToggleCollapsed}
             title={isCollapsed ? "展开侧栏" : "收起侧栏"}
           >
-            <WorkspaceCloneIcon name="panel" size={14} strokeWidth={1.9} />
-          </button>
+              <WorkspaceCloneIcon
+                name="chevron-right"
+                size={14}
+                strokeWidth={2}
+                className={`workspace-clone__directory-edge-icon ${isCollapsed ? "is-collapsed" : ""}`}
+              />
+            </button>
+          </div>
         </div>
 
         <div className="workspace-clone__sidebar-menu">
@@ -67,23 +73,7 @@ export function WorkspaceCloneSidebar({
           })}
         </div>
 
-        <div className="workspace-clone__sidebar-fill">
-          <button
-            className={`workspace-clone__brand-watermark ${isCollapsed ? "is-collapsed" : ""}`}
-            type="button"
-            title="DragonClaw"
-          >
-            <span className="workspace-clone__brand-logo">
-              {!isCollapsed && <span className="workspace-clone__brand-badge">Beta</span>}
-              <img src={logo} alt="DragonClaw" className="workspace-clone__brand-mark" />
-            </span>
-            {!isCollapsed && (
-              <span className="workspace-clone__brand-meta">
-                <strong>DragonClaw</strong>
-              </span>
-            )}
-          </button>
-        </div>
+        <div className="workspace-clone__sidebar-fill" />
 
         <div className={`workspace-clone__sidebar-actions ${isCollapsed ? "is-collapsed" : ""}`}>
           <button

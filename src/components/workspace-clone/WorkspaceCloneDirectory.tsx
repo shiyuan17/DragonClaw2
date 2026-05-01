@@ -202,7 +202,7 @@ export function WorkspaceCloneDirectory({
   entities,
   selectedEntityId,
   isCollapsed,
-  searchQuery,
+  searchQuery: _searchQuery,
   contextMenu,
   channelBindingModal,
   channelBindingAgents,
@@ -238,7 +238,7 @@ export function WorkspaceCloneDirectory({
   onToggleCollapsed,
   onSelectType,
   onSelectEntity,
-  onSearchChange,
+  onSearchChange: _onSearchChange,
   onOpenContextMenu,
   onCloseContextMenu,
   onOpenChannelBindingModal,
@@ -268,23 +268,18 @@ export function WorkspaceCloneDirectory({
   return (
     <>
       <aside className={`workspace-clone__directory ${isCollapsed ? "is-collapsed" : ""}`}>
+        <div className="workspace-clone__edge-trigger workspace-clone__edge-trigger--directory">
+          <button className="workspace-clone__directory-edge-btn" type="button" title={directoryToggleLabel} onClick={onToggleCollapsed}>
+            <WorkspaceCloneIcon
+              name="chevron-right"
+              size={14}
+              strokeWidth={2}
+              className={`workspace-clone__directory-edge-icon ${isCollapsed ? "is-collapsed" : ""}`}
+            />
+          </button>
+        </div>
         {isCollapsed ? (
           <div className="workspace-clone__directory-mini-rail">
-            <div className="workspace-clone__directory-mini-head">
-              <button
-                className="workspace-clone__directory-edge-btn workspace-clone__directory-edge-btn--inline"
-                type="button"
-                title={directoryToggleLabel}
-                onClick={onToggleCollapsed}
-              >
-                <WorkspaceCloneIcon
-                  name="chevron-right"
-                  size={14}
-                  strokeWidth={2}
-                  className={`workspace-clone__directory-edge-icon ${isCollapsed ? "is-collapsed" : ""}`}
-                />
-              </button>
-            </div>
             <div className="workspace-clone__mini-tabs">
               {typeTabs.map((tab) => (
                 <button
@@ -322,33 +317,6 @@ export function WorkspaceCloneDirectory({
           </div>
         ) : (
           <>
-            <header className="workspace-clone__directory-head">
-              <label className="workspace-clone__search-box">
-                <WorkspaceCloneIcon name="search" size={14} strokeWidth={1.9} />
-                <input
-                  type="search"
-                  value={searchQuery}
-                  onChange={(event) => onSearchChange(event.target.value)}
-                  placeholder={activeType === "channels" ? "搜索频道" : activeType === "teams" ? "搜索团队" : "搜索 Agent"}
-                />
-              </label>
-              <div className="workspace-clone__directory-head-actions">
-                <button
-                  className="workspace-clone__directory-edge-btn workspace-clone__directory-edge-btn--inline"
-                  type="button"
-                  title={directoryToggleLabel}
-                  onClick={onToggleCollapsed}
-                >
-                  <WorkspaceCloneIcon
-                    name="chevron-right"
-                    size={14}
-                    strokeWidth={2}
-                    className={`workspace-clone__directory-edge-icon ${isCollapsed ? "is-collapsed" : ""}`}
-                  />
-                </button>
-              </div>
-            </header>
-
             <div className="workspace-clone__type-tabs">
               {typeTabs.map((tab) => (
                 <button
