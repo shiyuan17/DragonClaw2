@@ -67,7 +67,7 @@ function buildConnectParams(token: string, _nonce?: string | null) {
     },
     role: "operator",
     scopes: ["operator.admin", "operator.approvals", "operator.pairing"],
-    caps: [],
+    caps: ["tool-events"],
     auth: {
       token,
     },

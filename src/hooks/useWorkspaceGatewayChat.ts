@@ -16,6 +16,9 @@ import type {
   WorkspaceGatewaySessionsListResult,
   WorkspaceGatewayStatus,
   WorkspaceHistoryItem,
+  WorkspaceLiveStep,
+  WorkspaceLiveStepKind,
+  WorkspaceLiveStepStatus,
   WorkspaceMessage,
 } from "../components/workspace-clone/workspaceCloneTypes";
 
@@ -129,6 +132,57 @@ function extractGatewayMessageText(message: unknown): string {
   return "";
 }
 
+function tryParseJsonRecord(text: string): Record<string, unknown> | null {
+  const trimmed = text.trim();
+  if (!trimmed || !/^[\[{]/.test(trimmed)) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function looksLikeProcessPayloadJson(text: string) {
+  const parsed = tryParseJsonRecord(text);
+  if (!parsed) {
+    return false;
+  }
+
+  const keys = new Set(Object.keys(parsed));
+  const processSignals = [
+    "results",
+    "externalContent",
+    "toolMs",
+    "provider",
+    "siteName",
+    "snippet",
+    "toolCallId",
+    "itemId",
+    "approvalId",
+    "cwd",
+    "stdout",
+    "stderr",
+    "exitCode",
+  ];
+  const userFacingSignals = [
+    "answer",
+    "reply",
+    "final",
+    "summary",
+    "markdown",
+    "content",
+  ];
+
+  const processSignalCount = processSignals.filter((key) => keys.has(key)).length;
+  const hasUserFacingSignal = userFacingSignals.some((key) => keys.has(key));
+
+  return processSignalCount >= 2 && !hasUserFacingSignal;
+}
+
 function normalizeGatewayMessage(
   raw: unknown,
   resolveAssistantAuthor: (sessionKey?: string | null) => string,
@@ -156,15 +210,21 @@ function normalizeGatewayMessage(
     return null;
   }
 
+  if (role === "tool") {
+    return null;
+  }
+
+  if (role === "assistant" && looksLikeProcessPayloadJson(text)) {
+    return null;
+  }
+
   const sessionKey = typeof message.sessionKey === "string" ? message.sessionKey : null;
   const author =
     role === "assistant"
       ? resolveAssistantAuthor(sessionKey)
       : role === "user"
         ? "你"
-        : role === "tool"
-          ? "工具"
-          : "系统";
+        : "系统";
 
   const timestamp = typeof message.timestamp === "number" ? message.timestamp : null;
 
@@ -192,12 +252,277 @@ function buildSessionHistoryItem(session: WorkspaceGatewaySessionRow): Workspace
   };
 }
 
+type WorkspaceGatewayAgentEventPayload = {
+  runId?: unknown;
+  sessionKey?: unknown;
+  stream?: unknown;
+  ts?: unknown;
+  data?: unknown;
+};
+
+const LIVE_STEP_LIMIT = 12;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object";
+}
+
+function toStringValue(value: unknown, fallback = "") {
+  return typeof value === "string" ? value.trim() : fallback;
+}
+
+function toFiniteTimestamp(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function truncateInlineText(value: string, maxLength = 120) {
+  const compact = value.replace(/\s+/g, " ").trim();
+  if (compact.length <= maxLength) {
+    return compact;
+  }
+  return `${compact.slice(0, Math.max(0, maxLength - 1))}…`;
+}
+
+function firstNonEmptyString(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "";
+}
+
+function resolveLiveStepKind(kind: string, title: string): WorkspaceLiveStepKind {
+  const normalized = kind.trim().toLowerCase();
+  if (normalized === "skill") {
+    return "skill";
+  }
+  if (normalized === "command") {
+    return "command";
+  }
+  if (normalized === "command_output") {
+    return "command";
+  }
+  if (normalized === "search") {
+    return "search";
+  }
+  if (normalized === "analysis") {
+    return "thinking";
+  }
+  if (normalized === "patch") {
+    return "patch";
+  }
+  if (normalized === "plan") {
+    return "plan";
+  }
+  if (normalized === "approval") {
+    return "approval";
+  }
+  if (normalized === "tool") {
+    return title.includes("技能") ? "skill" : "tool";
+  }
+  return "other";
+}
+
+function resolveLiveStepStatus(params: {
+  phase?: string;
+  status?: string;
+  isError?: boolean;
+}): WorkspaceLiveStepStatus {
+  const phase = params.phase?.trim().toLowerCase() ?? "";
+  const status = params.status?.trim().toLowerCase() ?? "";
+
+  if (params.isError || phase === "error" || status === "error" || status === "failed" || status === "denied") {
+    return "error";
+  }
+  if (phase === "end" || phase === "result" || phase === "final" || status === "completed" || status === "approved" || status === "success") {
+    return "success";
+  }
+  if (phase === "aborted" || status === "aborted") {
+    return "aborted";
+  }
+  if (phase === "start" || phase === "update" || phase === "delta" || status === "running" || status === "pending") {
+    return "running";
+  }
+  return "pending";
+}
+
+function extractCommandSnippet(data: Record<string, unknown>) {
+  const args = isRecord(data.args) ? data.args : {};
+  const command = firstNonEmptyString(
+    data.command,
+    args.command,
+    data.cmd,
+    data.script,
+    data.line,
+    data.title,
+  );
+  if (!command) {
+    return "";
+  }
+  return truncateInlineText(command.split("\n", 1)[0] ?? command, 128);
+}
+
+function extractLiveStepDetail(data: Record<string, unknown>) {
+  const detail = firstNonEmptyString(
+    data.summary,
+    data.detail,
+    data.message,
+    data.progressText,
+    data.meta,
+    data.title,
+  );
+  return detail ? truncateInlineText(detail, 160) : "";
+}
+
+function isCommandLikeTool(data: Record<string, unknown>) {
+  const name = firstNonEmptyString(data.name, data.toolName).toLowerCase();
+  return Boolean(extractCommandSnippet(data)) || ["exec", "shell", "terminal", "command"].includes(name);
+}
+
+function buildLiveStepTitle(params: {
+  kind: WorkspaceLiveStepKind;
+  data: Record<string, unknown>;
+}) {
+  const { kind, data } = params;
+  if (kind === "thinking") {
+    return firstNonEmptyString(data.title, data.message, data.summary, "正在分析");
+  }
+  if (kind === "skill") {
+    return firstNonEmptyString(data.name, data.skillName, data.title, "技能");
+  }
+  if (kind === "tool") {
+    return firstNonEmptyString(data.name, data.toolName, data.title, "工具");
+  }
+  if (kind === "command") {
+    return extractCommandSnippet(data) || firstNonEmptyString(data.name, data.title, "命令");
+  }
+  return firstNonEmptyString(data.title, data.name, data.toolName, data.kind, "步骤");
+}
+
+function buildLiveStepDetail(params: {
+  kind: WorkspaceLiveStepKind;
+  data: Record<string, unknown>;
+}) {
+  const { kind, data } = params;
+  if (kind === "thinking") {
+    return "";
+  }
+  if (kind === "command") {
+    const detail = firstNonEmptyString(data.summary, data.detail, data.progressText);
+    return detail ? truncateInlineText(detail, 160) : "";
+  }
+  return extractLiveStepDetail(data);
+}
+
+function getLiveStepId(payload: WorkspaceGatewayAgentEventPayload, fallback: string) {
+  const data = isRecord(payload.data) ? payload.data : null;
+  if (data) {
+    const fromData = firstNonEmptyString(data.itemId, data.toolCallId, data.tool_call_id, data.id);
+    if (fromData) {
+      return fromData;
+    }
+    if (typeof data.name === "string" && data.name.trim()) {
+      return `${fallback}:${data.name.trim()}`;
+    }
+  }
+
+  const stream = toStringValue(payload.stream, "step");
+  return `${fallback}:${stream}`;
+}
+
+function buildLiveStepFromAgentEvent(
+  payload: WorkspaceGatewayAgentEventPayload,
+  fallbackRunId: string,
+): WorkspaceLiveStep | null {
+  const stream = toStringValue(payload.stream);
+  const data = isRecord(payload.data) ? payload.data : {};
+  const timestamp = toFiniteTimestamp(payload.ts) ?? Date.now();
+  const time = formatClockTime(timestamp);
+
+  if (stream === "lifecycle" || stream === "thinking") {
+    const phase = toStringValue(data.phase);
+    const status = resolveLiveStepStatus({
+      phase,
+      status: toStringValue(data.status),
+      isError: data.isError === true,
+    });
+    return {
+      id: `${fallbackRunId}:thinking`,
+      kind: "thinking",
+      status,
+      title: buildLiveStepTitle({ kind: "thinking", data }),
+      detail: buildLiveStepDetail({ kind: "thinking", data }) || undefined,
+      time,
+    };
+  }
+
+  if (stream === "tool") {
+    const phase = toStringValue(data.phase);
+    const title = firstNonEmptyString(data.name, data.toolName, data.title, "工具");
+    const kind = isCommandLikeTool(data) ? "command" : resolveLiveStepKind("tool", title);
+    const status = resolveLiveStepStatus({
+      phase,
+      status: toStringValue(data.status),
+      isError: data.isError === true,
+    });
+    return {
+      id: getLiveStepId(payload, fallbackRunId),
+      kind,
+      status,
+      title: buildLiveStepTitle({ kind, data }),
+      detail: buildLiveStepDetail({ kind, data }) || undefined,
+      time,
+    };
+  }
+
+  if (stream === "item" || stream === "command_output" || stream === "plan" || stream === "approval" || stream === "patch") {
+    const kind = resolveLiveStepKind(
+      firstNonEmptyString(data.kind, stream === "command_output" ? "command" : stream),
+      firstNonEmptyString(data.title, data.name, data.toolName, stream),
+    );
+    const status = resolveLiveStepStatus({
+      phase: toStringValue(data.phase),
+      status: firstNonEmptyString(data.status, data.state, stream === "command_output" ? "running" : ""),
+      isError: data.error !== undefined || data.isError === true,
+    });
+    return {
+      id: getLiveStepId(payload, fallbackRunId),
+      kind,
+      status,
+      title: buildLiveStepTitle({ kind, data }),
+      detail: buildLiveStepDetail({ kind, data }) || undefined,
+      time,
+    };
+  }
+
+  return null;
+}
+
+function updateLiveStepList(
+  current: WorkspaceLiveStep[],
+  nextStep: WorkspaceLiveStep,
+): WorkspaceLiveStep[] {
+  const base =
+    nextStep.kind === "thinking"
+      ? current
+      : current.filter((step) => step.kind !== "thinking" || (step.status !== "running" && step.status !== "pending"));
+  const index = base.findIndex((step) => step.id === nextStep.id);
+  const next = [...base];
+  if (index === -1) {
+    next.push(nextStep);
+  } else {
+    next[index] = { ...next[index], ...nextStep };
+  }
+  return next.slice(-LIVE_STEP_LIMIT);
+}
+
 const MISSING_GATEWAY_TOKEN_ERROR = "本地网关 token 缺失或未同步，请检查 ~/.openclaw/openclaw.json，或重新保存 Provider 配置后再试。";
 
 export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: UseWorkspaceGatewayChatOptions) {
   const clientRef = useRef<WorkspaceGatewayClient | null>(null);
   const currentSessionKeyRef = useRef("");
   const currentRunIdRef = useRef<string | null>(null);
+  const activeRunAliasesRef = useRef<Set<string>>(new Set());
 
   const [status, setStatus] = useState<WorkspaceGatewayStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -211,6 +536,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [pendingUserMessage, setPendingUserMessage] = useState<WorkspaceMessage | null>(null);
   const [streamText, setStreamText] = useState<string | null>(null);
+  const [liveSteps, setLiveSteps] = useState<WorkspaceLiveStep[]>([]);
 
   const connected = status === "connected";
   const agents = agentsResult?.agents ?? [];
@@ -220,14 +546,6 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
   );
   const currentSessionKey = selectedAgentId ? createAgentSessionKey(selectedAgentId) : "";
   const normalizedGatewayToken = gatewayToken?.trim() || "";
-
-  useEffect(() => {
-    currentSessionKeyRef.current = currentSessionKey;
-  }, [currentSessionKey]);
-
-  useEffect(() => {
-    currentRunIdRef.current = activeRunId;
-  }, [activeRunId]);
 
   const resolveAssistantAuthor = useCallback(
     (sessionKey?: string | null) => {
@@ -243,6 +561,40 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     },
     [agents, selectedAgent],
   );
+
+  const upsertLiveStep = useCallback((step: WorkspaceLiveStep) => {
+    setLiveSteps((current) => updateLiveStepList(current, step));
+  }, []);
+
+  const finishLiveSteps = useCallback((status: WorkspaceLiveStepStatus) => {
+    setLiveSteps((current) =>
+      current.map((step) =>
+        step.status === "running" || step.status === "pending"
+          ? { ...step, status }
+          : step,
+      ),
+    );
+  }, []);
+
+  useEffect(() => {
+    currentSessionKeyRef.current = currentSessionKey;
+  }, [currentSessionKey]);
+
+  useEffect(() => {
+    currentRunIdRef.current = activeRunId;
+  }, [activeRunId]);
+
+  const clearActiveRunRefs = useCallback(() => {
+    currentRunIdRef.current = null;
+    activeRunAliasesRef.current.clear();
+  }, []);
+
+  const isKnownActiveRunId = useCallback((runId?: string | null) => {
+    if (!runId) {
+      return true;
+    }
+    return runId === currentRunIdRef.current || activeRunAliasesRef.current.has(runId);
+  }, []);
 
   const loadSessions = useCallback(async () => {
     const client = clientRef.current;
@@ -300,6 +652,8 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     }
 
     try {
+      await client.request("sessions.subscribe", {}).catch(() => undefined);
+
       const [agentsPayload, sessionsPayload] = await Promise.all([
         client.request("agents.list", {}),
         client.request("sessions.list", {}),
@@ -334,13 +688,43 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
 
   const handleGatewayEvent = useCallback(
     (event: { event: string; payload?: unknown }) => {
+      if ((event.event === "agent" || event.event === "session.tool") && isRecord(event.payload)) {
+        const payload = event.payload as WorkspaceGatewayAgentEventPayload;
+        const payloadSessionKey = toStringValue(payload.sessionKey);
+        const payloadRunId = toStringValue(payload.runId);
+        const currentRunId = currentRunIdRef.current;
+        const activeAliases = activeRunAliasesRef.current;
+
+        if (!currentRunId) {
+          return;
+        }
+
+        if (payloadSessionKey && payloadSessionKey !== currentSessionKeyRef.current) {
+          return;
+        }
+
+        if (!payloadSessionKey && payloadRunId && payloadRunId !== currentRunId && !activeAliases.has(payloadRunId)) {
+          return;
+        }
+
+        if (payloadRunId) {
+          activeAliases.add(payloadRunId);
+        }
+
+        const step = buildLiveStepFromAgentEvent(payload, payloadRunId || currentRunId || "run");
+        if (step) {
+          upsertLiveStep(step);
+        }
+        return;
+      }
+
       if (event.event !== "chat" || !isChatEventPayload(event.payload)) {
         return;
       }
 
       const payload = event.payload;
       const isCurrentSession = payload.sessionKey === currentSessionKeyRef.current;
-      const isCurrentRun = !payload.runId || payload.runId === currentRunIdRef.current;
+      const isCurrentRun = isKnownActiveRunId(payload.runId);
 
       if (!isCurrentSession) {
         if (payload.state === "final") {
@@ -364,7 +748,12 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       }
 
       if (payload.state === "error" && isCurrentRun) {
+        finishLiveSteps("error");
         setError(payload.errorMessage ?? "聊天生成失败");
+      }
+
+      if (payload.state === "aborted" && isCurrentRun) {
+        finishLiveSteps("aborted");
       }
 
       if (payload.state === "final" || (payload.state !== "delta" && isCurrentRun)) {
@@ -372,12 +761,16 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
           setActiveRunId(null);
           setPendingUserMessage(null);
           setStreamText(null);
+          clearActiveRunRefs();
+          if (payload.state === "final") {
+            setLiveSteps([]);
+          }
         }
         void loadSessions();
         void loadHistory(currentSessionKeyRef.current);
       }
     },
-    [loadHistory, loadSessions],
+    [clearActiveRunRefs, finishLiveSteps, isKnownActiveRunId, loadHistory, loadSessions, upsertLiveStep],
   );
 
   useEffect(() => {
@@ -396,6 +789,8 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       setActiveRunId(null);
       setPendingUserMessage(null);
       setStreamText(null);
+      clearActiveRunRefs();
+      setLiveSteps([]);
     };
 
     if (!running || !servicePort) {
@@ -434,7 +829,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       }
       client.stop();
     };
-  }, [bootstrapGatewayState, handleGatewayEvent, normalizedGatewayToken, running, servicePort]);
+  }, [bootstrapGatewayState, clearActiveRunRefs, handleGatewayEvent, normalizedGatewayToken, running, servicePort]);
 
   useEffect(() => {
     if (!connected || !currentSessionKey) {
@@ -445,9 +840,11 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     setPendingUserMessage(null);
     setStreamText(null);
     setActiveRunId(null);
+    clearActiveRunRefs();
+    setLiveSteps([]);
     void loadHistory(currentSessionKey);
     void loadSessions();
-  }, [connected, currentSessionKey, loadHistory, loadSessions]);
+  }, [clearActiveRunRefs, connected, currentSessionKey, loadHistory, loadSessions]);
 
   const sendMessage = useCallback(
     async (value: string) => {
@@ -459,6 +856,8 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       }
 
       const runId = crypto.randomUUID();
+      currentRunIdRef.current = runId;
+      activeRunAliasesRef.current = new Set([runId]);
 
       setPendingUserMessage({
         id: `pending-${runId}`,
@@ -466,10 +865,18 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
         author: "你",
         text: message,
         time: formatClockTime(Date.now()),
-        status: "pending",
       });
       setStreamText("");
       setActiveRunId(runId);
+      setLiveSteps([
+        {
+          id: `${runId}:thinking`,
+          kind: "thinking",
+          status: "running",
+          title: "正在分析",
+          time: formatClockTime(Date.now()),
+        },
+      ]);
       setSending(true);
       setError(null);
 
@@ -485,13 +892,15 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
         setPendingUserMessage(null);
         setStreamText(null);
         setActiveRunId(null);
+        clearActiveRunRefs();
+        setLiveSteps([]);
         setError(sendError instanceof Error ? sendError.message : String(sendError));
         return false;
       } finally {
         setSending(false);
       }
     },
-    [currentSessionKey],
+    [clearActiveRunRefs, currentSessionKey],
   );
 
   const abortMessage = useCallback(async () => {
@@ -504,12 +913,13 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       await client.request("chat.abort", currentRunIdRef.current
         ? { sessionKey: currentSessionKey, runId: currentRunIdRef.current }
         : { sessionKey: currentSessionKey });
+      finishLiveSteps("aborted");
       return true;
     } catch (abortError) {
       setError(abortError instanceof Error ? abortError.message : String(abortError));
       return false;
     }
-  }, [currentSessionKey]);
+  }, [currentSessionKey, finishLiveSteps]);
 
   const resetSession = useCallback(async () => {
     const client = clientRef.current;
@@ -531,6 +941,8 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       setActiveRunId(null);
       setPendingUserMessage(null);
       setStreamText(null);
+      clearActiveRunRefs();
+      setLiveSteps([]);
       await Promise.all([loadSessions(), loadHistory(currentSessionKey)]);
       return true;
     } catch (resetError) {
@@ -539,7 +951,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     } finally {
       setResettingSession(false);
     }
-  }, [currentSessionKey, loadHistory, loadSessions]);
+  }, [clearActiveRunRefs, currentSessionKey, loadHistory, loadSessions]);
 
   const request = useCallback(
     async <T = unknown>(method: string, params?: unknown) => {
@@ -579,7 +991,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       id: `stream-${activeRunId}`,
       role: "assistant" as const,
       author: resolveAssistantAuthor(currentSessionKey),
-      text: streamText?.trim() || "正在思考...",
+      text: streamText?.trim() || "",
       time: "",
       status: "streaming" as const,
     };
@@ -614,6 +1026,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     currentMainSession,
     historyItems,
     messages,
+    liveSteps,
     historyLoading,
     sending,
     resettingSession,

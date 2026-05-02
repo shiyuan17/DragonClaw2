@@ -83,6 +83,28 @@ export interface WorkspaceMessage {
   status?: "pending" | "streaming" | "error";
 }
 
+export type WorkspaceLiveStepKind =
+  | "thinking"
+  | "skill"
+  | "tool"
+  | "command"
+  | "search"
+  | "patch"
+  | "plan"
+  | "approval"
+  | "other";
+
+export type WorkspaceLiveStepStatus = "pending" | "running" | "success" | "error" | "aborted";
+
+export interface WorkspaceLiveStep {
+  id: string;
+  kind: WorkspaceLiveStepKind;
+  status: WorkspaceLiveStepStatus;
+  title: string;
+  detail?: string;
+  time: string;
+}
+
 export interface WorkspaceHistoryItem {
   id: string;
   title: string;

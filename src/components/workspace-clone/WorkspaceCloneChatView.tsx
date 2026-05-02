@@ -1,9 +1,11 @@
+import { useCallback, useEffect, useRef, useState } from "react";
 import { WorkspaceCloneUtilityDrawer } from "./WorkspaceCloneUtilityDrawer";
 import { WORKSPACE_HOME_SUGGESTIONS } from "./workspaceCloneData";
 import type {
   WorkspaceEntity,
   WorkspaceGatewayStatus,
   WorkspaceHistoryItem,
+  WorkspaceLiveStep,
   WorkspaceMessage,
   WorkspaceRelatedResource,
   WorkspaceResourceItem,
@@ -14,13 +16,17 @@ import type {
   WorkspaceWorkbenchItem,
 } from "./workspaceCloneTypes";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
-import { WorkspaceCloneMessagePreview } from "./WorkspaceCloneMessagePreview";
+import { WorkspaceCloneLiveTimeline } from "./WorkspaceCloneLiveTimeline";
+import { shouldHideWorkspaceMessage, WorkspaceCloneMessagePreview } from "./WorkspaceCloneMessagePreview";
+
+const MESSAGE_BOTTOM_THRESHOLD_PX = 72;
 
 interface WorkspaceCloneChatViewProps {
   selectedEntity: WorkspaceEntity | null;
   chatEnabled: boolean;
   chatDisabledReason?: "channel-unbound" | "unsupported";
   messages: WorkspaceMessage[];
+  liveSteps: WorkspaceLiveStep[];
   connectionStatus: WorkspaceGatewayStatus;
   connectionError: string | null;
   historyLoading: boolean;
@@ -54,6 +60,7 @@ export function WorkspaceCloneChatView({
   chatEnabled,
   chatDisabledReason,
   messages,
+  liveSteps,
   connectionStatus,
   connectionError,
   historyLoading,
@@ -81,11 +88,90 @@ export function WorkspaceCloneChatView({
   onOpenModelConfig,
   onOpenLogs,
 }: WorkspaceCloneChatViewProps) {
-  const hasMessages = messages.length > 0;
+  const messageScrollRef = useRef<HTMLDivElement | null>(null);
+  const wasNearBottomRef = useRef(true);
+  const lastMessageSignatureRef = useRef("");
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+
+  const hasMessages = messages.length > 0 || liveSteps.length > 0;
   const showDisconnectedState = !chatEnabled || !running || connectionStatus === "error";
   const showConnectingState = running && connectionStatus === "connecting" && !hasMessages;
   const showMissingTokenState = Boolean(connectionError?.includes("本地网关 token"));
   const showUnboundChannelState = !chatEnabled && chatDisabledReason === "channel-unbound";
+  const visibleMessages = messages.filter((message) => !shouldHideWorkspaceMessage(message));
+  const hasStreamingMessage = visibleMessages.some((message) => message.status === "streaming");
+  const lastMessage = visibleMessages.length > 0 ? visibleMessages[visibleMessages.length - 1] : undefined;
+  const lastLiveStep = liveSteps.length > 0 ? liveSteps[liveSteps.length - 1] : undefined;
+  const messageSignature = [
+    visibleMessages.length,
+    lastMessage?.id ?? "",
+    lastMessage?.role ?? "",
+    lastMessage?.text.length ?? 0,
+    liveSteps.length,
+    lastLiveStep?.id ?? "",
+    lastLiveStep?.status ?? "",
+  ].join(":");
+
+  const isMessageScrollNearBottom = useCallback(() => {
+    const element = messageScrollRef.current;
+    if (!element) {
+      return true;
+    }
+
+    return element.scrollHeight - element.scrollTop - element.clientHeight <= MESSAGE_BOTTOM_THRESHOLD_PX;
+  }, []);
+
+  const updateScrollToBottomVisibility = useCallback(() => {
+    const nearBottom = isMessageScrollNearBottom();
+    wasNearBottomRef.current = nearBottom;
+    setShowScrollToBottom(!nearBottom);
+  }, [isMessageScrollNearBottom]);
+
+  const scrollMessagesToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    const element = messageScrollRef.current;
+    if (!element) {
+      return;
+    }
+
+    element.scrollTo({
+      top: element.scrollHeight,
+      behavior,
+    });
+    wasNearBottomRef.current = true;
+    setShowScrollToBottom(false);
+  }, []);
+
+  useEffect(() => {
+    if (!hasMessages) {
+      lastMessageSignatureRef.current = "";
+      wasNearBottomRef.current = true;
+      setShowScrollToBottom(false);
+      return;
+    }
+
+    const previousSignature = lastMessageSignatureRef.current;
+    const shouldStickToBottom =
+      !previousSignature ||
+      lastMessage?.role === "user" ||
+      wasNearBottomRef.current;
+
+    lastMessageSignatureRef.current = messageSignature;
+
+    if (!shouldStickToBottom) {
+      window.requestAnimationFrame(updateScrollToBottomVisibility);
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      scrollMessagesToBottom(lastMessage?.role === "user" ? "smooth" : "auto");
+    });
+  }, [
+    hasMessages,
+    lastMessage?.role,
+    messageSignature,
+    scrollMessagesToBottom,
+    updateScrollToBottomVisibility,
+  ]);
 
   return (
     <div className={`workspace-clone__chat-layout ${utilityPanel ? "drawer-open" : ""}`}>
@@ -141,33 +227,60 @@ export function WorkspaceCloneChatView({
               </div>
             </section>
           ) : hasMessages ? (
-            <div className="workspace-clone__message-scroll">
-              <div className="workspace-clone__message-list">
-                {messages.map((message) => (
-                  <article
-                    key={message.id}
-                    className={[
-                      "workspace-clone__message",
-                      "workspace-clone__message--chat",
-                      `is-${message.role}`,
-                      message.status ? `is-${message.status}` : "",
-                    ].join(" ").trim()}
-                  >
-                    <div className="workspace-clone__message-marker">{message.author}</div>
-                    <div className="workspace-clone__message-content">
-                      <WorkspaceCloneMessagePreview message={message} />
-                      <span className="workspace-clone__message-meta">
-                        {message.status === "streaming"
-                          ? "思考中..."
-                          : message.status === "pending"
-                            ? "发送中..."
-                            : message.time}
-                      </span>
-                    </div>
-                  </article>
-                ))}
+            <div className="workspace-clone__message-stage">
+              <div
+                ref={messageScrollRef}
+                className="workspace-clone__message-scroll"
+                onScroll={updateScrollToBottomVisibility}
+              >
+                <div className="workspace-clone__message-list">
+                  {visibleMessages.map((message) => {
+                    const isStreaming = message.status === "streaming";
+                    const hasStreamText = message.text.trim().length > 0;
+                    const showPreview = !isStreaming || hasStreamText;
+                    const showMeta = !isStreaming && Boolean(message.time);
+
+                    return (
+                      <article
+                        key={message.id}
+                        className={[
+                          "workspace-clone__message",
+                          "workspace-clone__message--chat",
+                          `is-${message.role}`,
+                          message.status ? `is-${message.status}` : "",
+                        ].join(" ").trim()}
+                      >
+                        <div className="workspace-clone__message-marker">{message.author}</div>
+                        <div className="workspace-clone__message-content">
+                          {isStreaming ? <WorkspaceCloneLiveTimeline steps={liveSteps} /> : null}
+                          {showPreview ? <WorkspaceCloneMessagePreview message={message} /> : null}
+                          {showMeta ? <span className="workspace-clone__message-meta">{message.time}</span> : null}
+                        </div>
+                      </article>
+                    );
+                  })}
+                  {liveSteps.length > 0 && !hasStreamingMessage ? (
+                    <article className="workspace-clone__message workspace-clone__message--chat is-assistant is-live-status">
+                      <div className="workspace-clone__message-marker">{selectedEntity?.avatarLabel || "A"}</div>
+                      <div className="workspace-clone__message-content">
+                        <WorkspaceCloneLiveTimeline steps={liveSteps} />
+                      </div>
+                    </article>
+                  ) : null}
+                </div>
+                <div className="workspace-clone__canvas-fill" />
               </div>
-              <div className="workspace-clone__canvas-fill" />
+              {showScrollToBottom ? (
+                <button
+                  type="button"
+                  className="workspace-clone__scroll-bottom"
+                  aria-label="滚动到最新消息"
+                  title="滚动到最新消息"
+                  onClick={() => scrollMessagesToBottom("smooth")}
+                >
+                  <WorkspaceCloneIcon name="chevron" size={18} strokeWidth={2.2} />
+                </button>
+              ) : null}
             </div>
           ) : (
             <section className="workspace-clone__welcome-state">

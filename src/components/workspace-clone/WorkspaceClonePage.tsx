@@ -1147,6 +1147,7 @@ export function WorkspaceClonePage({
                 chatEnabled={chatEnabled}
                 chatDisabledReason={chatDisabledReason}
                 messages={chatEnabled ? homepageChat.messages : []}
+                liveSteps={chatEnabled ? homepageChat.liveSteps : []}
                 connectionStatus={homepageChat.status}
                 connectionError={homepageChat.error}
                 historyLoading={homepageChat.historyLoading}
