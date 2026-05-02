@@ -29,10 +29,10 @@ export function StartupOverlay({ show }: StartupOverlayProps) {
                     transition={{ duration: 0.3 }}
                 >
                     <div className="startup-overlay-content">
-                        <div className="startup-overlay-eyebrow">DRAGONCLAW</div>
                         <div className="startup-overlay-stage">
                             <img src={logo} alt="DragonClaw" className="startup-overlay-logo" />
                         </div>
+                        <div className="startup-overlay-eyebrow">DRAGONCLAW</div>
                         <Loader2 className="startup-overlay-spinner" size={28} strokeWidth={1.5} />
                         <div className="startup-overlay-text">正在启动 OpenClaw 服务...</div>
                         <div className="startup-overlay-hint">服务就绪后将自动打开浏览器</div>

@@ -61,10 +61,10 @@ function SetupStageLayout({
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 transition={{ duration: 0.55, ease: "easeOut" }}
             >
-                <div className="startup-eyebrow">DRAGONCLAW</div>
                 <div className="startup-hero-stage">
                     <img src={logo} alt="DragonClaw" className="startup-hero-logo" />
                 </div>
+                <div className="startup-eyebrow">DRAGONCLAW</div>
                 <h1 className="startup-title">{title}</h1>
 
                 {hasProgress && (
@@ -167,7 +167,7 @@ export function SetupWizard({
             <>
                 <SetupStageLayout
                     appVersion={appVersion}
-                    title="DragonClaw 即将就绪"
+                    title="即将就绪"
                     description={progressMsg || "正在准备你的工作台，请稍候。"}
                     progress={Math.max(progress, 12)}
                     actions={setupError ? (
