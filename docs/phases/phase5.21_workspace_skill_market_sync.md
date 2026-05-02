@@ -89,7 +89,6 @@
 - 安装完成后页面出现已安装状态
 - 若当前 Agent 被选为安装目标，重新打开技能弹窗后可看到新技能
 - 不影响现有 memory / tools / channels / chat 行为
-
 ## 2026-05-02 Install Target Modal Polish
 
 ### 目标
@@ -104,3 +103,9 @@
 - 将安装目标列表升级为更明确的可点击卡片式多选项
 - 收紧大面积空白，让底部已选统计和主次按钮更贴近内容区
 - 所有新增视觉值优先复用现有 `--dc-*` / `--dc-workspace-*` token
+
+## 2026-05-02 Follow-up: Skill Modal Visual Alignment
+
+- Align the skill detail modal and the install-target modal with the denser `workspace-clone` memory modal language shown in the latest reference.
+- Keep all install and refresh behavior unchanged, especially `installSkillMarketSkill(...)`, `invoke("list_agents")`, selected target semantics, and current-agent skill refresh timing.
+- Scope this follow-up to JSX presentation and CSS only so the skill market popups gain a clearer header, structured body, and less wasted space without touching backend contracts.
