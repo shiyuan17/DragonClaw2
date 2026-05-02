@@ -275,6 +275,7 @@
 - [x] 2026-05-02: unify the workspace-clone sidebar and directory collapse toggles, pin both to 25% divider height, and reveal them only on divider hover/focus.
 - [x] 2026-05-02: reduce the shared custom window titlebar height to 45px and keep narrow-width layouts aligned with the same token source.
 - [x] Phase 5.17.2: fix startup white-screen by showing an immediate boot splash and lazy-loading ready-page modules/styles without changing startup business logic.
+- [ ] Phase 5.17.3: replace the blue first-paint boot splash with a compact 200x200 logo loading page, unify the later startup overlay, and tone down onboarding colors to match the ElevenLabs theme tokens.
 - [ ] Phase 5.15.10: remove native Windows titlebar and restore custom titlebar window controls permissions/behavior
 - [ ] 2026-04-30: remove workspace-clone chat header subtitle text under the avatar.
 - [x] 2026-05-02: retire the legacy console shell, remove all frontend `open_console` entry points, and delete the unused Tauri `open_console` command after regression checks.
