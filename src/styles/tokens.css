@@ -255,6 +255,9 @@
   --dc-workspace-employees-filter-active-border: rgba(123, 139, 124, 0.3);
   --dc-workspace-employees-filter-active-text: #4e6450;
   --dc-workspace-employees-search-shadow: 0 10px 24px rgba(12, 10, 9, 0.05);
+  --dc-workspace-employees-card-hover-surface: rgba(250, 249, 247, 0.98);
+  --dc-workspace-employees-card-hover-border: rgba(123, 139, 124, 0.26);
+  --dc-workspace-employees-card-hover-shadow: 0 18px 34px rgba(12, 10, 9, 0.1);
   --dc-workspace-employees-tag-surface: rgba(12, 10, 9, 0.05);
   --dc-workspace-employees-tag-text: var(--dc-color-body-strong);
   --dc-workspace-employees-empty-surface: rgba(250, 249, 247, 0.94);
@@ -266,6 +269,10 @@
   --dc-workspace-employees-remove-surface-hover: rgba(220, 38, 38, 0.1);
   --dc-workspace-employees-remove-border: rgba(220, 38, 38, 0.14);
   --dc-workspace-employees-remove-text: #b65e5e;
+  --dc-workspace-employees-modal-surface: rgba(255, 255, 255, 0.98);
+  --dc-workspace-employees-modal-border: rgba(214, 211, 209, 0.9);
+  --dc-workspace-employees-modal-code-surface: rgba(250, 249, 247, 0.98);
+  --dc-workspace-employees-modal-code-border: rgba(214, 211, 209, 0.92);
 
   /* Legacy aliases kept as compatibility shims while the rest of the app migrates */
   --bg-primary: var(--dc-color-canvas);

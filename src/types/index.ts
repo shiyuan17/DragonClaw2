@@ -220,8 +220,15 @@ export interface FeishuOnboardingPollResponse {
 export interface AgencyAgentInfo {
     name?: string;
     mission?: string;
+    identity?: string;
+    capabilities?: string[];
+    likes?: string[];
+    dislikes?: string[];
+    rules?: string[];
     workflow?: string[];
     tags?: string[];
+    usage_scenarios?: string[];
+    personality_radar?: Record<string, number | undefined>;
 }
 
 export interface AgencyAgentInfoRecord {
@@ -245,6 +252,12 @@ export interface AgencyAgentManifest {
     templates: Record<string, AgencyAgentTemplate>;
 }
 
+export interface AgencyRosterDefinitionSection {
+    id: string;
+    label: string;
+    content: string;
+}
+
 export interface AgencyRosterRole {
     id: string;
     agentId: string;
@@ -255,6 +268,8 @@ export interface AgencyRosterRole {
     name: string;
     description: string;
     tags: string[];
+    definitionPreview: string;
+    definitionSections: AgencyRosterDefinitionSection[];
 }
 
 export interface AgencyRosterDivision {
