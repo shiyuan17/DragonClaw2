@@ -212,7 +212,7 @@
   --dc-workspace-warning-text: #9b6b22;
   --dc-workspace-live-running-border: rgba(123, 139, 124, 0.22);
   --dc-workspace-live-running-shadow: 0 0 0 1px rgba(167, 229, 211, 0.18);
-  --dc-workspace-live-sheen: linear-gradient(120deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0) 32%, rgba(255, 255, 255, 0.22) 44%, rgba(167, 229, 211, 0.34) 50%, rgba(255, 255, 255, 0.28) 56%, rgba(255, 255, 255, 0) 68%, rgba(255, 255, 255, 0) 100%);
+  --dc-workspace-live-sheen: linear-gradient(90deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.08) 18%, rgba(255, 255, 255, 0.16) 32%, rgba(167, 229, 211, 0.14) 50%, rgba(255, 255, 255, 0.16) 68%, rgba(255, 255, 255, 0.08) 82%, rgba(255, 255, 255, 0.02) 100%);
   --dc-workspace-live-sheen-duration: 1.8s;
   --dc-workspace-live-breathe-duration: 1.2s;
   --dc-workspace-note-surface: rgba(245, 245, 245, 0.9);
