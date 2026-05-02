@@ -1,82 +1,75 @@
-# Phase 5.23: OpenClaw PATH 暴露、退出保活与启动引导防卡死
-> 状态：Planned
-> 日期：2026-05-02
+# Phase 5.23: OpenClaw CLI PATH 暴露与退出保活
 
-## 背景
-
-当前 5.23 已经开始处理两个底层问题：
-- 安装后无法直接在终端执行 `openclaw`
-- 从托盘退出 DragonClaw 时会一并关闭 OpenClaw，导致下次启动无法复用现有服务
-
-但验收过程中又暴露出两个启动体验问题：
-- checking / initializing 阶段主标题仍带 `DragonClaw`，且 `正在检查环境` 容易换成两行
-- `useSetup` 的启动链路存在多段串行等待，CLI 回填、诊断和推荐技能安装都可能拖住 phase，看起来像引导卡死
-
-这次将已有 5.23 后端改动继续收口，并同步修正启动引导文案、排版和非阻塞启动逻辑，保证“安装即能用 CLI、退出不关服务、下次启动可复用、启动页不假死”一起闭环。
+> 状态：规划完成，待实现
 
 ## 目标
 
-- 安装完成后，将 `openclaw` 暴露到当前用户 PATH，新开终端可直接执行
-- 托盘 `退出` 仅退出 DragonClaw，不关闭后台 OpenClaw；下次启动优先复用现有服务和端口
-- checking / initializing 主标题去掉 `DragonClaw`，`正在检查环境` / `正在初始化` 保持单行显示
-- 启动流改成“关键路径限时、辅助任务后台化、超时可降级”，避免引导长期卡在 checking / launching
-- 保持现有 Tauri command 签名和前端 `invoke()` 参数结构不变
+让 DragonClaw 在引导安装完成后自动暴露 `openclaw` 终端命令，并让托盘“退出”只关闭 DragonClaw 本体，不主动关闭后台 OpenClaw 服务；下次重新打开 DragonClaw 时，需要能够识别并复用这份仍在运行的服务，而不是重复拉起新实例。
 
-## 实施方案
+## 设计原则
+
+- 保持现有 `invoke("start_service_silent")`、`invoke("stop_service")`、`invoke("is_service_running")` 契约不变。
+- PATH 注册范围固定为当前用户，不要求管理员权限。
+- CLI PATH 暴露只覆盖 Windows，使用 `~/.local/bin/openclaw.cmd` 作为入口。
+- 关闭窗口隐藏到托盘的行为保持不变，本次只调整托盘“退出”。
+- 不新增引导弹窗或额外确认步骤。
+
+## 实现方案
 
 ### 1. CLI PATH 暴露
 
-- 保留 `ensure_openclaw_cli_available` command，继续作为唯一的 PATH 回填入口
-- Windows 目标目录固定 `%USERPROFILE%\\.local\\bin`，生成 `openclaw.cmd`
-- shim 通过内置 Node 调 `openclaw-engine/openclaw.mjs`，并透传 `%*`
-- `setup_openclaw()` 末尾继续调用该 command
-- 已安装用户在 `useSetup.checkEnvironment()` 中继续做无感回填
-- PATH 写入保持幂等，只做当前用户级 PATH，不要求管理员权限
+1. 在 `src-tauri/src/openclaw_cli.rs` 增加 CLI 暴露 helper：
+   - 解析内置 Node 路径和 `openclaw-engine/openclaw.mjs`
+   - 生成 `openclaw.cmd`
+   - 幂等合并当前用户 PATH
+2. 在 `setup_openclaw()` 完成安装后调用内部 helper，确保 fresh install 结束后新开的终端可以直接执行 `openclaw`。
 
-### 2. 退出保活与服务复用
+### 2. 服务退出保活与复用
 
-- 保留 `~/.openclaw/openclaw-service.json` 运行态文件，记录 `pid`、`port`、`startedAt`
-- 托盘 `quit` 分支不再主动 `kill()` OpenClaw
-- `is_service_running` 优先检查内存中的 child，再检查运行态文件对应的 pid / port 是否仍有效
-- `start_service` / `start_service_silent` 启动前先尝试接管已有服务；若可复用则直接发 `service-port` 并返回 `already running`
-- 若运行态文件 stale，则清理后再正常启动
-- `stop_service` 兼容停止当前 app 进程内 child 和复用回来的外部服务
+1. 在 `src-tauri/src/service.rs` 新增运行态文件：
+   - 路径：`~/.openclaw/openclaw-service.json`
+   - 字段：`pid`、`port`、`startedAt`
+2. 启动服务成功后写入运行态文件，并同步更新内存态。
+3. `is_service_running` 改为：
+   - 先检查当前进程持有的 `Child`
+   - 再检查运行态文件记录的 `pid/port`
+   - stale 运行态会自动清理
+4. `start_service_silent` / `start_service` 改为先尝试复用已有服务：
+   - 若运行态有效，则直接回填端口并返回 `already running`
+   - 若运行态失效，则清理后正常启动新实例
+5. `stop_service` 同时支持停止：
+   - 当前进程内的 `Child`
+   - 上一次退出后保留下来的外部 OpenClaw 进程
+6. `lib.rs` 的托盘 `quit` 分支不再主动 `kill()` OpenClaw 服务。
 
-### 3. 启动引导 UI 收口
+## 变更边界
 
-- `SetupWizard` 在 `checking` / `initializing` 阶段的主标题改为纯状态文案：
-  - `正在检查环境`
-  - `正在初始化`
-- 保留小号 `DRAGONCLAW` eyebrow，不在主标题重复品牌名
-- 描述区只显示次级说明；当 `progressMsg` 与标题同义或只是追加省略号时，回退到稳定说明文案，避免同屏重复
-- `setup.css` 去掉 `.startup-title` 的字符宽度限制，改为单行优先显示；移动端通过字号收敛而不是强制折行
+- 允许改动：
+  - `src-tauri/src/openclaw_cli.rs`
+  - `src-tauri/src/service.rs`
+  - `src-tauri/src/setup.rs`
+  - `src-tauri/src/lib.rs`
+  - `src-tauri/src/paths.rs`
+- 不改：
+  - OpenClaw 后端命令签名
+  - 现有引导交互流程
+  - Rust 后端与前端之间已有 `invoke()` 参数结构
 
-### 4. 启动流防卡死
+## 验收标准
 
-- 在 `useSetup.ts` 新增统一的 `withTimeout()` / `invokeWithTimeout()` 辅助
-- 给以下调用增加超时保护：`check_node_exists`、`check_openclaw_exists`、`check_node_modules_exists`、`is_service_running`、`check_config_exists`、`get_current_config`、`ensure_openclaw_cli_available`、`getOnboardingSkillInstallDiagnostics`
-- `checkEnvironment()` 改成两段式：
-  - 基础环境探测并行跑 `Promise.allSettled`
-  - 只把“是否需要安装 / 是否需要配置工作区 / 是否可以直接启动服务”留在关键路径
-- CLI 回填与 onboarding backfill 诊断改为 best-effort 后台任务，只记日志，不阻塞 phase
-- `launchService()` 在 `start_service_silent` 返回后立刻主动轮询 `is_service_running`，每 750ms 检查一次，最长 15s，不再只依赖日志 ready 信号
-- `finalizeStartup()` 改为“服务 ready 优先”：服务可用后立即进入 `ready` 并执行 `checkApiKey()`；推荐技能安装改为 ready 后后台执行，只写日志与进度文案
+- fresh install 完成后，新开的 PowerShell / CMD 可以执行 `openclaw`
+- 通过托盘“退出”关闭 DragonClaw 后，OpenClaw 网关仍保持可访问
+- 重新打开 DragonClaw 时不重复拉起新服务，而是复用原有端口进入 ready
+- 复用后的服务仍可被“停止服务”按钮正确关闭
+- stale 运行态文件会在下次启动时被自动清理，不阻塞重启
 
-## 约束
+## 验证
 
-- 不改任何现有 command 的签名、名字和参数结构
-- 不改 UI 功能流，不新增新的引导交互
-- 保持“点窗口关闭隐藏到托盘”逻辑不变
-- 基于当前工作区已有 5.23 改动继续收口，不回退 `service.rs`、`openclaw_cli.rs`、`useSetup.ts` 等正在进行中的实现
-
-## 验收
-
-- fresh install 完成后，新开 PowerShell / CMD 能解析 `openclaw`
-- 已安装用户再次启动 DragonClaw 时，也会自动补齐 shim 和 PATH
-- checking / initializing 主标题不再显示 `DragonClaw`，`正在检查环境` 单行显示，描述区不重复标题
-- 冷启动时即使 CLI 回填、诊断或推荐技能安装较慢，也不会卡在 checking / launching；主界面应先进入 ready，辅助任务只写日志
-- 启动服务后通过托盘 `退出` 关闭 DragonClaw，网关仍可继续访问
-- 重新打开 DragonClaw 时，不再启动第二份服务，而是直接复用原端口进入 ready
-- 在复用后的会话中点击“停止服务”，仍能真正停掉后台那份 OpenClaw
-- 人工杀掉后台 OpenClaw 后再次打开 DragonClaw，会清理 stale 状态并正常重启服务
-- `npm run tauri dev` 能正常启动，并可手动走通“启动服务 -> 打开网关 -> 托盘退出应用 -> 网关继续可用 -> 重新打开应用 -> 停止服务”完整链路
+- Rust 单测覆盖：
+  - shim 内容生成
+  - PATH 合并幂等
+  - 运行态文件读写
+  - stale 运行态识别与清理
+- 提交前验证：
+  - `npm run tauri dev`
+  - 手动走“启动服务 -> 打开网关 -> 托盘退出应用 -> 网关继续可用 -> 重新打开应用 -> 停止服务”链路
