@@ -1305,20 +1305,20 @@
 .workspace-clone__suggestion-strip {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
-  padding: 14px 0 12px;
+  gap: var(--dc-workspace-home-suggestion-gap);
+  padding: var(--dc-workspace-home-suggestion-padding-block-start) 0 var(--dc-workspace-home-suggestion-padding-block-end);
 }
 
 .workspace-clone__suggestion-card {
-  min-height: 106px;
+  min-height: var(--dc-workspace-home-suggestion-card-min-height);
   border: 1px solid var(--workspace-line);
   border-radius: 16px;
   background: linear-gradient(180deg, var(--dc-workspace-overlay-surface), var(--dc-workspace-overlay-surface-soft));
-  padding: 14px;
+  padding: var(--dc-workspace-home-suggestion-card-padding);
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
-  gap: 12px;
+  gap: var(--dc-workspace-home-suggestion-card-gap);
   text-align: left;
 }
 
@@ -1331,26 +1331,35 @@
 }
 
 .workspace-clone__suggestion-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 10px;
+  width: var(--dc-workspace-home-suggestion-icon-size);
+  height: var(--dc-workspace-home-suggestion-icon-size);
+  border-radius: var(--dc-workspace-home-suggestion-icon-radius);
   background: var(--dc-workspace-chip-surface);
   color: var(--workspace-accent);
   display: grid;
   place-items: center;
 }
 
+.workspace-clone__suggestion-card > div {
+  min-width: 0;
+}
+
 .workspace-clone__suggestion-card strong {
   display: block;
-  font-size: 15px;
+  font-size: var(--dc-workspace-home-suggestion-title-size);
   font-weight: 700;
 }
 
 .workspace-clone__suggestion-card small {
   display: block;
-  margin-top: 8px;
+  margin-top: var(--dc-workspace-home-suggestion-copy-gap);
   color: var(--workspace-muted);
-  line-height: 1.65;
+  font-size: var(--dc-workspace-home-suggestion-copy-size);
+  line-height: var(--dc-workspace-home-suggestion-copy-line-height);
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .workspace-clone__drawer {
