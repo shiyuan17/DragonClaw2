@@ -284,6 +284,7 @@
 - [ ] Phase 5.24.2: dedupe mirrored `agent` / `session.tool` live timeline entries in `workspace-clone` chat and upgrade running steps to a lightweight full-row sheen state.
 - [ ] 2026-05-02: refine the Phase 5.24.2 running sheen so it feels closer to Codex, with a continuous transparency loop instead of a single obvious light block sweep.
 - [ ] 2026-05-02: raise the live sheen visibility further so the animation reads clearly instead of getting washed out by subtle styling or shorthand overrides.
+- [ ] 2026-05-02: strengthen the Phase 5.24.2 running sheen again so the motion reads clearly from left to right, closer to Codex's directional live-processing glow.
 - [x] Phase 5.17.2: fix startup white-screen by showing an immediate boot splash and lazy-loading ready-page modules/styles without changing startup business logic.
 - [ ] Phase 5.22: sync DragonClaw scene cards into `workspace-clone > chat > agents`, including grouped scene cards, case drill-down, composer prefills, per-session open-state persistence, and welcome-state card compaction without changing backend contracts.
 - [ ] 2026-05-02: refresh the workspace-clone sidebar footer buttons into a reference-style identity card with a trailing utility action, without changing existing frontend behavior.
