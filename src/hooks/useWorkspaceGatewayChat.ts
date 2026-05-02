@@ -32,6 +32,8 @@ interface ChatHistoryPayload {
   messages?: unknown[];
 }
 
+const SESSION_TITLE_MAX_LENGTH = 56;
+
 function formatClockTime(timestamp?: number | null) {
   if (!timestamp) {
     return "";
@@ -64,6 +66,28 @@ function formatRelativeSessionTime(timestamp?: number | null) {
 function extractAgentIdFromSessionKey(sessionKey: string) {
   const match = /^agent:([^:]+):/.exec(sessionKey);
   return match?.[1] ?? null;
+}
+
+function isRawSessionDisplayTitle(value?: string | null) {
+  const normalized = value?.trim() || "";
+  return !normalized || /^agent:[^:]+:/.test(normalized);
+}
+
+function normalizeSessionTitle(value: string) {
+  const normalized = value
+    .replace(/\s+/g, " ")
+    .replace(/^[`"'“”‘’]+|[`"'“”‘’]+$/g, "")
+    .trim();
+
+  if (normalized.length <= SESSION_TITLE_MAX_LENGTH) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, SESSION_TITLE_MAX_LENGTH - 1).trimEnd()}…`;
+}
+
+function isMeaningfulSessionTitle(value: string) {
+  return /[A-Za-z0-9\u4E00-\u9FFF]/.test(value);
 }
 
 function extractTextFromContentBlock(block: unknown): string {
@@ -237,7 +261,93 @@ function normalizeGatewayMessage(
   };
 }
 
-function buildSessionHistoryItem(session: WorkspaceGatewaySessionRow): WorkspaceHistoryItem {
+function extractFirstMeaningfulSessionTitle(messages: unknown[]) {
+  for (const rawMessage of messages) {
+    if (!rawMessage || typeof rawMessage !== "object") {
+      continue;
+    }
+
+    const message = rawMessage as { role?: unknown };
+    if (message.role !== "user") {
+      continue;
+    }
+
+    const normalized = normalizeSessionTitle(extractGatewayMessageText(rawMessage));
+    if (!normalized || !isMeaningfulSessionTitle(normalized)) {
+      continue;
+    }
+
+    return normalized;
+  }
+
+  return null;
+}
+
+function resolveSessionFallbackTitle(session: WorkspaceGatewaySessionRow) {
+  const candidates = [session.displayName, session.label];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeSessionTitle(candidate?.trim() || "");
+    if (!normalized || isRawSessionDisplayTitle(normalized) || !isMeaningfulSessionTitle(normalized)) {
+      continue;
+    }
+
+    return normalized;
+  }
+
+  if (session.key.endsWith(":main")) {
+    return "主会话";
+  }
+
+  return session.key;
+}
+
+function buildSessionHistorySubtitle(session: WorkspaceGatewaySessionRow) {
+  const modelLabel = [session.modelProvider, session.model].filter(Boolean).join(" / ");
+  if (modelLabel) {
+    return modelLabel;
+  }
+
+  return session.key.endsWith(":main") ? "默认会话" : "历史会话";
+}
+
+function buildSessionHistoryItem(
+  session: WorkspaceGatewaySessionRow,
+  params: {
+    cachedTitle?: string;
+    currentSessionKey: string;
+  },
+): WorkspaceHistoryItem {
+  return {
+    id: session.key,
+    sessionKey: session.key,
+    active: session.key === params.currentSessionKey,
+    isMain: session.key.endsWith(":main"),
+    title: params.cachedTitle || resolveSessionFallbackTitle(session),
+    subtitle: buildSessionHistorySubtitle(session),
+    time: formatRelativeSessionTime(session.updatedAt),
+  };
+}
+
+function resolveAgentSessionKey(
+  result: WorkspaceGatewaySessionsListResult | null,
+  agentId: string,
+  preferredSessionKey?: string | null,
+) {
+  const sessions = filterAgentSessions(result, agentId);
+  if (preferredSessionKey && sessions.some((session) => session.key === preferredSessionKey)) {
+    return preferredSessionKey;
+  }
+
+  const mainKey = createAgentSessionKey(agentId);
+  if (sessions.some((session) => session.key === mainKey)) {
+    return mainKey;
+  }
+
+  return sessions[0]?.key ?? mainKey;
+}
+
+function buildLegacySessionHistoryItem(session: WorkspaceGatewaySessionRow): WorkspaceHistoryItem {
   const title =
     session.displayName?.trim() ||
     session.label?.trim() ||
@@ -251,6 +361,8 @@ function buildSessionHistoryItem(session: WorkspaceGatewaySessionRow): Workspace
     time: formatRelativeSessionTime(session.updatedAt),
   };
 }
+
+void buildLegacySessionHistoryItem;
 
 type WorkspaceGatewayAgentEventPayload = {
   runId?: unknown;
@@ -582,6 +694,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
   const currentRunIdRef = useRef<string | null>(null);
   const activeRunAliasesRef = useRef<Set<string>>(new Set());
   const liveStepDedupeRef = useRef<Map<string, WorkspaceLiveStepDedupeEntry>>(new Map());
+  const historyTitleFetchesRef = useRef<Set<string>>(new Set());
   const hasObservedNonThinkingStepRef = useRef(false);
   const hasAssistantTextDeltaRef = useRef(false);
 
@@ -590,6 +703,8 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
   const [agentsResult, setAgentsResult] = useState<WorkspaceGatewayAgentsListResult | null>(null);
   const [sessionsResult, setSessionsResult] = useState<WorkspaceGatewaySessionsListResult | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState("");
+  const [selectedSessionKey, setSelectedSessionKey] = useState("");
+  const [historyTitleCache, setHistoryTitleCache] = useState<Record<string, string>>({});
   const [historyRawMessages, setHistoryRawMessages] = useState<unknown[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [sending, setSending] = useState(false);
@@ -605,7 +720,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     () => agents.find((agent) => agent.id === selectedAgentId) ?? null,
     [agents, selectedAgentId],
   );
-  const currentSessionKey = selectedAgentId ? createAgentSessionKey(selectedAgentId) : "";
+  const currentSessionKey = selectedSessionKey || (selectedAgentId ? createAgentSessionKey(selectedAgentId) : "");
   const normalizedGatewayToken = gatewayToken?.trim() || "";
 
   const resolveAssistantAuthor = useCallback(
@@ -755,26 +870,39 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     return payload;
   }, []);
 
-  const loadHistory = useCallback(
-    async (sessionKey: string) => {
+  const loadSessionHistoryMessages = useCallback(
+    async (sessionKey: string, limit = 200) => {
       const client = clientRef.current;
       if (!client?.connected || !sessionKey) {
+        return [];
+      }
+
+      const payload = await client.request<ChatHistoryPayload>("chat.history", {
+        sessionKey,
+        limit,
+      });
+
+      return Array.isArray(payload.messages) ? payload.messages : [];
+    },
+    [],
+  );
+
+  const loadHistory = useCallback(
+    async (sessionKey: string) => {
+      if (!sessionKey) {
         return;
       }
 
       setHistoryLoading(true);
 
       try {
-        const payload = await client.request<ChatHistoryPayload>("chat.history", {
-          sessionKey,
-          limit: 200,
-        });
+        const messages = await loadSessionHistoryMessages(sessionKey, 200);
 
         if (currentSessionKeyRef.current !== sessionKey) {
           return;
         }
 
-        setHistoryRawMessages(Array.isArray(payload.messages) ? payload.messages : []);
+        setHistoryRawMessages(messages);
         setError(null);
       } catch (loadError) {
         if (currentSessionKeyRef.current === sessionKey) {
@@ -786,7 +914,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
         }
       }
     },
-    [],
+    [loadSessionHistoryMessages],
   );
 
   const bootstrapGatewayState = useCallback(async () => {
@@ -819,11 +947,15 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
         agentsPayload.agents.some((agent) => agent.id === selectedAgentId)
           ? selectedAgentId
           : agentsPayload.defaultId || agentsPayload.agents[0]?.id || "";
+      const nextSessionKey = nextAgentId
+        ? resolveAgentSessionKey(sessionsPayload, nextAgentId, currentSessionKeyRef.current)
+        : "";
 
       setSelectedAgentId(nextAgentId);
+      setSelectedSessionKey(nextSessionKey);
 
-      if (nextAgentId) {
-        void loadHistory(createAgentSessionKey(nextAgentId));
+      if (nextSessionKey) {
+        void loadHistory(nextSessionKey);
       }
     } catch (bootstrapError) {
       setError(bootstrapError instanceof Error ? bootstrapError.message : String(bootstrapError));
@@ -954,6 +1086,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       setAgentsResult(null);
       setSessionsResult(null);
       setSelectedAgentId("");
+      setSelectedSessionKey("");
       setHistoryRawMessages([]);
       setHistoryLoading(false);
       setSending(false);
@@ -1017,6 +1150,99 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     void loadHistory(currentSessionKey);
     void loadSessions();
   }, [clearActiveRunRefs, connected, currentSessionKey, loadHistory, loadSessions]);
+
+  useEffect(() => {
+    if (!selectedAgentId) {
+      if (selectedSessionKey) {
+        setSelectedSessionKey("");
+      }
+      return;
+    }
+
+    const nextSessionKey = resolveAgentSessionKey(sessionsResult, selectedAgentId, selectedSessionKey);
+    if (nextSessionKey && nextSessionKey !== selectedSessionKey) {
+      setSelectedSessionKey(nextSessionKey);
+    }
+  }, [selectedAgentId, selectedSessionKey, sessionsResult]);
+
+  useEffect(() => {
+    if (!sessionsResult) {
+      return;
+    }
+
+    const validSessionKeys = new Set(sessionsResult.sessions.map((session) => session.key));
+    setHistoryTitleCache((current) => {
+      let changed = false;
+      const next: Record<string, string> = {};
+
+      for (const [sessionKey, title] of Object.entries(current)) {
+        if (validSessionKeys.has(sessionKey)) {
+          next[sessionKey] = title;
+          continue;
+        }
+
+        changed = true;
+      }
+
+      return changed ? next : current;
+    });
+
+    historyTitleFetchesRef.current.forEach((sessionKey) => {
+      if (!validSessionKeys.has(sessionKey)) {
+        historyTitleFetchesRef.current.delete(sessionKey);
+      }
+    });
+  }, [sessionsResult]);
+
+  useEffect(() => {
+    if (!connected || !selectedAgentId) {
+      return;
+    }
+
+    const sessions = filterAgentSessions(sessionsResult, selectedAgentId)
+      .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0));
+
+    sessions.forEach((session) => {
+      if (historyTitleCache[session.key] || historyTitleFetchesRef.current.has(session.key)) {
+        return;
+      }
+
+      historyTitleFetchesRef.current.add(session.key);
+
+      void loadSessionHistoryMessages(session.key, 40)
+        .then((messages) => {
+          const nextTitle = extractFirstMeaningfulSessionTitle(messages);
+          if (!nextTitle) {
+            return;
+          }
+
+          setHistoryTitleCache((current) => (
+            current[session.key] === nextTitle
+              ? current
+              : { ...current, [session.key]: nextTitle }
+          ));
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          historyTitleFetchesRef.current.delete(session.key);
+        });
+    });
+  }, [connected, historyTitleCache, loadSessionHistoryMessages, selectedAgentId, sessionsResult]);
+
+  const selectAgent = useCallback((agentId: string) => {
+    setSelectedAgentId(agentId);
+    setSelectedSessionKey(resolveAgentSessionKey(sessionsResult, agentId));
+  }, [sessionsResult]);
+
+  const selectSession = useCallback((sessionKey: string) => {
+    const agentId = extractAgentIdFromSessionKey(sessionKey);
+    if (!agentId) {
+      return;
+    }
+
+    setSelectedAgentId(agentId);
+    setSelectedSessionKey(sessionKey);
+  }, []);
 
   const sendMessage = useCallback(
     async (value: string) => {
@@ -1147,8 +1373,11 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
 
     return filterAgentSessions(sessionsResult, selectedAgentId)
       .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0))
-      .map(buildSessionHistoryItem);
-  }, [selectedAgentId, sessionsResult]);
+      .map((session) => buildSessionHistoryItem(session, {
+        cachedTitle: historyTitleCache[session.key],
+        currentSessionKey,
+      }));
+  }, [currentSessionKey, historyTitleCache, selectedAgentId, sessionsResult]);
 
   const normalizedHistoryMessages = useMemo(
     () =>
@@ -1198,6 +1427,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     sessionsResult,
     selectedAgentId,
     selectedAgent,
+    selectedSessionKey: currentSessionKey,
     currentSessionKey,
     currentMainSession,
     historyItems,
@@ -1207,7 +1437,8 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     sending,
     resettingSession,
     isGenerating: Boolean(activeRunId),
-    selectAgent: setSelectedAgentId,
+    selectAgent,
+    selectSession,
     request,
     sendMessage,
     abortMessage,

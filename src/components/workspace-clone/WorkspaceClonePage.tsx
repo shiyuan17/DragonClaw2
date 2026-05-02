@@ -176,6 +176,7 @@ function buildGatewayAgentEntities(params: {
 
   return agents.map<WorkspaceEntity>((agent) => {
     const sessionKey = `agent:${agent.id}:main`;
+    const isAgentSessionActive = currentSessionKey.startsWith(`agent:${agent.id}:`);
     const mainSession = sessionsResult?.sessions.find((session) => session.key === sessionKey) ?? null;
     const modelLabel =
       [mainSession?.modelProvider || currentProviderName, mainSession?.model || currentModelName]
@@ -189,13 +190,13 @@ function buildGatewayAgentEntities(params: {
       subtitle:
         !running
           ? "待命中"
-          : isGenerating && currentSessionKey === sessionKey
+          : isGenerating && isAgentSessionActive
             ? "生成中"
             : formatRecentLabel(mainSession?.updatedAt),
       status:
         !running
           ? "offline"
-          : isGenerating && currentSessionKey === sessionKey
+          : isGenerating && isAgentSessionActive
             ? "busy"
             : agent.id === selectedAgentId && currentMainSession?.abortedLastRun
               ? "busy"
@@ -205,7 +206,7 @@ function buildGatewayAgentEntities(params: {
       currentWork:
         !running
           ? "服务尚未启动，首页聊天暂不可用。"
-          : isGenerating && currentSessionKey === sessionKey
+          : isGenerating && isAgentSessionActive
             ? "正在生成当前主会话回复。"
             : "首页已接入当前 Agent 的主会话。",
       recentOutput: modelLabel,
@@ -1166,12 +1167,13 @@ export function WorkspaceClonePage({
                 currentModelName={workspaceModelName}
                 currentProviderName={workspaceProviderName}
                 running={running}
-                showHomeSuggestions={activeType !== "agents"}
-                onCloseUtilityPanel={() => setUtilityPanel(null)}
-                onSelectSessionSection={setActiveSessionSection}
-                onOpenRelatedResource={handleOpenRelatedResource}
-                onOpenSettingsTextPreview={() => setShowSettingsTextPreview(true)}
-                onStart={handleStart}
+                 showHomeSuggestions={activeType !== "agents"}
+                 onCloseUtilityPanel={() => setUtilityPanel(null)}
+                 onSelectSessionSection={setActiveSessionSection}
+                 onSelectHistorySession={homepageChat.selectSession}
+                 onOpenRelatedResource={handleOpenRelatedResource}
+                 onOpenSettingsTextPreview={() => setShowSettingsTextPreview(true)}
+                 onStart={handleStart}
                 onOpenModelConfig={openModelConfigModal}
                 onOpenLogs={() => toggleUtilityPanel("logs")}
               />

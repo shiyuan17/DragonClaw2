@@ -1901,6 +1901,26 @@
   gap: 6px;
 }
 
+.workspace-clone__drawer-card--button {
+  width: 100%;
+  border: 1px solid var(--workspace-line);
+  background: var(--dc-workspace-panel-elevated);
+  color: var(--workspace-ink);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.workspace-clone__drawer-card--button.is-active {
+  border-color: var(--dc-workspace-accent-border);
+  background: var(--dc-workspace-panel-soft);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--dc-workspace-accent-strong) 12%, transparent);
+}
+
 .workspace-clone__drawer-card span {
   color: var(--workspace-faint);
   font-size: 12px;
@@ -3365,6 +3385,7 @@
 .workspace-clone__mini-entity:not(:disabled):not(.is-active):hover,
 .workspace-clone__composer-tools button:not(:disabled):hover,
 .workspace-clone__drawer-head button:not(:disabled):hover,
+.workspace-clone__drawer-card--button:not(:disabled):hover,
 .workspace-clone__composer-pill:not(:disabled):hover,
 .workspace-clone__composer-icon-round:not(:disabled):hover,
 .workspace-clone__dialog-tab:not(:disabled):not(.is-active):hover,
@@ -3427,6 +3448,7 @@
 .workspace-clone__suggestion-layer button:focus-visible,
 .workspace-clone__session-tile:focus-visible,
 .workspace-clone__drawer-head button:focus-visible,
+.workspace-clone__drawer-card--button:focus-visible,
 .workspace-clone__composer-tools button:focus-visible,
 .workspace-clone__composer-pill:focus-visible,
 .workspace-clone__composer-action-text:focus-visible,

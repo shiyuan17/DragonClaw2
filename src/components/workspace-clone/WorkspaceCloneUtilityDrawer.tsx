@@ -28,6 +28,7 @@ interface WorkspaceCloneUtilityDrawerProps {
   currentProviderName: string;
   onClose: () => void;
   onSelectSessionSection: (section: WorkspaceSessionSectionKey) => void;
+  onSelectHistorySession: (sessionKey: string) => void;
   onOpenRelatedResource: (resource: WorkspaceRelatedResource) => void;
   onOpenModelConfig: () => void;
 }
@@ -66,6 +67,7 @@ export function WorkspaceCloneUtilityDrawer({
   currentProviderName,
   onClose,
   onSelectSessionSection,
+  onSelectHistorySession,
   onOpenRelatedResource,
   onOpenModelConfig,
 }: WorkspaceCloneUtilityDrawerProps) {
@@ -156,13 +158,22 @@ export function WorkspaceCloneUtilityDrawer({
           </section>
         )}
 
-        {panel === "history" && historyItems.map((item) => (
-          <section key={item.id} className="workspace-clone__drawer-card">
-            <strong>{item.title}</strong>
-            <small>{item.subtitle}</small>
-            <span>{item.time}</span>
-          </section>
-        ))}
+        {panel === "history" && historyItems.map((item) => {
+          const sessionKey = item.sessionKey || item.id;
+
+          return (
+            <button
+              key={item.id}
+              type="button"
+              className={`workspace-clone__drawer-card workspace-clone__drawer-card--button ${item.active ? "is-active" : ""}`}
+              onClick={() => onSelectHistorySession(sessionKey)}
+            >
+              <strong>{item.title}</strong>
+              <small>{item.subtitle}</small>
+              <span>{item.time}</span>
+            </button>
+          );
+        })}
 
         {panel === "logs" && logs.map((item) => (
           <section key={item.id} className="workspace-clone__drawer-card">

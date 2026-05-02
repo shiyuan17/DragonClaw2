@@ -110,6 +110,9 @@ export interface WorkspaceHistoryItem {
   title: string;
   subtitle: string;
   time: string;
+  sessionKey?: string;
+  active?: boolean;
+  isMain?: boolean;
 }
 
 export interface WorkspaceScheduleItem {

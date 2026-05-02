@@ -48,6 +48,7 @@ interface WorkspaceCloneChatViewProps {
   showHomeSuggestions?: boolean;
   onCloseUtilityPanel: () => void;
   onSelectSessionSection: (section: WorkspaceSessionSectionKey) => void;
+  onSelectHistorySession: (sessionKey: string) => void;
   onOpenRelatedResource: (resource: WorkspaceRelatedResource) => void;
   onOpenSettingsTextPreview: () => void;
   onStart: () => void;
@@ -82,6 +83,7 @@ export function WorkspaceCloneChatView({
   showHomeSuggestions = true,
   onCloseUtilityPanel,
   onSelectSessionSection,
+  onSelectHistorySession,
   onOpenRelatedResource,
   onOpenSettingsTextPreview,
   onStart,
@@ -344,6 +346,7 @@ export function WorkspaceCloneChatView({
         currentProviderName={currentProviderName}
         onClose={onCloseUtilityPanel}
         onSelectSessionSection={onSelectSessionSection}
+        onSelectHistorySession={onSelectHistorySession}
         onOpenRelatedResource={onOpenRelatedResource}
         onOpenModelConfig={onOpenModelConfig}
       />
