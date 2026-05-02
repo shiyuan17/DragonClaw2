@@ -300,5 +300,5 @@
 - [x] 鍦?`workspace-clone > employees` 鍚屾鏃т粨搴?DragonClaw 鐨勬暟瀛楀憳宸ヨ鑹插簱锛岃ˉ榻愬垎绫汇€佹悳绱€佸姞鍏ャ€佸凡鍔犲叆鍒楄〃涓庡嵏杞斤紝骞舵柊澧?`install_agency_agent` / `uninstall_agency_agent` / `load_installed_agency_agent_ids` 鍛戒护
 
 - [ ] Phase 5.15.12: fix the borderless window maximize display so double-click maximize keeps a safe frame inset and no longer clips the custom titlebar or workspace content on Windows.
-## Phase 5.23: OpenClaw CLI PATH 暴露与退出保活
-- [ ] 2026-05-02: expose `openclaw` into the current user PATH during setup, keep OpenClaw running when DragonClaw exits from tray quit, and reuse that existing service on the next launch.
+## Phase 5.23: OpenClaw PATH 暴露、退出保活与启动引导防卡死
+- [ ] 2026-05-02: expose `openclaw` into the current user PATH during setup, keep OpenClaw running when DragonClaw exits from tray quit, reuse that existing service on the next launch, remove `DragonClaw` from the checking/initializing main title, keep `正在检查环境` on one line, and make startup checks degrade gracefully instead of hanging the onboarding flow.
