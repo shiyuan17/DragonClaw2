@@ -280,6 +280,7 @@
 - [ ] 2026-05-02: optimize the workspace-clone skill market install-target modal so its header hierarchy, multi-select cards, and footer actions feel denser and clearer without changing install behavior.
 - [ ] Phase 5.15.13: add inline Markdown / JSON preview for assistant messages in `workspace-clone` chat, with auto-detect + JSON-first fallback and post-stream rendering only.
 - [ ] Phase 5.24: add a live process timeline to `workspace-clone` chat, showing thinking, skill/tool calls, command execution, and step completion from existing gateway events without changing backend contracts.
+- [ ] Phase 5.24.1: add a transient `思考中` bridge in `workspace-clone` chat so completed tool/command steps are followed by visible processing feedback until the final assistant reply starts streaming.
 - [x] Phase 5.17.2: fix startup white-screen by showing an immediate boot splash and lazy-loading ready-page modules/styles without changing startup business logic.
 - [ ] Phase 5.22: sync DragonClaw scene cards into `workspace-clone > chat > agents`, including grouped scene cards, case drill-down, composer prefills, per-session open-state persistence, and welcome-state card compaction without changing backend contracts.
 - [ ] 2026-05-02: refresh the workspace-clone sidebar footer buttons into a reference-style identity card with a trailing utility action, without changing existing frontend behavior.
