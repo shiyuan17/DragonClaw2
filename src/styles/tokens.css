@@ -248,6 +248,24 @@
   --dc-workspace-icon-text: #6b7280;
   --dc-workspace-hero-surface: radial-gradient(circle at top, rgba(167, 229, 211, 0.18), rgba(244, 197, 168, 0.16) 42%, rgba(255, 255, 255, 0.98) 100%);
   --dc-workspace-utility-backdrop: linear-gradient(180deg, rgba(250, 249, 247, 0) 0%, rgba(250, 249, 247, 0.82) 36%, rgba(250, 249, 247, 0.98) 100%);
+  --dc-workspace-employees-hero-surface: linear-gradient(135deg, rgba(167, 229, 211, 0.22) 0%, rgba(244, 197, 168, 0.2) 50%, rgba(255, 255, 255, 0.98) 100%);
+  --dc-workspace-employees-stat-surface: rgba(255, 255, 255, 0.72);
+  --dc-workspace-employees-stat-border: rgba(255, 255, 255, 0.82);
+  --dc-workspace-employees-filter-active-surface: rgba(123, 139, 124, 0.16);
+  --dc-workspace-employees-filter-active-border: rgba(123, 139, 124, 0.3);
+  --dc-workspace-employees-filter-active-text: #4e6450;
+  --dc-workspace-employees-search-shadow: 0 10px 24px rgba(12, 10, 9, 0.05);
+  --dc-workspace-employees-tag-surface: rgba(12, 10, 9, 0.05);
+  --dc-workspace-employees-tag-text: var(--dc-color-body-strong);
+  --dc-workspace-employees-empty-surface: rgba(250, 249, 247, 0.94);
+  --dc-workspace-employees-empty-border: rgba(214, 211, 209, 0.88);
+  --dc-workspace-employees-joined-surface: rgba(22, 163, 74, 0.08);
+  --dc-workspace-employees-joined-border: rgba(22, 163, 74, 0.16);
+  --dc-workspace-employees-joined-text: #2f7d56;
+  --dc-workspace-employees-remove-surface: rgba(220, 38, 38, 0.06);
+  --dc-workspace-employees-remove-surface-hover: rgba(220, 38, 38, 0.1);
+  --dc-workspace-employees-remove-border: rgba(220, 38, 38, 0.14);
+  --dc-workspace-employees-remove-text: #b65e5e;
 
   /* Legacy aliases kept as compatibility shims while the rest of the app migrates */
   --bg-primary: var(--dc-color-canvas);

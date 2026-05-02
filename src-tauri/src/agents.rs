@@ -43,8 +43,8 @@ pub(crate) fn normalize_agent_id(value: &str) -> Result<String, String> {
     if trimmed == "main" {
         return Ok("main".to_string());
     }
-    if trimmed.len() > 32 {
-        return Err("Agent 名称不能超过 32 个字符".to_string());
+    if trimmed.len() > 128 {
+        return Err("Agent 名称不能超过 128 个字符".to_string());
     }
 
     let first = trimmed.chars().next().ok_or("Agent id 不能为空")?;
@@ -574,7 +574,7 @@ mod tests {
         assert!(normalize_agent_id("-start").is_err());
         assert!(normalize_agent_id("UPPER").is_err());
         assert!(normalize_agent_id("has space").is_err());
-        assert!(normalize_agent_id(&"a".repeat(33)).is_err());
+        assert!(normalize_agent_id(&"a".repeat(129)).is_err());
         assert!(normalize_agent_id("../escape").is_err());
     }
 }

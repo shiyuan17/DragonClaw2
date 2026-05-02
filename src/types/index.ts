@@ -217,6 +217,60 @@ export interface FeishuOnboardingPollResponse {
     tenantBrand?: string | null;
 }
 
+export interface AgencyAgentInfo {
+    name?: string;
+    mission?: string;
+    workflow?: string[];
+    tags?: string[];
+}
+
+export interface AgencyAgentInfoRecord {
+    locale: string;
+    agentId: string;
+    info: AgencyAgentInfo;
+}
+
+export interface AgencyAgentTemplate {
+    locale: string;
+    AGENTS_MD: string;
+    IDENTITY_MD: string;
+    SOUL_MD: string;
+}
+
+export interface AgencyAgentManifest {
+    schemaVersion: number;
+    sourceRoot: string;
+    rosterZhRaw: string;
+    agentInfos: AgencyAgentInfoRecord[];
+    templates: Record<string, AgencyAgentTemplate>;
+}
+
+export interface AgencyRosterRole {
+    id: string;
+    agentId: string;
+    divisionId: string;
+    divisionTitle: string;
+    source: string;
+    locale: string;
+    name: string;
+    description: string;
+    tags: string[];
+}
+
+export interface AgencyRosterDivision {
+    id: string;
+    title: string;
+    count: number;
+    roles: AgencyRosterRole[];
+}
+
+export interface InstalledAgencyEmployee {
+    id: string;
+    name: string;
+    subtitle: string;
+    divisionTitle: string;
+}
+
 // ===== UI Constants =====
 export const CATEGORY_LABELS: Record<string, { label: string; icon: string }> = {
     free: { label: "免费注册", icon: "gift" },

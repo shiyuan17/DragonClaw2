@@ -1,6 +1,7 @@
 // Copyright (C) 2026 shiyuan
 // SPDX-License-Identifier: GPL-3.0-only
 // This file is part of DragonClaw. See LICENSE for details.
+mod agency_agents;
 mod agent_resource_settings;
 mod agents;
 mod channels;
@@ -181,6 +182,9 @@ pub fn run() {
             // Diagnostics
             diagnostics::export_diagnostics_zip,
             // Agent management
+            agency_agents::install_agency_agent,
+            agency_agents::uninstall_agency_agent,
+            agency_agents::load_installed_agency_agent_ids,
             agents::list_agents,
             agents::get_agent_detail,
             agents::create_agent,

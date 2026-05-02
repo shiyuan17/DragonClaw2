@@ -44,6 +44,7 @@ import {
 import { WorkspaceCloneChatView } from "./WorkspaceCloneChatView";
 import { WorkspaceCloneComposer } from "./WorkspaceCloneComposer";
 import { WorkspaceCloneDirectory } from "./WorkspaceCloneDirectory";
+import { WorkspaceCloneEmployeesView } from "./WorkspaceCloneEmployeesView";
 import { WorkspaceCloneHeader } from "./WorkspaceCloneHeader";
 import { WorkspaceCloneModelConfigModal } from "./WorkspaceCloneModelConfigModal";
 import { WorkspaceCloneOverlayStack } from "./WorkspaceCloneOverlayStack";
@@ -96,7 +97,7 @@ export interface WorkspaceClonePageProps {
   handleDeleteSavedProviderConfig: (providerKey: string) => Promise<string>;
 }
 
-const COMPACT_COPY: Record<Exclude<WorkspaceMenuKey, "chat">, { title: string; description: string; bullets: string[] }> = {
+const COMPACT_COPY: Record<Exclude<WorkspaceMenuKey, "chat" | "employees">, { title: string; description: string; bullets: string[] }> = {
   schedule: {
     title: "定时任务工作区骨架",
     description: "这里先保留定时任务栏目结构与信息节奏，后续再逐步迁移真实调度能力。",
@@ -106,11 +107,6 @@ const COMPACT_COPY: Record<Exclude<WorkspaceMenuKey, "chat">, { title: string; d
     title: "知识库管理工作区骨架",
     description: "先保留知识类工作区的分区结构，为后续资料树、上传区和知识面板预留接口位置。",
     bullets: ["占位卡片模拟知识源、文档集和索引状态。", "本次不接入任何真实文档或后端命令。"],
-  },
-  employees: {
-    title: "数字员工工作区骨架",
-    description: "先把数字员工首页壳层保留下来，后续再把现有 Agent 能力逐步映射进来。",
-    bullets: ["当前只展示静态的栏目说明和布局占位。", "后续再逐项接入真实的 agents 功能。"],
   },
   skills: {
     title: "技能市场工作区骨架",
@@ -871,7 +867,7 @@ export function WorkspaceClonePage({
   };
 
   const renderCompactWorkspace = () => {
-    const section = COMPACT_COPY[activeMenu as Exclude<WorkspaceMenuKey, "chat">];
+    const section = COMPACT_COPY[activeMenu as Exclude<WorkspaceMenuKey, "chat" | "employees">];
     const menuLabel = WORKSPACE_MENU_ITEMS.find((item) => item.key === activeMenu)?.label || "";
 
     return (
@@ -1058,7 +1054,13 @@ export function WorkspaceClonePage({
           />
         )}
 
-        <section className={`workspace-clone__workspace ${activeMenu !== "chat" ? "is-compact" : ""}`}>
+        <section
+          className={[
+            "workspace-clone__workspace",
+            activeMenu !== "chat" && activeMenu !== "employees" ? "is-compact" : "",
+            activeMenu === "employees" ? "is-employees" : "",
+          ].join(" ").trim()}
+        >
           {activeMenu === "chat" ? (
             <>
               <div className="workspace-clone__top">
@@ -1125,7 +1127,7 @@ export function WorkspaceClonePage({
                 onResetSession={homepageChat.resetSession}
               />
             </>
-          ) : renderCompactWorkspace()}
+          ) : activeMenu === "employees" ? <WorkspaceCloneEmployeesView /> : renderCompactWorkspace()}
         </section>
 
         <WorkspaceCloneOverlayStack
