@@ -278,6 +278,7 @@
 - [x] 2026-05-02: reduce the shared custom window titlebar height to 45px and keep narrow-width layouts aligned with the same token source.
 - [ ] 2026-05-02: compact the workspace-clone home suggestion cards so the scene card row takes less space above the composer.
 - [ ] 2026-05-02: optimize the workspace-clone skill market install-target modal so its header hierarchy, multi-select cards, and footer actions feel denser and clearer without changing install behavior.
+- [ ] Phase 5.25: support clickable history session switching in `workspace-clone`, keep sending inside the selected session, and replace raw session-key titles with frontend-derived first-intent summaries plus cached fallbacks.
 - [ ] Phase 5.15.13: add inline Markdown / JSON preview for assistant messages in `workspace-clone` chat, with auto-detect + JSON-first fallback and post-stream rendering only.
 - [ ] Phase 5.24: add a live process timeline to `workspace-clone` chat, showing thinking, skill/tool calls, command execution, and step completion from existing gateway events without changing backend contracts.
 - [ ] Phase 5.24.1: add a transient `思考中` bridge in `workspace-clone` chat so completed tool/command steps are followed by visible processing feedback until the final assistant reply starts streaming.
