@@ -212,9 +212,9 @@
   --dc-workspace-warning-text: #9b6b22;
   --dc-workspace-live-running-border: rgba(123, 139, 124, 0.22);
   --dc-workspace-live-running-shadow: 0 0 0 1px rgba(167, 229, 211, 0.18);
-  --dc-workspace-live-sheen: linear-gradient(90deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.1) 16%, rgba(255, 255, 255, 0.18) 34%, rgba(167, 229, 211, 0.18) 50%, rgba(255, 255, 255, 0.18) 66%, rgba(255, 255, 255, 0.1) 84%, rgba(255, 255, 255, 0.04) 100%);
-  --dc-workspace-live-veil: linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, rgba(167, 229, 211, 0.08) 48%, rgba(255, 255, 255, 0.14) 100%);
-  --dc-workspace-live-sheen-duration: 2.4s;
+  --dc-workspace-live-sheen: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.12) 16%, rgba(255, 255, 255, 0.28) 34%, rgba(167, 229, 211, 0.26) 50%, rgba(255, 255, 255, 0.28) 66%, rgba(255, 255, 255, 0.12) 84%, rgba(255, 255, 255, 0) 100%);
+  --dc-workspace-live-veil: linear-gradient(180deg, rgba(255, 255, 255, 0.22) 0%, rgba(167, 229, 211, 0.1) 48%, rgba(255, 255, 255, 0.2) 100%);
+  --dc-workspace-live-sheen-duration: 2s;
   --dc-workspace-live-breathe-duration: 1.2s;
   --dc-workspace-note-surface: rgba(245, 245, 245, 0.9);
   --dc-workspace-note-border: rgba(214, 211, 209, 0.92);

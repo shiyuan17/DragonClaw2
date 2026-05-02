@@ -4370,14 +4370,16 @@
 .workspace-clone__live-step::before {
   content: "";
   position: absolute;
-  inset: 0;
+  inset: -8px;
   border-radius: inherit;
   opacity: 0;
   pointer-events: none;
-  background-size: 220% 100%;
-  background-position: 0% 0%;
-  background: var(--dc-workspace-live-sheen);
-  mix-blend-mode: screen;
+  background-image: var(--dc-workspace-live-sheen);
+  background-repeat: no-repeat;
+  background-size: 185% 100%;
+  background-position: -48% 0%;
+  filter: blur(10px);
+  transform: scale(1.06);
 }
 
 .workspace-clone__live-step::after {
@@ -4387,7 +4389,9 @@
   border-radius: inherit;
   opacity: 0;
   pointer-events: none;
-  background: var(--dc-workspace-live-veil);
+  background-image: var(--dc-workspace-live-veil);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
 }
 
 .workspace-clone__live-step-icon {
@@ -4471,7 +4475,11 @@
 
 .workspace-clone__live-step.is-running {
   border-color: var(--dc-workspace-live-running-border);
-  box-shadow: var(--dc-workspace-shadow-inset), var(--dc-workspace-live-running-shadow);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99) 0%, rgba(250, 249, 247, 0.98) 100%);
+  box-shadow:
+    var(--dc-workspace-shadow-inset),
+    var(--dc-workspace-live-running-shadow),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.42);
 }
 
 .workspace-clone__live-step.is-running::before {
@@ -4529,37 +4537,37 @@
 
 @keyframes workspace-live-step-sheen-drift {
   0% {
-    background-position: -16% 0%;
+    background-position: -64% 0%;
   }
 
   100% {
-    background-position: 116% 0%;
+    background-position: 92% 0%;
   }
 }
 
 @keyframes workspace-live-step-sheen-opacity {
   0%,
   100% {
-    opacity: 0.22;
+    opacity: 0.42;
   }
 
   35% {
-    opacity: 0.34;
+    opacity: 0.68;
   }
 
   65% {
-    opacity: 0.48;
+    opacity: 0.86;
   }
 }
 
 @keyframes workspace-live-step-veil-opacity {
   0%,
   100% {
-    opacity: 0.12;
+    opacity: 0.14;
   }
 
   50% {
-    opacity: 0.24;
+    opacity: 0.32;
   }
 }
 
