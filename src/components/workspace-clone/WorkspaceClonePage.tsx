@@ -270,6 +270,7 @@ export function WorkspaceClonePage({
   const memoryLoadSeqRef = useRef(0);
   const skillLoadSeqRef = useRef(0);
   const toolLoadSeqRef = useRef(0);
+  const showDirectory = activeMenu === "chat";
 
   const refreshSavedProviders = useCallback(async () => {
     const nextProviders = await invoke<SavedProvider[]>("list_saved_providers");
@@ -918,8 +919,9 @@ export function WorkspaceClonePage({
       <main
         className={[
           "workspace-clone",
+          !showDirectory ? "workspace-clone--no-directory" : "",
           isSidebarCollapsed ? "workspace-clone--sidebar-collapsed" : "",
-          isDirectoryCollapsed ? "workspace-clone--directory-collapsed" : "",
+          showDirectory && isDirectoryCollapsed ? "workspace-clone--directory-collapsed" : "",
         ].join(" ").trim()}
       >
         <WorkspaceCloneSidebar
@@ -944,7 +946,7 @@ export function WorkspaceClonePage({
           }}
         />
 
-        {activeMenu === "chat" && (
+        {showDirectory && (
           <WorkspaceCloneDirectory
             typeTabs={WORKSPACE_TYPE_TABS}
             activeType={activeType}
