@@ -10,7 +10,7 @@
 - [ ] 前端所有旧 `logo.jpg` 展示位统一切换到新的 DragonClaw 龙形 logo，并移除默认 Vite favicon 引用
 
 ## Phase 5.10: DragonClaw 主控制界面整页克隆
-- [ ] 默认首页切换到整页克隆工作台，旧 `dashboard` 与 legacy 顶部 Tab 壳继续保留待后续迁移/删除
+- [ ] 默认首页切换到整页克隆工作台，并完成旧 `legacy` 控制台壳层与 `open_console` 的退役收口
 
 ## Phase 5.8: 引导流程静默自动启动
 - [ ] 引导流程在环境/配置就绪后自动启动 OpenClaw 服务，首次无配置时自动落地默认工作区并直通主界面，且不自动打开 OpenClaw 页面
@@ -277,6 +277,7 @@
 - [x] Phase 5.17.2: fix startup white-screen by showing an immediate boot splash and lazy-loading ready-page modules/styles without changing startup business logic.
 - [ ] Phase 5.15.10: remove native Windows titlebar and restore custom titlebar window controls permissions/behavior
 - [ ] 2026-04-30: remove workspace-clone chat header subtitle text under the avatar.
+- [ ] 2026-05-02: retire the legacy console shell, remove all frontend `open_console` entry points, and delete the unused Tauri `open_console` command after regression checks.
 - [x] 2026-04-30: fix weixin QR binding readiness/response normalization regression so installed/enabled plugins skip blocking revalidation and generated `qr_url` renders in the binding modal.
 - [x] 2026-04-30: align workspace-clone weixin QR binding with DragonClaw fallback flow, including CLI login fallback and automatic Agent binding after scan success.
 - [x] 2026-05-01: move the workspace-clone sidebar collapse toggle onto the divider edge between the menu rail and directory rail.
