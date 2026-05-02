@@ -91,7 +91,6 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
     await markOnboardingSkillInstallRequired();
     return await syncWorkspacePath(trimmedWorkspacePath || undefined);
   }, [syncWorkspacePath]);
-
   const finalizeStartup = useCallback(async (force = false) => {
     if ((!force && phaseRef.current !== "launching") || startupFinalizingRef.current) {
       return;
@@ -131,7 +130,7 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
       startupFinalizingRef.current = false;
       setLoading(false);
     }
-  }, [addLog, checkApiKey, clearLaunchFallback, servicePort, setRunning, setSetupPhase]);
+  }, [addLog, checkApiKey, clearLaunchFallback, setRunning, setSetupPhase]);
 
   const launchService = useCallback(async () => {
     if (launchStartedRef.current || startupFinalizingRef.current) {
@@ -236,14 +235,9 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
 
         addLog("success", "[OK] 环境检查通过，所有组件就绪");
         if (serviceRunning) {
-          setRunning(true);
-          setSetupPhase("launching");
-          setProgress(98);
-          setProgressMsg("正在检查首次推荐技能安装...");
-          await finalizeStartup(true);
-        } else {
-          await launchService();
+          addLog("info", "检测到已有 OpenClaw 在后台运行，正在复用现有服务...");
         }
+        await launchService();
         return;
       }
 
@@ -255,7 +249,7 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
       setSetupPhase("initializing");
       await runSetup();
     }
-  }, [addLog, finalizeStartup, launchService, runSetup, setRunning, setSetupPhase, syncWorkspacePath]);
+  }, [addLog, configureWorkspace, launchService, runSetup, setSetupPhase, syncWorkspacePath]);
 
   useEffect(() => {
     finalizeStartupRef.current = finalizeStartup;

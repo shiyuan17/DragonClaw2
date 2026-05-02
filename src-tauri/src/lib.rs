@@ -68,7 +68,8 @@ pub fn run() {
                         "browser" => {
                             // Open the gateway in default browser using actual service port
                             let state = app.state::<service::ServiceState>();
-                            let port = *state.port.lock().unwrap();
+                            let port = service::resolve_known_service_port(state.inner())
+                                .unwrap_or_else(|_| *state.port.lock().unwrap());
                             let token = config::get_current_config()
                                 .ok()
                                 .and_then(|current| current.gateway_token)
@@ -88,13 +89,6 @@ pub fn run() {
                             let _ = app.emit("tray-restart-service", ());
                         }
                         "quit" => {
-                            // Stop the service before exiting
-                            let state = app.state::<service::ServiceState>();
-                            let mut guard = state.child.lock().unwrap();
-                            if let Some(mut child) = guard.take() {
-                                let _ = child.kill();
-                                let _ = child.wait();
-                            }
                             app.exit(0);
                         }
                         _ => {}

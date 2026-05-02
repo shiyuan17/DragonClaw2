@@ -12,6 +12,7 @@ use crate::config;
 use crate::download;
 use crate::environment;
 use crate::installer;
+use crate::openclaw_cli;
 use crate::paths;
 
 const DEFAULT_FREE_MODELS: &[&str] = &[
@@ -232,6 +233,7 @@ pub async fn setup_openclaw(app: tauri::AppHandle) -> Result<String, String> {
     inject_default_config(app.clone(), None)?;
     inject_default_models(app.clone())?;
     install_preset_skills(app.clone())?;
+    let _ = openclaw_cli::ensure_openclaw_cli_available()?;
 
     let _ = app.emit(
         "setup-progress",

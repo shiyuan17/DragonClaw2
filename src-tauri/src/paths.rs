@@ -50,6 +50,11 @@ pub fn openclaw_config_path() -> Result<PathBuf, String> {
     Ok(user_config_dir()?.join("openclaw.json"))
 }
 
+/// Get the path to `~/.openclaw/openclaw-service.json`.
+pub fn openclaw_service_state_path() -> Result<PathBuf, String> {
+    Ok(user_config_dir()?.join("openclaw-service.json"))
+}
+
 /// Resolve the workspace that the official SkillHub installer bootstraps into.
 pub fn skillhub_workspace_dir() -> Result<PathBuf, String> {
     Ok(user_config_dir()?.join("workspace"))
