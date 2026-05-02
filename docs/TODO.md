@@ -287,3 +287,4 @@
 - [x] 2026-05-01: align the primary sidebar menu top edge with the directory search box top edge.
 - [x] 2026-05-02: remove the translucent DragonClaw logo watermark from the bottom of the workspace-clone sidebar rail.
 
+- [ ] Phase 5.15.12: fix the borderless window maximize display so double-click maximize keeps a safe frame inset and no longer clips the custom titlebar or workspace content on Windows.
