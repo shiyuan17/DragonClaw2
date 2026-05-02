@@ -262,6 +262,14 @@ type WorkspaceGatewayAgentEventPayload = {
 
 const LIVE_STEP_LIMIT = 12;
 const POST_TOOL_THINKING_STEP_SUFFIX = "post-tool-thinking";
+const LIVE_STEP_DEDUPE_WINDOW_MS = 1500;
+
+type WorkspaceLiveStepEventSource = "agent" | "session.tool";
+
+interface WorkspaceLiveStepDedupeEntry {
+  source: WorkspaceLiveStepEventSource;
+  timestampMs: number;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object";
@@ -281,6 +289,14 @@ function getPostToolThinkingStepId(runId: string) {
 
 function isTerminalLiveStepStatus(status: WorkspaceLiveStepStatus) {
   return status === "success" || status === "error" || status === "aborted";
+}
+
+function extractLiveStepStableId(data: Record<string, unknown>) {
+  return firstNonEmptyString(data.itemId, data.toolCallId, data.tool_call_id, data.id);
+}
+
+function normalizeLiveStepSignaturePart(value: string | undefined) {
+  return value?.trim().toLowerCase().replace(/\s+/g, " ") ?? "";
 }
 
 function truncateInlineText(value: string, maxLength = 120) {
@@ -394,7 +410,7 @@ function buildLiveStepTitle(params: {
 }) {
   const { kind, data } = params;
   if (kind === "thinking") {
-    return firstNonEmptyString(data.title, data.message, data.summary, "正在分析");
+    return firstNonEmptyString(data.title, data.message, data.summary, "思考中");
   }
   if (kind === "skill") {
     return firstNonEmptyString(data.name, data.skillName, data.title, "技能");
@@ -535,6 +551,29 @@ function buildPostToolThinkingStep(runId: string, timestamp?: number | null): Wo
   };
 }
 
+function buildLiveStepDedupeKey(params: {
+  step: WorkspaceLiveStep;
+  payload: WorkspaceGatewayAgentEventPayload;
+  runId: string;
+}) {
+  const { step, payload, runId } = params;
+  const data = isRecord(payload.data) ? payload.data : {};
+  const stableId = extractLiveStepStableId(data);
+  if (stableId) {
+    return `stable:${normalizeLiveStepSignaturePart(stableId)}`;
+  }
+
+  const sessionScope = toStringValue(payload.sessionKey) || runId;
+  return [
+    "mirror",
+    step.kind,
+    normalizeLiveStepSignaturePart(step.title),
+    normalizeLiveStepSignaturePart(step.detail),
+    step.status,
+    normalizeLiveStepSignaturePart(sessionScope),
+  ].join(":");
+}
+
 const MISSING_GATEWAY_TOKEN_ERROR = "本地网关 token 缺失或未同步，请检查 ~/.openclaw/openclaw.json，或重新保存 Provider 配置后再试。";
 
 export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: UseWorkspaceGatewayChatOptions) {
@@ -542,6 +581,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
   const currentSessionKeyRef = useRef("");
   const currentRunIdRef = useRef<string | null>(null);
   const activeRunAliasesRef = useRef<Set<string>>(new Set());
+  const liveStepDedupeRef = useRef<Map<string, WorkspaceLiveStepDedupeEntry>>(new Map());
   const hasObservedNonThinkingStepRef = useRef(false);
   const hasAssistantTextDeltaRef = useRef(false);
 
@@ -621,6 +661,52 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     setLiveSteps((current) => current.filter((step) => step.id !== bridgeStepId));
   }, []);
 
+  const shouldSkipMirroredLiveStep = useCallback(
+    (params: {
+      step: WorkspaceLiveStep;
+      payload: WorkspaceGatewayAgentEventPayload;
+      source: WorkspaceLiveStepEventSource;
+      runId: string;
+      timestampMs: number;
+    }) => {
+      if (params.step.kind === "thinking") {
+        return false;
+      }
+
+      const data = isRecord(params.payload.data) ? params.payload.data : {};
+      const stableId = extractLiveStepStableId(data);
+      if (stableId) {
+        liveStepDedupeRef.current.set(`stable:${normalizeLiveStepSignaturePart(stableId)}`, {
+          source: params.source,
+          timestampMs: params.timestampMs,
+        });
+        return false;
+      }
+
+      const dedupeKey = buildLiveStepDedupeKey({
+        step: params.step,
+        payload: params.payload,
+        runId: params.runId,
+      });
+      const previous = liveStepDedupeRef.current.get(dedupeKey);
+
+      if (
+        previous &&
+        previous.source !== params.source &&
+        Math.abs(params.timestampMs - previous.timestampMs) <= LIVE_STEP_DEDUPE_WINDOW_MS
+      ) {
+        return true;
+      }
+
+      liveStepDedupeRef.current.set(dedupeKey, {
+        source: params.source,
+        timestampMs: params.timestampMs,
+      });
+      return false;
+    },
+    [],
+  );
+
   const finishLiveSteps = useCallback((status: WorkspaceLiveStepStatus) => {
     setLiveSteps((current) =>
       current.map((step) =>
@@ -642,6 +728,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
   const clearActiveRunRefs = useCallback(() => {
     currentRunIdRef.current = null;
     activeRunAliasesRef.current.clear();
+    liveStepDedupeRef.current.clear();
     hasObservedNonThinkingStepRef.current = false;
     hasAssistantTextDeltaRef.current = false;
   }, []);
@@ -747,6 +834,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     (event: { event: string; payload?: unknown }) => {
       if ((event.event === "agent" || event.event === "session.tool") && isRecord(event.payload)) {
         const payload = event.payload as WorkspaceGatewayAgentEventPayload;
+        const eventSource = event.event as WorkspaceLiveStepEventSource;
         const payloadSessionKey = toStringValue(payload.sessionKey);
         const payloadRunId = toStringValue(payload.runId);
         const currentRunId = currentRunIdRef.current;
@@ -770,14 +858,28 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
 
         const step = buildLiveStepFromAgentEvent(payload, payloadRunId || currentRunId || "run");
         if (step) {
+          const timestampMs = toFiniteTimestamp(payload.ts) ?? Date.now();
+          const dedupeRunId = currentRunId || payloadRunId || "run";
+          if (
+            shouldSkipMirroredLiveStep({
+              step,
+              payload,
+              source: eventSource,
+              runId: dedupeRunId,
+              timestampMs,
+            })
+          ) {
+            return;
+          }
+
           if (step.kind !== "thinking") {
             hasObservedNonThinkingStepRef.current = true;
           }
 
           applyLiveStep(step, {
             insertPostToolThinking: step.kind !== "thinking" && isTerminalLiveStepStatus(step.status),
-            bridgeRunId: currentRunId || payloadRunId || "run",
-            bridgeTimestamp: toFiniteTimestamp(payload.ts),
+            bridgeRunId: dedupeRunId,
+            bridgeTimestamp: timestampMs,
           });
         }
         return;
@@ -840,7 +942,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
         void loadHistory(currentSessionKeyRef.current);
       }
     },
-    [applyLiveStep, clearActiveRunRefs, finishLiveSteps, isKnownActiveRunId, loadHistory, loadSessions, removeTransientThinkingBridge],
+    [applyLiveStep, clearActiveRunRefs, finishLiveSteps, isKnownActiveRunId, loadHistory, loadSessions, removeTransientThinkingBridge, shouldSkipMirroredLiveStep],
   );
 
   useEffect(() => {
@@ -928,6 +1030,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       const runId = crypto.randomUUID();
       currentRunIdRef.current = runId;
       activeRunAliasesRef.current = new Set([runId]);
+      liveStepDedupeRef.current.clear();
       hasObservedNonThinkingStepRef.current = false;
       hasAssistantTextDeltaRef.current = false;
 

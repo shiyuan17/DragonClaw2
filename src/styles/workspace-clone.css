@@ -4357,6 +4357,25 @@
   border-radius: 14px;
   background: var(--dc-workspace-panel-elevated);
   box-shadow: var(--dc-workspace-shadow-inset);
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.workspace-clone__live-step > * {
+  position: relative;
+  z-index: 1;
+}
+
+.workspace-clone__live-step::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-140%);
+  background: var(--dc-workspace-live-sheen);
 }
 
 .workspace-clone__live-step-icon {
@@ -4427,15 +4446,25 @@
   height: 8px;
   border-radius: 999px;
   background: var(--dc-workspace-warning-text);
-  box-shadow: 0 0 0 4px var(--dc-workspace-warning-surface);
+  box-shadow: 0 0 0 3px var(--dc-workspace-warning-surface);
 }
 
 .workspace-clone__live-step.is-running .workspace-clone__live-step-icon {
-  animation: workspace-live-step-pulse var(--dc-motion-duration-slow) var(--dc-motion-ease-standard) infinite alternate;
+  animation: workspace-live-step-breathe var(--dc-workspace-live-breathe-duration) var(--dc-motion-ease-standard) infinite alternate;
 }
 
 .workspace-clone__live-step.is-running .workspace-clone__live-step-pulse {
-  animation: workspace-live-step-pulse var(--dc-motion-duration-slow) var(--dc-motion-ease-standard) infinite alternate;
+  animation: workspace-live-step-breathe var(--dc-workspace-live-breathe-duration) var(--dc-motion-ease-standard) infinite alternate;
+}
+
+.workspace-clone__live-step.is-running {
+  border-color: var(--dc-workspace-live-running-border);
+  box-shadow: var(--dc-workspace-shadow-inset), var(--dc-workspace-live-running-shadow);
+}
+
+.workspace-clone__live-step.is-running::before {
+  opacity: 1;
+  animation: workspace-live-step-sheen var(--dc-workspace-live-sheen-duration) linear infinite;
 }
 
 .workspace-clone__live-step.is-success .workspace-clone__live-step-status {
@@ -4466,6 +4495,45 @@
   to {
     opacity: 1;
     transform: scale(1);
+  }
+}
+
+@keyframes workspace-live-step-breathe {
+  from {
+    opacity: 0.82;
+    transform: scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1.015);
+  }
+}
+
+@keyframes workspace-live-step-sheen {
+  0% {
+    transform: translateX(-140%);
+  }
+
+  15% {
+    opacity: 0;
+  }
+
+  28% {
+    opacity: 1;
+  }
+
+  60% {
+    opacity: 1;
+  }
+
+  78% {
+    opacity: 0;
+  }
+
+  100% {
+    transform: translateX(140%);
+    opacity: 0;
   }
 }
 
