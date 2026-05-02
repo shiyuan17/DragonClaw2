@@ -1,43 +1,45 @@
-/* Copyright (C) 2026 shiyuan — GPL-3.0-only */
+/* Copyright (C) 2026 shiyuan - GPL-3.0-only */
 /* ===== Startup Overlay ===== */
 .startup-overlay {
-    position: fixed;
-    inset: var(--dc-window-titlebar-height) 0 0 0;
-    z-index: 999;
-    background: rgba(0, 0, 0, 0.85);
-    backdrop-filter: blur(12px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  position: fixed;
+  inset: var(--dc-window-titlebar-height) 0 0 0;
+  z-index: 999;
+  background:
+    radial-gradient(circle at 18% 18%, var(--dc-page-orb-mint), transparent 26%),
+    radial-gradient(circle at 82% 14%, var(--dc-page-orb-peach), transparent 24%),
+    var(--dc-component-overlay-surface);
+  backdrop-filter: blur(16px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .startup-overlay-content {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
 }
 
 .startup-overlay-logo {
-    width: 64px;
-    height: 64px;
-    border-radius: 50%;
-    object-fit: cover;
-    box-shadow: 0 0 30px rgba(255, 255, 255, 0.1);
+  width: 68px;
+  height: 68px;
+  border-radius: var(--dc-radius-full);
+  object-fit: cover;
+  box-shadow: var(--dc-shadow-card);
 }
 
 .startup-overlay-spinner {
-    color: var(--text-secondary);
-    animation: spin 1.2s linear infinite;
+  color: var(--dc-color-muted);
+  animation: spin 1.2s linear infinite;
 }
 
 .startup-overlay-text {
-    font-size: 15px;
-    font-weight: 600;
-    color: var(--text-primary);
+  color: var(--dc-color-ink);
+  font: 500 15px/1.4 var(--dc-font-body);
 }
 
 .startup-overlay-hint {
-    font-size: 12px;
-    color: var(--text-muted);
+  color: var(--dc-color-body);
+  font: 400 12px/1.5 var(--dc-font-caption);
 }

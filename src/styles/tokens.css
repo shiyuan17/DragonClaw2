@@ -1,0 +1,259 @@
+/* Copyright (C) 2026 shiyuan - GPL-3.0-only */
+/* ===== ElevenLabs Design Tokens ===== */
+:root {
+  color-scheme: light;
+
+  /* Core color system */
+  --dc-color-canvas: #f5f5f5;
+  --dc-color-canvas-soft: #fafafa;
+  --dc-color-canvas-deep: #0c0a09;
+  --dc-color-surface: #ffffff;
+  --dc-color-surface-strong: #f0efed;
+  --dc-color-surface-dark: #0c0a09;
+  --dc-color-surface-dark-elevated: #1c1917;
+  --dc-color-ink: #0c0a09;
+  --dc-color-body-strong: #292524;
+  --dc-color-body: #4e4e4e;
+  --dc-color-muted: #777169;
+  --dc-color-muted-soft: #a8a29e;
+  --dc-color-hairline: #e7e5e4;
+  --dc-color-hairline-soft: #f0efed;
+  --dc-color-hairline-strong: #d6d3d1;
+  --dc-color-on-primary: #ffffff;
+  --dc-color-on-dark: #ffffff;
+  --dc-color-on-dark-soft: #a8a29e;
+  --dc-color-gradient-mint: #a7e5d3;
+  --dc-color-gradient-peach: #f4c5a8;
+  --dc-color-gradient-lavender: #c8b8e0;
+  --dc-color-gradient-sky: #a8c8e8;
+  --dc-color-gradient-rose: #e8b8c4;
+  --dc-color-success: #16a34a;
+  --dc-color-error: #dc2626;
+  --dc-color-warning: #d97706;
+  --dc-color-accent-slate: #6b7280;
+
+  /* Typography */
+  --dc-font-display: "Waldenburg", "Times New Roman", serif;
+  --dc-font-title: "Inter", sans-serif;
+  --dc-font-body: "Inter", sans-serif;
+  --dc-font-nav: "Inter", sans-serif;
+  --dc-font-button: "Inter", sans-serif;
+  --dc-font-caption: "Inter", sans-serif;
+  --dc-font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+
+  /* Radius */
+  --dc-radius-none: 0;
+  --dc-radius-xs: 4px;
+  --dc-radius-sm: 6px;
+  --dc-radius-md: 8px;
+  --dc-radius-lg: 12px;
+  --dc-radius-xl: 16px;
+  --dc-radius-xxl: 24px;
+  --dc-radius-pill: 9999px;
+  --dc-radius-full: 9999px;
+
+  /* Spacing */
+  --dc-space-xxs: 4px;
+  --dc-space-xs: 8px;
+  --dc-space-sm: 12px;
+  --dc-space-base: 16px;
+  --dc-space-md: 20px;
+  --dc-space-lg: 24px;
+  --dc-space-xl: 32px;
+  --dc-space-xxl: 48px;
+  --dc-space-section: 96px;
+
+  /* Shadows */
+  --dc-shadow-hairline: 0 1px 0 rgba(12, 10, 9, 0.04);
+  --dc-shadow-card-soft: 0 6px 18px rgba(12, 10, 9, 0.04);
+  --dc-shadow-card: 0 10px 28px rgba(12, 10, 9, 0.08);
+  --dc-shadow-elevated: 0 18px 48px rgba(12, 10, 9, 0.12);
+  --dc-shadow-modal: 0 24px 72px rgba(12, 10, 9, 0.2);
+  --dc-shadow-focus: 0 0 0 3px rgba(12, 10, 9, 0.12);
+
+  /* Motion */
+  --dc-motion-duration-fast: 140ms;
+  --dc-motion-duration-standard: 220ms;
+  --dc-motion-duration-slow: 320ms;
+  --dc-motion-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --dc-motion-ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Component tokens */
+  --dc-window-titlebar-height: 45px;
+  --dc-component-top-nav-height: 64px;
+  --dc-component-button-height: 40px;
+  --dc-component-button-padding-inline: 20px;
+  --dc-component-button-padding-inline-compact: 14px;
+  --dc-component-input-height: 44px;
+  --dc-component-input-padding-inline: 16px;
+  --dc-component-modal-max-width: 540px;
+  --dc-component-modal-max-width-wide: 620px;
+  --dc-component-button-primary-bg: var(--dc-color-body-strong);
+  --dc-component-button-primary-bg-hover: var(--dc-color-ink);
+  --dc-component-button-primary-fg: var(--dc-color-on-dark);
+  --dc-component-button-primary-border: var(--dc-color-body-strong);
+  --dc-component-button-outline-bg: transparent;
+  --dc-component-button-outline-fg: var(--dc-color-ink);
+  --dc-component-button-outline-border: var(--dc-color-hairline-strong);
+  --dc-component-button-ghost-fg: var(--dc-color-muted);
+  --dc-component-button-ghost-fg-hover: var(--dc-color-ink);
+  --dc-component-surface: var(--dc-color-surface);
+  --dc-component-surface-soft: var(--dc-color-surface-strong);
+  --dc-component-surface-dark: var(--dc-color-surface-dark);
+  --dc-component-surface-hover-subtle: rgba(12, 10, 9, 0.03);
+  --dc-component-surface-hover-soft: rgba(12, 10, 9, 0.04);
+  --dc-component-backdrop: rgba(12, 10, 9, 0.72);
+  --dc-component-modal-surface: rgba(255, 255, 255, 0.94);
+  --dc-component-header-bg: linear-gradient(180deg, rgba(251, 250, 248, 0.98) 0%, rgba(245, 245, 245, 0.98) 100%);
+  --dc-component-header-topline: rgba(255, 255, 255, 0.88);
+  --dc-component-header-logo-surface: rgba(255, 255, 255, 0.86);
+  --dc-component-header-window-surface: rgba(255, 255, 255, 0.86);
+  --dc-component-window-close: #d6655f;
+  --dc-component-window-minimize: #d8a548;
+  --dc-component-window-maximize: #4a9f71;
+  --dc-component-window-glyph: rgba(12, 10, 9, 0.68);
+  --dc-component-window-hover-surface: rgba(12, 10, 9, 0.05);
+  --dc-component-window-hover-danger-surface: rgba(220, 38, 38, 0.1);
+  --dc-component-startup-bg: linear-gradient(180deg, rgba(250, 249, 247, 0.98) 0%, rgba(245, 245, 245, 0.98) 100%);
+  --dc-component-startup-orb-mint: rgba(167, 229, 211, 0.88);
+  --dc-component-startup-orb-peach: rgba(244, 197, 168, 0.82);
+  --dc-component-startup-orb-lavender: rgba(200, 184, 224, 0.8);
+  --dc-component-startup-orb-sky: rgba(168, 200, 232, 0.78);
+  --dc-component-startup-orb-rose: rgba(232, 184, 196, 0.78);
+  --dc-component-startup-logo-filter: drop-shadow(0 14px 22px rgba(12, 10, 9, 0.08));
+  --dc-component-startup-track: rgba(255, 255, 255, 0.76);
+  --dc-component-startup-track-border: rgba(214, 211, 208, 0.92);
+  --dc-component-startup-track-fill: linear-gradient(90deg, rgba(123, 139, 124, 0.9), rgba(176, 201, 233, 0.95));
+  --dc-component-startup-track-topline: rgba(255, 255, 255, 0.64);
+  --dc-component-startup-fill-outline: rgba(255, 255, 255, 0.28);
+  --dc-component-startup-fill-shadow: rgba(12, 10, 9, 0.12);
+  --dc-component-startup-shimmer: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.44) 50%, transparent 100%);
+  --dc-component-startup-inline-surface: rgba(255, 255, 255, 0.86);
+  --dc-component-startup-panel-surface: rgba(255, 255, 255, 0.74);
+  --dc-component-startup-panel-topline: rgba(255, 255, 255, 0.7);
+  --dc-component-startup-path-surface: rgba(250, 250, 250, 0.9);
+  --dc-component-startup-secondary-surface: rgba(255, 255, 255, 0.88);
+  --dc-component-startup-error-surface: rgba(220, 38, 38, 0.05);
+  --dc-component-startup-error-border: rgba(220, 38, 38, 0.14);
+  --dc-component-overlay-surface: rgba(245, 245, 245, 0.82);
+  --dc-page-orb-mint: rgba(167, 229, 211, 0.18);
+  --dc-page-orb-peach: rgba(244, 197, 168, 0.16);
+  --dc-page-orb-lavender: rgba(200, 184, 224, 0.14);
+  --dc-app-orb-mint: rgba(167, 229, 211, 0.12);
+  --dc-app-orb-peach: rgba(244, 197, 168, 0.1);
+  --dc-app-shell-bg: linear-gradient(180deg, rgba(250, 249, 247, 0.98) 0%, rgba(245, 245, 245, 0.98) 100%);
+  --dc-scrollbar-thumb: rgba(168, 162, 158, 0.65);
+  --dc-scrollbar-thumb-hover: rgba(119, 113, 105, 0.78);
+  --dc-selection-surface: rgba(12, 10, 9, 0.12);
+
+  /* Workspace-clone tokens */
+  --dc-workspace-shell-bg: linear-gradient(180deg, rgba(250, 249, 247, 0.98) 0%, rgba(245, 245, 245, 0.98) 100%);
+  --dc-workspace-shell-orb-a: rgba(167, 229, 211, 0.18);
+  --dc-workspace-shell-orb-b: rgba(244, 197, 168, 0.14);
+  --dc-workspace-shell-orb-c: rgba(200, 184, 224, 0.12);
+  --dc-workspace-panel: rgba(255, 255, 255, 0.94);
+  --dc-workspace-panel-soft: rgba(250, 249, 247, 0.94);
+  --dc-workspace-panel-muted: rgba(245, 245, 245, 0.92);
+  --dc-workspace-panel-strong: rgba(240, 239, 237, 0.96);
+  --dc-workspace-panel-elevated: rgba(255, 255, 255, 0.98);
+  --dc-workspace-panel-glass: rgba(255, 255, 255, 0.78);
+  --dc-workspace-panel-glass-strong: rgba(255, 255, 255, 0.9);
+  --dc-workspace-panel-inverse: linear-gradient(135deg, #292524 0%, #0c0a09 100%);
+  --dc-workspace-line: rgba(214, 211, 209, 0.88);
+  --dc-workspace-line-strong: rgba(168, 162, 158, 0.5);
+  --dc-workspace-line-soft: rgba(231, 229, 228, 0.92);
+  --dc-workspace-ink: var(--dc-color-ink);
+  --dc-workspace-ink-soft: var(--dc-color-body-strong);
+  --dc-workspace-muted: var(--dc-color-body);
+  --dc-workspace-faint: var(--dc-color-muted);
+  --dc-workspace-accent: #7b8b7c;
+  --dc-workspace-accent-strong: #5f725f;
+  --dc-workspace-accent-soft: rgba(167, 229, 211, 0.24);
+  --dc-workspace-accent-surface: linear-gradient(135deg, rgba(167, 229, 211, 0.24) 0%, rgba(200, 184, 224, 0.2) 100%);
+  --dc-workspace-accent-orb: linear-gradient(135deg, rgba(167, 229, 211, 0.42) 0%, rgba(244, 197, 168, 0.38) 48%, rgba(200, 184, 224, 0.34) 100%);
+  --dc-workspace-selected-surface: linear-gradient(180deg, rgba(167, 229, 211, 0.26) 0%, rgba(255, 255, 255, 0.98) 100%);
+  --dc-workspace-selected-surface-strong: linear-gradient(180deg, rgba(167, 229, 211, 0.32) 0%, rgba(250, 249, 247, 0.98) 100%);
+  --dc-workspace-selected-border: rgba(123, 139, 124, 0.28);
+  --dc-workspace-action-bg: linear-gradient(135deg, #292524 0%, #5f725f 100%);
+  --dc-workspace-action-bg-hover: linear-gradient(135deg, #0c0a09 0%, #4e6450 100%);
+  --dc-workspace-hover-bg: linear-gradient(180deg, rgba(250, 249, 247, 0.98) 0%, rgba(245, 245, 245, 0.98) 100%);
+  --dc-workspace-hover-bg-soft: rgba(245, 245, 245, 0.96);
+  --dc-workspace-hover-border: rgba(168, 162, 158, 0.52);
+  --dc-workspace-hover-border-strong: rgba(119, 113, 105, 0.6);
+  --dc-workspace-hover-text: var(--dc-color-ink);
+  --dc-workspace-focus-ring: 0 0 0 3px rgba(12, 10, 9, 0.1);
+  --dc-workspace-shadow: 0 12px 30px rgba(12, 10, 9, 0.08);
+  --dc-workspace-shadow-soft: 0 8px 18px rgba(12, 10, 9, 0.06);
+  --dc-workspace-shadow-strong: 0 18px 38px rgba(12, 10, 9, 0.14);
+  --dc-workspace-selected-shadow: 0 10px 22px rgba(12, 10, 9, 0.1);
+  --dc-workspace-selected-shadow-soft: 0 8px 18px rgba(12, 10, 9, 0.08);
+  --dc-workspace-shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --dc-workspace-shadow-inline: 0 6px 16px rgba(12, 10, 9, 0.08);
+  --dc-workspace-rail-card-shadow: 0 10px 24px rgba(12, 10, 9, 0.08);
+  --dc-workspace-sidebar-collapsed-width: 68px;
+  --dc-workspace-directory-collapsed-width: 78px;
+  --dc-workspace-status-online: #4a9f71;
+  --dc-workspace-status-busy: #b38a3d;
+  --dc-workspace-status-offline: #b65e5e;
+  --dc-workspace-danger-surface: rgba(220, 38, 38, 0.06);
+  --dc-workspace-danger-surface-strong: rgba(220, 38, 38, 0.1);
+  --dc-workspace-danger-border: rgba(220, 38, 38, 0.16);
+  --dc-workspace-danger-text: #b65e5e;
+  --dc-workspace-success-surface: rgba(22, 163, 74, 0.08);
+  --dc-workspace-success-border: rgba(22, 163, 74, 0.18);
+  --dc-workspace-success-text: #2f7d56;
+  --dc-workspace-warning-surface: rgba(217, 119, 6, 0.08);
+  --dc-workspace-warning-border: rgba(217, 119, 6, 0.18);
+  --dc-workspace-warning-text: #9b6b22;
+  --dc-workspace-note-surface: rgba(245, 245, 245, 0.9);
+  --dc-workspace-note-border: rgba(214, 211, 209, 0.92);
+  --dc-workspace-note-text: #6b7280;
+  --dc-workspace-overlay-surface: rgba(255, 255, 255, 0.98);
+  --dc-workspace-overlay-surface-soft: rgba(250, 249, 247, 0.98);
+  --dc-workspace-overlay-header: linear-gradient(180deg, rgba(252, 251, 249, 0.98), rgba(245, 245, 245, 0.94));
+  --dc-workspace-chip-surface: rgba(240, 239, 237, 0.9);
+  --dc-workspace-chip-text: var(--dc-color-body-strong);
+  --dc-workspace-chip-border: rgba(214, 211, 209, 0.92);
+  --dc-workspace-input-surface: rgba(255, 255, 255, 0.98);
+  --dc-workspace-input-surface-soft: rgba(250, 249, 247, 0.98);
+  --dc-workspace-input-placeholder: var(--dc-color-muted);
+  --dc-workspace-badge-surface: rgba(12, 10, 9, 0.06);
+  --dc-workspace-badge-text: var(--dc-color-body-strong);
+  --dc-workspace-avatar-surface: linear-gradient(180deg, rgba(244, 197, 168, 0.28) 0%, rgba(255, 255, 255, 0.98) 100%);
+  --dc-workspace-avatar-border: rgba(244, 197, 168, 0.52);
+  --dc-workspace-avatar-text: #b87723;
+  --dc-workspace-icon-surface: linear-gradient(180deg, rgba(250, 249, 247, 0.98) 0%, rgba(240, 239, 237, 0.98) 100%);
+  --dc-workspace-icon-text: #6b7280;
+  --dc-workspace-hero-surface: radial-gradient(circle at top, rgba(167, 229, 211, 0.18), rgba(244, 197, 168, 0.16) 42%, rgba(255, 255, 255, 0.98) 100%);
+  --dc-workspace-utility-backdrop: linear-gradient(180deg, rgba(250, 249, 247, 0) 0%, rgba(250, 249, 247, 0.82) 36%, rgba(250, 249, 247, 0.98) 100%);
+
+  /* Legacy aliases kept as compatibility shims while the rest of the app migrates */
+  --bg-primary: var(--dc-color-canvas);
+  --bg-secondary: var(--dc-color-canvas-soft);
+  --bg-card: var(--dc-color-surface);
+  --bg-card-hover: var(--dc-color-surface-strong);
+  --bg-input: var(--dc-color-surface);
+  --bg-darker: var(--dc-color-canvas-deep);
+
+  --text-primary: var(--dc-color-ink);
+  --text-secondary: var(--dc-color-body);
+  --text-muted: var(--dc-color-muted);
+
+  --accent-active: rgba(12, 10, 9, 0.06);
+  --accent-active-border: rgba(12, 10, 9, 0.14);
+  --accent-success: var(--dc-color-success);
+  --accent-red: var(--dc-color-error);
+  --accent-yellow: var(--dc-color-warning);
+  --accent-purple: #9b7cc3;
+  --accent-cyan: #5a9bbd;
+  --accent-blue: var(--dc-color-accent-slate);
+  --accent-danger: var(--dc-color-error);
+
+  --border-subtle: var(--dc-color-hairline);
+  --border-active: var(--dc-color-hairline-strong);
+  --border: var(--dc-color-hairline);
+
+  --radius: var(--dc-radius-xl);
+  --radius-sm: var(--dc-radius-sm);
+  --window-titlebar-height: var(--dc-window-titlebar-height);
+}

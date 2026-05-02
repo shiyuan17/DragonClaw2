@@ -2,6 +2,7 @@
 /* ===== DragonClaw — CSS Entry Point ===== */
 /* Each component's styles are in src/styles/ for isolated editing */
 
+@import "./styles/tokens.css";
 @import "./styles/global.css";
 @import "./styles/animations.css";
 @import "./styles/header.css";

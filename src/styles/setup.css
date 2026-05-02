@@ -12,10 +12,10 @@
   padding: 36px 24px;
   overflow: hidden;
   background:
-    radial-gradient(circle at 50% 24%, rgba(229, 240, 255, 0.92), transparent 32%),
-    radial-gradient(circle at 22% 18%, rgba(215, 233, 255, 0.9), transparent 34%),
-    radial-gradient(circle at 82% 72%, rgba(220, 238, 255, 0.78), transparent 28%),
-    linear-gradient(180deg, #f9fbff 0%, #eef5ff 100%);
+    radial-gradient(circle at 50% 24%, var(--dc-component-startup-orb-sky), transparent 32%),
+    radial-gradient(circle at 22% 18%, var(--dc-component-startup-orb-mint), transparent 34%),
+    radial-gradient(circle at 82% 72%, var(--dc-component-startup-orb-lavender), transparent 28%),
+    var(--dc-component-startup-bg);
 }
 
 .startup-container::before,
@@ -35,7 +35,7 @@
   left: 10%;
   width: min(42vw, 560px);
   height: min(26vw, 320px);
-  background: radial-gradient(circle, rgba(210, 228, 255, 0.82) 0%, rgba(210, 228, 255, 0) 72%);
+  background: radial-gradient(circle, var(--dc-component-startup-orb-peach) 0%, transparent 72%);
   animation: startup-cloud-drift-left 11s ease-in-out infinite alternate;
 }
 
@@ -44,7 +44,7 @@
   bottom: 8%;
   width: min(38vw, 520px);
   height: min(24vw, 300px);
-  background: radial-gradient(circle, rgba(226, 239, 255, 0.78) 0%, rgba(226, 239, 255, 0) 74%);
+  background: radial-gradient(circle, var(--dc-component-startup-orb-rose) 0%, transparent 74%);
   animation: startup-cloud-drift-right 14s ease-in-out infinite alternate;
 }
 
@@ -63,27 +63,27 @@
   width: clamp(104px, 12vw, 126px);
   height: auto;
   object-fit: contain;
-  filter: drop-shadow(0 14px 22px rgba(225, 88, 88, 0.12));
+  filter: var(--dc-component-startup-logo-filter);
 }
 
 .startup-title {
   max-width: none;
-  font-size: clamp(22px, 2.35vw, 30px);
-  line-height: 1.12;
-  font-weight: 680;
-  letter-spacing: -0.03em;
-  color: #214f8d;
-  white-space: nowrap;
   margin-top: -10px;
+  color: var(--dc-color-ink);
+  font-family: var(--dc-font-display);
+  font-size: clamp(24px, 2.55vw, 34px);
+  font-weight: 300;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  white-space: nowrap;
 }
 
 .startup-description {
   max-width: none;
   margin-top: 2px;
-  font-size: 12.5px;
-  line-height: 1.45;
+  color: var(--dc-color-body);
+  font: 400 13px/1.5 var(--dc-font-body);
   white-space: nowrap;
-  color: rgba(78, 116, 167, 0.88);
   min-height: 0;
 }
 
@@ -100,12 +100,12 @@
   width: 100%;
   height: 10px;
   padding: 1px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(176, 201, 233, 0.56);
+  border-radius: var(--dc-radius-pill);
+  background: var(--dc-component-startup-track);
+  border: 1px solid var(--dc-component-startup-track-border);
   box-shadow:
-    inset 0 1px 1px rgba(255, 255, 255, 0.65),
-    0 12px 32px rgba(190, 213, 240, 0.18);
+    inset 0 1px 1px var(--dc-component-startup-track-topline),
+    var(--dc-shadow-card-soft);
 }
 
 .startup-progress-fill {
@@ -113,10 +113,10 @@
   height: 100%;
   min-width: 10px;
   border-radius: inherit;
-  background: linear-gradient(90deg, rgba(111, 160, 225, 0.86), rgba(191, 224, 255, 0.96));
+  background: var(--dc-component-startup-track-fill);
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.28),
-    0 8px 18px rgba(133, 179, 231, 0.28);
+    0 0 0 1px var(--dc-component-startup-fill-outline),
+    0 8px 18px var(--dc-component-startup-fill-shadow);
   overflow: hidden;
 }
 
@@ -125,42 +125,41 @@
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.44) 50%, transparent 100%);
+  background: var(--dc-component-startup-shimmer);
   background-size: 180% 100%;
   animation: startup-progress-shimmer 2.4s linear infinite;
 }
 
 .startup-percent {
-  font-family: "JetBrains Mono", monospace;
+  color: var(--dc-color-muted);
+  font-family: var(--dc-font-mono);
   font-size: 12px;
   letter-spacing: 0.08em;
-  color: rgba(97, 132, 177, 0.76);
 }
 
 .startup-version {
   position: absolute;
   right: 22px;
   bottom: 16px;
-  font-family: "JetBrains Mono", monospace;
+  color: var(--dc-color-muted);
+  font-family: var(--dc-font-mono);
   font-size: 12px;
   letter-spacing: 0.08em;
-  color: rgba(112, 142, 181, 0.72);
   z-index: 1;
 }
 
 .startup-inline-action,
 .startup-btn {
-  border: none;
-  border-radius: 999px;
+  border-radius: var(--dc-radius-pill);
   font: inherit;
   cursor: pointer;
   transition:
-    transform 160ms ease,
-    box-shadow 160ms ease,
-    background-color 160ms ease,
-    border-color 160ms ease,
-    color 160ms ease,
-    opacity 160ms ease;
+    transform var(--dc-motion-duration-fast) var(--dc-motion-ease-standard),
+    box-shadow var(--dc-motion-duration-fast) var(--dc-motion-ease-standard),
+    background-color var(--dc-motion-duration-fast) var(--dc-motion-ease-standard),
+    border-color var(--dc-motion-duration-fast) var(--dc-motion-ease-standard),
+    color var(--dc-motion-duration-fast) var(--dc-motion-ease-standard),
+    opacity var(--dc-motion-duration-fast) var(--dc-motion-ease-standard);
 }
 
 .startup-inline-action:hover,
@@ -178,10 +177,10 @@
 .startup-inline-action {
   margin-top: 6px;
   padding: 10px 18px;
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(182, 204, 231, 0.8);
-  color: #2c5d9d;
-  box-shadow: 0 10px 26px rgba(195, 214, 239, 0.2);
+  background: var(--dc-component-startup-inline-surface);
+  border: 1px solid var(--dc-color-hairline-strong);
+  color: var(--dc-color-ink);
+  box-shadow: var(--dc-shadow-card-soft);
 }
 
 .startup-workspace-panel {
@@ -191,32 +190,32 @@
   gap: 10px;
   margin-top: 6px;
   padding: 18px 20px;
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.6);
-  border: 1px solid rgba(184, 206, 232, 0.72);
+  border-radius: var(--dc-radius-xxl);
+  background: var(--dc-component-startup-panel-surface);
+  border: 1px solid var(--dc-color-hairline);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.7),
-    0 18px 40px rgba(201, 218, 240, 0.18);
+    inset 0 1px 0 var(--dc-component-startup-panel-topline),
+    var(--dc-shadow-card);
 }
 
 .startup-workspace-label {
+  color: var(--dc-color-muted);
   font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(99, 130, 169, 0.84);
 }
 
 .workspace-path {
   width: 100%;
   overflow-wrap: anywhere;
-  font-family: "JetBrains Mono", monospace;
+  color: var(--dc-color-body-strong);
+  font-family: var(--dc-font-mono);
   font-size: 13px;
   line-height: 1.7;
   padding: 14px 16px;
   border-radius: 18px;
-  background: rgba(248, 252, 255, 0.88);
-  border: 1px solid rgba(199, 218, 241, 0.82);
-  color: #38629a;
+  background: var(--dc-component-startup-path-surface);
+  border: 1px solid var(--dc-color-hairline);
 }
 
 .startup-actions {
@@ -233,20 +232,22 @@
   justify-content: center;
   gap: 8px;
   min-width: 156px;
+  border: 1px solid transparent;
   padding: 13px 22px;
 }
 
 .startup-btn--secondary {
-  background: rgba(255, 255, 255, 0.86);
-  border: 1px solid rgba(184, 206, 232, 0.84);
-  color: #2f629f;
-  box-shadow: 0 12px 28px rgba(198, 217, 241, 0.18);
+  background: var(--dc-component-startup-secondary-surface);
+  border-color: var(--dc-color-hairline-strong);
+  color: var(--dc-color-ink);
+  box-shadow: var(--dc-shadow-card-soft);
 }
 
 .startup-btn--primary {
-  background: linear-gradient(135deg, #2f67ad, #4f89ca);
-  color: #f9fcff;
-  box-shadow: 0 16px 34px rgba(105, 145, 198, 0.28);
+  background: var(--dc-component-button-primary-bg);
+  border-color: var(--dc-component-button-primary-border);
+  color: var(--dc-component-button-primary-fg);
+  box-shadow: var(--dc-shadow-card);
 }
 
 .startup-error-card {
@@ -256,21 +257,21 @@
   margin-top: 16px;
   margin-bottom: 20px;
   padding: 16px;
-  background: rgba(239, 68, 68, 0.06);
-  border: 1px solid rgba(239, 68, 68, 0.15);
-  border-radius: var(--radius-sm);
+  background: var(--dc-component-startup-error-surface);
+  border: 1px solid var(--dc-component-startup-error-border);
+  border-radius: var(--dc-radius-lg);
 }
 
 .startup-error-icon {
   flex-shrink: 0;
   margin-top: 2px;
-  color: var(--accent-red);
+  color: var(--dc-color-error);
 }
 
 .startup-error-text {
+  color: var(--dc-color-body);
   font-size: 13px;
   line-height: 1.6;
-  color: var(--text-secondary);
   word-break: break-word;
 }
 
@@ -290,12 +291,15 @@
 }
 
 .init-title {
-  font-size: 20px;
-  font-weight: 700;
+  color: var(--dc-color-ink);
+  font-family: var(--dc-font-display);
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 1.12;
 }
 
 .init-message {
-  color: var(--text-secondary);
+  color: var(--dc-color-body);
   font-size: 13px;
   text-align: center;
 }
@@ -303,14 +307,14 @@
 .progress-bar-container {
   width: 320px;
   height: 6px;
-  background: var(--bg-card);
+  background: var(--dc-component-startup-track);
   border-radius: 3px;
   overflow: hidden;
 }
 
 .progress-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.4));
+  background: var(--dc-component-startup-track-fill);
   border-radius: 3px;
   transition: width 0.5s;
 }
