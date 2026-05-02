@@ -14,6 +14,7 @@ import type {
   WorkspaceWorkbenchItem,
 } from "./workspaceCloneTypes";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
+import { WorkspaceCloneMessagePreview } from "./WorkspaceCloneMessagePreview";
 
 interface WorkspaceCloneChatViewProps {
   selectedEntity: WorkspaceEntity | null;
@@ -154,8 +155,8 @@ export function WorkspaceCloneChatView({
                   >
                     <div className="workspace-clone__message-marker">{message.author}</div>
                     <div className="workspace-clone__message-content">
-                      <p>{message.text}</p>
-                      <span>
+                      <WorkspaceCloneMessagePreview message={message} />
+                      <span className="workspace-clone__message-meta">
                         {message.status === "streaming"
                           ? "思考中..."
                           : message.status === "pending"
