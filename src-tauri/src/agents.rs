@@ -556,6 +556,20 @@ pub fn list_skills() -> Result<Vec<SkillInfo>, String> {
     if let Ok(dir) = skillhub_workspace_skills_dir() {
         collect_skills_from_dir(&dir, &mut skills);
     }
+    if let Ok(dir) = agents_dir() {
+        if let Ok(entries) = fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                if !entry.path().is_dir() {
+                    continue;
+                }
+                let agent_id = entry.file_name().to_string_lossy().to_string();
+                if let Ok(workspace_root) = paths::workspace_root_for_agent(Some(&agent_id)) {
+                    let skill_dir = workspace_root.join("skills");
+                    collect_skills_from_dir(&skill_dir, &mut skills);
+                }
+            }
+        }
+    }
 
     skills.sort_by(|left, right| left.name.cmp(&right.name));
     Ok(skills)

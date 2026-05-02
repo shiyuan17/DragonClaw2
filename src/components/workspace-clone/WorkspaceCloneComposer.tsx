@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type {
   WorkspaceComposerModal,
   WorkspaceGatewayStatus,
@@ -13,6 +13,12 @@ interface WorkspaceCloneComposerProps {
   connectionStatus: WorkspaceGatewayStatus;
   selectedEntityName: string | null;
   currentModelName: string;
+  draftValue: string;
+  onDraftValueChange: (value: string) => void;
+  scenePresetsOpen: boolean;
+  showScenePresetToggle: boolean;
+  onToggleScenePresets: () => void;
+  onCloseScenePresets: () => void;
   sending: boolean;
   isGenerating: boolean;
   resettingSession: boolean;
@@ -34,12 +40,41 @@ function formatModelLabel(modelName: string) {
   return modelName.length > 16 ? `${modelName.slice(0, 16)}...` : modelName;
 }
 
+function resolveComposerStatusText(params: {
+  chatEnabled: boolean;
+  running: boolean;
+  connectionStatus: WorkspaceGatewayStatus;
+  isGenerating: boolean;
+}) {
+  const { chatEnabled, running, connectionStatus, isGenerating } = params;
+
+  if (!chatEnabled) {
+    return "当前仅 Agent 会话可发送";
+  }
+  if (!running) {
+    return "服务尚未启动";
+  }
+  if (connectionStatus === "connected") {
+    return isGenerating ? "回复生成中" : "会话已连接";
+  }
+  if (connectionStatus === "connecting") {
+    return "连接中";
+  }
+  return "连接异常";
+}
+
 export function WorkspaceCloneComposer({
   running,
   chatEnabled,
   connectionStatus,
   selectedEntityName,
   currentModelName,
+  draftValue,
+  onDraftValueChange,
+  scenePresetsOpen,
+  showScenePresetToggle,
+  onToggleScenePresets,
+  onCloseScenePresets,
   sending,
   isGenerating,
   resettingSession,
@@ -50,31 +85,27 @@ export function WorkspaceCloneComposer({
   onAbort,
   onResetSession,
 }: WorkspaceCloneComposerProps) {
-  const [inputValue, setInputValue] = useState("");
   const [state, setState] = useState<WorkspaceCloneComposerState>({ modal: null, suggestion: null });
-  const canMention = useMemo(() => Boolean(selectedEntityName), [selectedEntityName]);
+  const canMention = Boolean(selectedEntityName);
   const canSend = chatEnabled && running && connectionStatus === "connected" && !sending && !isGenerating;
   const placeholderToolsDisabled = true;
-  const statusText = !chatEnabled
-    ? "当前仅接入数字员工"
-    : !running
-      ? "服务尚未启动"
-      : connectionStatus === "connected"
-        ? isGenerating
-          ? "回复生成中"
-          : "会话已连接"
-        : connectionStatus === "connecting"
-          ? "连接中"
-          : "连接异常";
+  const statusText = resolveComposerStatusText({
+    chatEnabled,
+    running,
+    connectionStatus,
+    isGenerating,
+  });
 
   const handleSubmit = async () => {
-    if (!canSend) {
+    const nextValue = draftValue.trim();
+    if (!canSend || !nextValue) {
       return;
     }
 
-    const success = await onSend(inputValue);
+    onCloseScenePresets();
+    const success = await onSend(nextValue);
     if (success) {
-      setInputValue("");
+      onDraftValueChange("");
       setState((current) => ({ ...current, suggestion: null }));
     }
   };
@@ -83,8 +114,8 @@ export function WorkspaceCloneComposer({
     <div className="workspace-clone__composer">
       <div className="workspace-clone__input-shell">
         <textarea
-          value={inputValue}
-          onChange={(event) => setInputValue(event.target.value)}
+          value={draftValue}
+          onChange={(event) => onDraftValueChange(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
@@ -99,7 +130,7 @@ export function WorkspaceCloneComposer({
           <div className="workspace-clone__composer-tools">
             <button
               type="button"
-              title="Coming soon"
+              title="即将上线"
               onClick={() => setState({ modal: state.modal === "knowledge" ? null : "knowledge", suggestion: null })}
               disabled={!chatEnabled || placeholderToolsDisabled}
             >
@@ -107,7 +138,7 @@ export function WorkspaceCloneComposer({
             </button>
             <button
               type="button"
-              title="Coming soon"
+              title="即将上线"
               onClick={() => setState({ modal: null, suggestion: state.suggestion === "slash" ? null : "slash" })}
               disabled={!chatEnabled || placeholderToolsDisabled}
             >
@@ -115,15 +146,20 @@ export function WorkspaceCloneComposer({
             </button>
             <button
               type="button"
-              title="Coming soon"
-              onClick={() => setState({ modal: state.modal === "email-binding" ? null : "email-binding", suggestion: null })}
+              title="即将上线"
+              onClick={() =>
+                setState({
+                  modal: state.modal === "email-binding" ? null : "email-binding",
+                  suggestion: null,
+                })
+              }
               disabled={!chatEnabled || placeholderToolsDisabled}
             >
               <WorkspaceCloneIcon name="globe" size={15} strokeWidth={1.9} />
             </button>
             <button
               type="button"
-              title="Coming soon"
+              title="即将上线"
               onClick={() => setState({ modal: null, suggestion: canMention ? "mention" : null })}
               disabled={!chatEnabled || placeholderToolsDisabled}
             >
@@ -132,6 +168,18 @@ export function WorkspaceCloneComposer({
           </div>
 
           <div className="workspace-clone__composer-pills">
+            {showScenePresetToggle && (
+              <button
+                type="button"
+                className={`workspace-clone__composer-pill ${scenePresetsOpen ? "is-active" : ""}`}
+                onClick={onToggleScenePresets}
+                disabled={!chatEnabled}
+                aria-pressed={scenePresetsOpen}
+              >
+                <WorkspaceCloneIcon name="sparkles" size={14} strokeWidth={1.9} />
+                场景
+              </button>
+            )}
             <button
               type="button"
               className="workspace-clone__composer-pill workspace-clone__composer-pill--muted"
@@ -166,7 +214,9 @@ export function WorkspaceCloneComposer({
             </button>
           </div>
 
-          <span className={`workspace-clone__composer-status ${running && connectionStatus === "connected" ? "is-online" : "is-idle"}`}>
+          <span
+            className={`workspace-clone__composer-status ${running && connectionStatus === "connected" ? "is-online" : "is-idle"}`}
+          >
             {statusText}
           </span>
 
@@ -197,7 +247,7 @@ export function WorkspaceCloneComposer({
                 className="workspace-clone__composer-icon-round workspace-clone__composer-send"
                 title="发送"
                 onClick={() => void handleSubmit()}
-                disabled={!canSend || !inputValue.trim()}
+                disabled={!canSend || !draftValue.trim()}
               >
                 <WorkspaceCloneIcon name="chevron-right" size={16} strokeWidth={2.1} />
               </button>
@@ -211,7 +261,9 @@ export function WorkspaceCloneComposer({
               <>
                 <button type="button">/summary - 总结当前工作区</button>
                 <button type="button">/handoff - 生成交接说明</button>
-                <button type="button" onClick={() => setState({ modal: "slash-command", suggestion: null })}>新建 Slash Command</button>
+                <button type="button" onClick={() => setState({ modal: "slash-command", suggestion: null })}>
+                  新建 Slash Command
+                </button>
               </>
             )}
             {state.suggestion === "mention" && (
@@ -232,8 +284,12 @@ export function WorkspaceCloneComposer({
               <strong>知识库选择器</strong>
               <small>保留知识库选择、创建和删除确认的界面层级，不接真实保存逻辑。</small>
               <div className="workspace-clone__inline-actions">
-                <button type="button" onClick={() => setState({ modal: "knowledge-delete", suggestion: null })}>删除确认</button>
-                <button type="button" onClick={() => setState({ modal: null, suggestion: null })}>关闭</button>
+                <button type="button" onClick={() => setState({ modal: "knowledge-delete", suggestion: null })}>
+                  删除确认
+                </button>
+                <button type="button" onClick={() => setState({ modal: null, suggestion: null })}>
+                  关闭
+                </button>
               </div>
             </div>
           )}
@@ -244,7 +300,9 @@ export function WorkspaceCloneComposer({
               <small>这里保留删除知识库时的说明、警告和操作区。</small>
               <div className="workspace-clone__inline-actions">
                 <button type="button">确认删除</button>
-                <button type="button" onClick={() => setState({ modal: null, suggestion: null })}>取消</button>
+                <button type="button" onClick={() => setState({ modal: null, suggestion: null })}>
+                  取消
+                </button>
               </div>
             </div>
           )}
@@ -255,18 +313,22 @@ export function WorkspaceCloneComposer({
               <small>保留名称、描述、命令内容和提交按钮的界面结构。</small>
               <div className="workspace-clone__inline-actions">
                 <button type="button">保存命令</button>
-                <button type="button" onClick={() => setState({ modal: null, suggestion: null })}>关闭</button>
+                <button type="button" onClick={() => setState({ modal: null, suggestion: null })}>
+                  关闭
+                </button>
               </div>
             </div>
           )}
 
           {state.modal === "email-binding" && (
             <div className="workspace-clone__composer-inline-card">
-              <strong>邮件绑定</strong>
+              <strong>邮箱绑定</strong>
               <small>保留 provider、邮箱账号、授权码与 IMAP/SMTP 手动配置表单外观。</small>
               <div className="workspace-clone__inline-actions">
                 <button type="button">保存占位</button>
-                <button type="button" onClick={() => setState({ modal: null, suggestion: null })}>关闭</button>
+                <button type="button" onClick={() => setState({ modal: null, suggestion: null })}>
+                  关闭
+                </button>
               </div>
             </div>
           )}

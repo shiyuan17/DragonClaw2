@@ -18,6 +18,7 @@ mod provider_mgr;
 mod providers;
 mod service;
 mod setup;
+mod skill_market;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -179,6 +180,11 @@ pub fn run() {
             onboarding::get_onboarding_skill_install_state,
             onboarding::get_onboarding_skill_install_diagnostics,
             onboarding::save_onboarding_skill_install_state,
+            skill_market::load_skill_market_top,
+            skill_market::load_skill_market_by_category,
+            skill_market::load_installed_skill_market_slugs,
+            skill_market::load_installed_skills_snapshot,
+            skill_market::install_skill_market_skill,
             // Diagnostics
             diagnostics::export_diagnostics_zip,
             // Agent management

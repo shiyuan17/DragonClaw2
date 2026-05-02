@@ -38,6 +38,7 @@ interface WorkspaceCloneChatViewProps {
   currentModelName: string;
   currentProviderName: string;
   running: boolean;
+  showHomeSuggestions?: boolean;
   onCloseUtilityPanel: () => void;
   onSelectSessionSection: (section: WorkspaceSessionSectionKey) => void;
   onOpenRelatedResource: (resource: WorkspaceRelatedResource) => void;
@@ -70,6 +71,7 @@ export function WorkspaceCloneChatView({
   currentModelName,
   currentProviderName,
   running,
+  showHomeSuggestions = true,
   onCloseUtilityPanel,
   onSelectSessionSection,
   onOpenRelatedResource,
@@ -182,28 +184,30 @@ export function WorkspaceCloneChatView({
 
               <div className="workspace-clone__canvas-fill" />
 
-              <div className="workspace-clone__suggestion-strip">
-                {WORKSPACE_HOME_SUGGESTIONS.map((item, index) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className="workspace-clone__suggestion-card"
-                    onClick={index === 1 ? onOpenLogs : index === 2 ? onOpenSettingsTextPreview : undefined}
-                  >
-                    <span className="workspace-clone__suggestion-icon">
-                      <WorkspaceCloneIcon
-                        name={item.icon as Parameters<typeof WorkspaceCloneIcon>[0]["name"]}
-                        size={15}
-                        strokeWidth={1.9}
-                      />
-                    </span>
-                    <div>
-                      <strong>{item.title}</strong>
-                      <small>{item.description}</small>
-                    </div>
-                  </button>
-                ))}
-              </div>
+              {showHomeSuggestions && (
+                <div className="workspace-clone__suggestion-strip">
+                  {WORKSPACE_HOME_SUGGESTIONS.map((item, index) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className="workspace-clone__suggestion-card"
+                      onClick={index === 1 ? onOpenLogs : index === 2 ? onOpenSettingsTextPreview : undefined}
+                    >
+                      <span className="workspace-clone__suggestion-icon">
+                        <WorkspaceCloneIcon
+                          name={item.icon as Parameters<typeof WorkspaceCloneIcon>[0]["name"]}
+                          size={15}
+                          strokeWidth={1.9}
+                        />
+                      </span>
+                      <div>
+                        <strong>{item.title}</strong>
+                        <small>{item.description}</small>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </section>
           )}
         </div>

@@ -1,0 +1,623 @@
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { Modal } from "../ui/Modal";
+import type { AgentInfo } from "../../types";
+import { installSkillMarketSkill, loadInstalledSkillMarketSlugs } from "../../api/skillMarket";
+import {
+  fetchSkillTop50,
+  fetchSkillsByCategory,
+  fetchSkillsByKeyword,
+  type SkillMarketCategory,
+  type SkillMarketSkill,
+} from "../../services/skillsMarket";
+import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
+
+const PAGE_SIZE = 100;
+
+type MarketCategoryId = "top" | SkillMarketCategory;
+
+type MarketCategoryOption = {
+  id: MarketCategoryId;
+  label: string;
+  hint: string;
+};
+
+type InstallTargetOption = {
+  id: string;
+  name: string;
+  subtitle: string;
+  isMain: boolean;
+};
+
+const MARKET_CATEGORIES: MarketCategoryOption[] = [
+  { id: "top", label: "热门推荐", hint: "Top 50 技能" },
+  { id: "ai-intelligence", label: "AI 智能", hint: "智能体与推理增强" },
+  { id: "developer-tools", label: "开发工具", hint: "工程与研发效率" },
+  { id: "productivity", label: "效率协作", hint: "办公与流程自动化" },
+  { id: "data-analysis", label: "数据分析", hint: "洞察、报表与可视化" },
+  { id: "content-creation", label: "内容创作", hint: "文案、媒体与运营" },
+  { id: "security-compliance", label: "安全合规", hint: "风险控制与治理" },
+  { id: "communication-collaboration", label: "沟通协同", hint: "协作、连接与集成" },
+];
+
+function normalizeSlug(value: string | null | undefined) {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function formatCount(value: number | null | undefined) {
+  if (!value || !Number.isFinite(value) || value <= 0) {
+    return "0";
+  }
+
+  if (value >= 10000) {
+    return `${(value / 10000).toFixed(1)}w`;
+  }
+
+  return String(Math.round(value));
+}
+
+function formatVersion(value: string | null | undefined) {
+  const trimmed = (value ?? "").trim();
+  return trimmed || "v1.0.0";
+}
+
+function getSkillDescription(skill: SkillMarketSkill) {
+  return skill.descriptionZh.trim() || skill.description.trim() || "暂无技能描述。";
+}
+
+function getCategoryLabel(category: string | null | undefined) {
+  const normalized = (category ?? "").trim().toLowerCase();
+  return MARKET_CATEGORIES.find((item) => item.id === normalized)?.label || normalized || "未分类";
+}
+
+function buildInstallTargetOptions(agents: AgentInfo[], currentAgentId: string | null) {
+  const options = agents.map<InstallTargetOption>((agent) => ({
+    id: agent.name,
+    name: agent.name,
+    subtitle: agent.model?.trim() || (agent.is_default ? "默认 Agent" : `agentId: ${agent.name}`),
+    isMain: agent.is_default || agent.name === "main",
+  }));
+
+  if (!options.some((item) => item.id === "main")) {
+    options.unshift({
+      id: "main",
+      name: "main",
+      subtitle: "默认 Agent",
+      isMain: true,
+    });
+  }
+
+  const sorted = [...options].sort((left, right) => {
+    if (left.isMain !== right.isMain) {
+      return left.isMain ? -1 : 1;
+    }
+
+    return left.name.localeCompare(right.name, "zh-CN");
+  });
+
+  const fallbackSelected = currentAgentId?.trim() || "main";
+  return {
+    options: sorted,
+    selected: sorted.some((item) => item.id === fallbackSelected) ? [fallbackSelected] : [sorted[0]?.id || "main"],
+  };
+}
+
+interface WorkspaceCloneSkillsMarketViewProps {
+  currentAgentId: string | null;
+  onRefreshCurrentAgentSkills: () => Promise<void> | void;
+}
+
+export function WorkspaceCloneSkillsMarketView({
+  currentAgentId,
+  onRefreshCurrentAgentSkills,
+}: WorkspaceCloneSkillsMarketViewProps) {
+  const [activeCategory, setActiveCategory] = useState<MarketCategoryId>("top");
+  const [searchValue, setSearchValue] = useState("");
+  const [skills, setSkills] = useState<SkillMarketSkill[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [installedLoading, setInstalledLoading] = useState(false);
+  const [installing, setInstalling] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [detailSkill, setDetailSkill] = useState<SkillMarketSkill | null>(null);
+  const [installSkill, setInstallSkill] = useState<SkillMarketSkill | null>(null);
+  const [installModalOpen, setInstallModalOpen] = useState(false);
+  const [installTargets, setInstallTargets] = useState<InstallTargetOption[]>([]);
+  const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>([]);
+  const [installTargetsLoading, setInstallTargetsLoading] = useState(false);
+  const [installError, setInstallError] = useState("");
+  const [installedSlugs, setInstalledSlugs] = useState<string[]>([]);
+  const requestSeqRef = useRef(0);
+  const deferredSearchValue = useDeferredValue(searchValue);
+
+  const currentCategory = useMemo(
+    () => MARKET_CATEGORIES.find((item) => item.id === activeCategory) ?? MARKET_CATEGORIES[0],
+    [activeCategory],
+  );
+
+  const pagedSkills = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return skills.slice(start, start + PAGE_SIZE);
+  }, [page, skills]);
+
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(skills.length / PAGE_SIZE)), [skills.length]);
+  const pageNumbers = useMemo(() => Array.from({ length: totalPages }, (_, index) => index + 1), [totalPages]);
+  const summaryText = useMemo(
+    () => `${currentCategory.label} · ${pagedSkills.length} / ${Math.max(total, skills.length)} · ${page}/${totalPages}`,
+    [currentCategory.label, page, pagedSkills.length, skills.length, total, totalPages],
+  );
+
+  const refreshInstalledSlugs = async () => {
+    setInstalledLoading(true);
+    try {
+      const nextSlugs = await loadInstalledSkillMarketSlugs();
+      setInstalledSlugs(nextSlugs.map((item) => normalizeSlug(item)).filter(Boolean));
+    } catch (installedError) {
+      setError(installedError instanceof Error ? installedError.message : "读取已安装技能失败。");
+    } finally {
+      setInstalledLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshInstalledSlugs();
+  }, []);
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeCategory, deferredSearchValue]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const requestId = requestSeqRef.current + 1;
+    requestSeqRef.current = requestId;
+
+    const load = async () => {
+      setLoading(true);
+      setError("");
+
+      try {
+        const keyword = deferredSearchValue.trim();
+        const result = keyword
+          ? await fetchSkillsByKeyword(keyword, {
+              page: 1,
+              pageSize: 200,
+              sortBy: "score",
+              order: "desc",
+              category: activeCategory === "top" ? undefined : activeCategory,
+            })
+          : activeCategory === "top"
+            ? await fetchSkillTop50()
+            : await fetchSkillsByCategory(activeCategory, {
+                page: 1,
+                pageSize: 200,
+                sortBy: "score",
+                order: "desc",
+              });
+
+        if (cancelled || requestSeqRef.current !== requestId) {
+          return;
+        }
+
+        setSkills(result.skills);
+        setTotal(result.total);
+      } catch (loadError) {
+        if (cancelled || requestSeqRef.current !== requestId) {
+          return;
+        }
+
+        setSkills([]);
+        setTotal(0);
+        setError(loadError instanceof Error ? loadError.message : "技能市场加载失败。");
+      } finally {
+        if (!cancelled && requestSeqRef.current === requestId) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCategory, deferredSearchValue]);
+
+  const installedSlugSet = useMemo(() => new Set(installedSlugs), [installedSlugs]);
+
+  const handleOpenHomepage = async (skill: SkillMarketSkill) => {
+    const target = skill.homepage?.trim() || "https://skillhub.cn/";
+    try {
+      await invoke<string>("open_url", { url: target });
+    } catch (openError) {
+      setError(openError instanceof Error ? openError.message : "无法打开外部链接。");
+    }
+  };
+
+  const handleOpenInstallModal = async (skill: SkillMarketSkill) => {
+    setDetailSkill(null);
+    setInstallSkill(skill);
+    setInstallModalOpen(true);
+    setInstallTargetsLoading(true);
+    setInstallError("");
+
+    try {
+      const agents = await invoke<AgentInfo[]>("list_agents");
+      const built = buildInstallTargetOptions(agents, currentAgentId);
+      setInstallTargets(built.options);
+      setSelectedTargetIds(built.selected);
+    } catch (targetsError) {
+      setInstallTargets([
+        {
+          id: "main",
+          name: "main",
+          subtitle: "默认 Agent",
+          isMain: true,
+        },
+      ]);
+      setSelectedTargetIds([currentAgentId?.trim() || "main"]);
+      setInstallError(targetsError instanceof Error ? targetsError.message : "读取安装目标失败。");
+    } finally {
+      setInstallTargetsLoading(false);
+    }
+  };
+
+  const handleToggleInstallTarget = (targetId: string) => {
+    setSelectedTargetIds((current) =>
+      current.includes(targetId)
+        ? current.filter((item) => item !== targetId)
+        : [...current, targetId],
+    );
+  };
+
+  const handleConfirmInstall = async () => {
+    if (!installSkill) {
+      return;
+    }
+
+    if (selectedTargetIds.length === 0) {
+      setInstallError("请至少选择一个安装目标。");
+      return;
+    }
+
+    setInstalling(true);
+    setInstallError("");
+    setError("");
+
+    try {
+      const message = await installSkillMarketSkill(installSkill.slug, selectedTargetIds);
+      setNotice(message);
+      setInstallModalOpen(false);
+      await refreshInstalledSlugs();
+
+      if (currentAgentId && selectedTargetIds.includes(currentAgentId)) {
+        await onRefreshCurrentAgentSkills();
+      } else if (!currentAgentId && selectedTargetIds.includes("main")) {
+        await onRefreshCurrentAgentSkills();
+      }
+    } catch (submitError) {
+      setInstallError(submitError instanceof Error ? submitError.message : "技能安装失败。");
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  const renderCard = (skill: SkillMarketSkill) => {
+    const installed = installedSlugSet.has(normalizeSlug(skill.slug));
+
+    return (
+      <article key={skill.slug || skill.name} className="workspace-skill-market__card">
+        <header className="workspace-skill-market__card-head">
+          <div className="workspace-skill-market__card-avatar">
+            {(skill.name.trim().charAt(0) || "S").toUpperCase()}
+          </div>
+          <div className="workspace-skill-market__card-title">
+            <strong>{skill.name}</strong>
+            <p>{getSkillDescription(skill)}</p>
+          </div>
+        </header>
+
+        <div className="workspace-skill-market__meta">
+          <span>下载 {formatCount(skill.downloads)}</span>
+          <span>星标 {formatCount(skill.stars)}</span>
+          <span>{formatVersion(skill.version)}</span>
+        </div>
+
+        <div className="workspace-skill-market__tags">
+          <span>{getCategoryLabel(skill.category)}</span>
+          {skill.ownerName?.trim() ? <span>@{skill.ownerName}</span> : null}
+          {installed ? <span className="workspace-skill-market__tag-installed">已安装</span> : null}
+        </div>
+
+        <footer className="workspace-skill-market__card-footer">
+          <code>{skill.slug || "skill"}</code>
+          <div className="workspace-skill-market__actions">
+            <button
+              type="button"
+              className="workspace-model-modal__ghost"
+              onClick={() => setDetailSkill(skill)}
+            >
+              详情
+            </button>
+            <button
+              type="button"
+              className="workspace-model-modal__primary"
+              onClick={() => void handleOpenInstallModal(skill)}
+              disabled={!skill.slug.trim() || installing}
+            >
+              {installed ? "安装到其他 Agent" : "安装技能"}
+            </button>
+          </div>
+        </footer>
+      </article>
+    );
+  };
+
+  return (
+    <div className="workspace-skill-market">
+      {(notice || error) && (
+        <div className={`workspace-model-modal__status ${error ? "is-error" : "is-success"}`}>
+          {error || notice}
+        </div>
+      )}
+
+      <section className="workspace-employees__toolbar workspace-skill-market__toolbar">
+        <div
+          className="workspace-employees__filters workspace-skill-market__categories"
+          role="tablist"
+          aria-label="技能分类"
+        >
+          {MARKET_CATEGORIES.map((category) => (
+            <button
+              key={category.id}
+              type="button"
+              className={[
+                "workspace-employees__filter",
+                "workspace-skill-market__category",
+                activeCategory === category.id ? "is-active" : "",
+              ].join(" ").trim()}
+              onClick={() => setActiveCategory(category.id)}
+              title={category.hint}
+            >
+              <span>{category.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <label className="workspace-employees__search workspace-skill-market__search">
+          <WorkspaceCloneIcon name="search" size={16} strokeWidth={1.9} />
+          <input
+            type="search"
+            value={searchValue}
+            placeholder="搜索技能名称、描述或标签"
+            onChange={(event) => setSearchValue(event.target.value)}
+            aria-label="搜索技能市场技能"
+          />
+        </label>
+      </section>
+
+      <div className="workspace-skill-market__summary-row">
+        <p className="workspace-skill-market__summary">
+          {summaryText}
+          {installedLoading ? "" : ` · 已安装 ${installedSlugs.length}`}
+        </p>
+        <button
+          type="button"
+          className="workspace-model-modal__ghost workspace-skill-market__refresh"
+          onClick={() => void refreshInstalledSlugs()}
+          disabled={installedLoading || loading}
+        >
+          {installedLoading ? "同步中..." : "刷新已安装状态"}
+        </button>
+      </div>
+
+      <div className="workspace-skill-market__body">
+        <div className="workspace-skill-market__content">
+          {loading ? (
+            <div className="workspace-skill-market__empty">
+              <strong>正在加载技能市场</strong>
+              <p>请稍候，正在同步最新技能列表。</p>
+            </div>
+          ) : pagedSkills.length === 0 ? (
+            <div className="workspace-skill-market__empty">
+              <strong>没有匹配的技能</strong>
+              <p>
+                {deferredSearchValue.trim()
+                  ? "试试更短的关键词，或切换分类重试。"
+                  : "当前分类下暂时没有可展示的技能。"}
+              </p>
+            </div>
+          ) : (
+            <div className="workspace-skill-market__grid">
+              {pagedSkills.map((skill) => renderCard(skill))}
+            </div>
+          )}
+        </div>
+
+        {totalPages > 1 ? (
+          <div className="workspace-skill-market__pagination-shell">
+            <div className="workspace-skill-market__pagination">
+              <button
+                type="button"
+                className="workspace-model-modal__ghost"
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                disabled={page === 1}
+              >
+                上一页
+              </button>
+              {pageNumbers.map((pageNumber) => (
+                <button
+                  key={pageNumber}
+                  type="button"
+                  className={`workspace-skill-market__page ${pageNumber === page ? "is-active" : ""}`}
+                  onClick={() => setPage(pageNumber)}
+                >
+                  {pageNumber}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="workspace-model-modal__ghost"
+                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                disabled={page === totalPages}
+              >
+                下一页
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <Modal
+        show={Boolean(detailSkill)}
+        onClose={() => setDetailSkill(null)}
+        maxWidth={760}
+        overlayClassName="workspace-resource-modal__overlay"
+        contentClassName="workspace-resource-modal__surface"
+      >
+        {detailSkill ? (
+          <div className="workspace-skill-market__detail">
+            <div className="workspace-skill-market__detail-head">
+              <div>
+                <h3>{detailSkill.name}</h3>
+                <p>{detailSkill.slug || "skill"}</p>
+              </div>
+              <button
+                type="button"
+                className="workspace-model-modal__icon"
+                aria-label="关闭技能详情"
+                onClick={() => setDetailSkill(null)}
+              >
+                <WorkspaceCloneIcon name="x" size={15} strokeWidth={1.9} />
+              </button>
+            </div>
+
+            <div className="workspace-skill-market__detail-meta">
+              <span>{getCategoryLabel(detailSkill.category)}</span>
+              <span>{formatVersion(detailSkill.version)}</span>
+              {detailSkill.ownerName?.trim() ? <span>@{detailSkill.ownerName}</span> : null}
+              {installedSlugSet.has(normalizeSlug(detailSkill.slug)) ? <span>已安装</span> : null}
+            </div>
+
+            <p className="workspace-skill-market__detail-desc">{getSkillDescription(detailSkill)}</p>
+
+            <div className="workspace-skill-market__detail-stats">
+              <div>
+                <strong>{formatCount(detailSkill.downloads)}</strong>
+                <small>下载量</small>
+              </div>
+              <div>
+                <strong>{formatCount(detailSkill.stars)}</strong>
+                <small>星标</small>
+              </div>
+              <div>
+                <strong>{formatCount(detailSkill.installs)}</strong>
+                <small>安装量</small>
+              </div>
+            </div>
+
+            <div className="workspace-skill-market__detail-actions">
+              <button
+                type="button"
+                className="workspace-model-modal__primary"
+                onClick={() => void handleOpenInstallModal(detailSkill)}
+              >
+                {installedSlugSet.has(normalizeSlug(detailSkill.slug)) ? "安装到其他 Agent" : "安装技能"}
+              </button>
+              <button
+                type="button"
+                className="workspace-model-modal__ghost"
+                onClick={() => void handleOpenHomepage(detailSkill)}
+              >
+                打开 SkillHub
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        show={installModalOpen}
+        onClose={() => {
+          if (!installing) {
+            setInstallModalOpen(false);
+          }
+        }}
+        maxWidth={720}
+        overlayClassName="workspace-resource-modal__overlay"
+        contentClassName="workspace-resource-modal__surface"
+      >
+        <div className="workspace-skill-market__install-modal">
+          <div className="workspace-skill-market__install-head">
+            <div>
+              <h3>选择安装目标</h3>
+              <p>{installSkill ? `技能：${installSkill.name}（支持多选）` : "请选择要安装技能的目标 Agent。"}</p>
+            </div>
+            <button
+              type="button"
+              className="workspace-model-modal__icon"
+              aria-label="关闭安装目标弹窗"
+              onClick={() => {
+                if (!installing) {
+                  setInstallModalOpen(false);
+                }
+              }}
+            >
+              <WorkspaceCloneIcon name="x" size={15} strokeWidth={1.9} />
+            </button>
+          </div>
+
+          {installError ? <div className="workspace-model-modal__status is-error">{installError}</div> : null}
+
+          {installTargetsLoading ? (
+            <div className="workspace-skill-market__empty">
+              <strong>正在读取安装目标</strong>
+              <p>请稍候，正在同步已安装 Agent 列表。</p>
+            </div>
+          ) : (
+            <div className="workspace-skill-market__target-list">
+              {installTargets.map((target) => (
+                <label key={target.id} className="workspace-skill-market__target-item">
+                  <input
+                    type="checkbox"
+                    checked={selectedTargetIds.includes(target.id)}
+                    onChange={() => handleToggleInstallTarget(target.id)}
+                    disabled={installing}
+                  />
+                  <div>
+                    <strong>{target.name}</strong>
+                    <small>{target.subtitle}</small>
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
+
+          <div className="workspace-skill-market__install-footer">
+            <span>已选择 {selectedTargetIds.length} 个目标</span>
+            <div className="workspace-skill-market__actions">
+              <button
+                type="button"
+                className="workspace-model-modal__ghost"
+                onClick={() => setInstallModalOpen(false)}
+                disabled={installing}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="workspace-model-modal__primary"
+                onClick={() => void handleConfirmInstall()}
+                disabled={installTargetsLoading || installing}
+              >
+                {installing ? "安装中..." : "确认安装"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}

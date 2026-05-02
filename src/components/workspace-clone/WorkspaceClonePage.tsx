@@ -48,7 +48,16 @@ import { WorkspaceCloneEmployeesView } from "./WorkspaceCloneEmployeesView";
 import { WorkspaceCloneHeader } from "./WorkspaceCloneHeader";
 import { WorkspaceCloneModelConfigModal } from "./WorkspaceCloneModelConfigModal";
 import { WorkspaceCloneOverlayStack } from "./WorkspaceCloneOverlayStack";
+import { WorkspaceCloneScenePresetSwitcher } from "./WorkspaceCloneScenePresetSwitcher";
 import { WorkspaceCloneSidebar } from "./WorkspaceCloneSidebar";
+import { WorkspaceCloneSkillsMarketView } from "./WorkspaceCloneSkillsMarketView";
+import {
+  buildWorkspaceScenePresetStateKey,
+  loadWorkspaceScenePresetOpenState,
+  persistWorkspaceScenePresetOpenState,
+  resolveWorkspaceScenePresetOpenState,
+  updateWorkspaceScenePresetOpenState,
+} from "./workspaceCloneScenePresetState";
 import { useWorkspaceChannels } from "./useWorkspaceChannels";
 import type {
   WorkspaceEntity,
@@ -227,6 +236,7 @@ export function WorkspaceClonePage({
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isDirectoryCollapsed, setIsDirectoryCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [composerDraft, setComposerDraft] = useState("");
   const [utilityPanel, setUtilityPanel] = useState<WorkspaceUtilityPanel>(null);
   const [activeSessionSection, setActiveSessionSection] = useState<WorkspaceSessionSectionKey>("model");
   const [adminOpen, setAdminOpen] = useState(false);
@@ -263,6 +273,9 @@ export function WorkspaceClonePage({
   const [toolSaving, setToolSaving] = useState(false);
   const [toolNotice, setToolNotice] = useState("");
   const [toolError, setToolError] = useState("");
+  const [scenePresetOpenStateByKey, setScenePresetOpenStateByKey] = useState<Record<string, boolean>>(
+    () => loadWorkspaceScenePresetOpenState(),
+  );
   const homepageChat = useWorkspaceGatewayChat({ running, servicePort, gatewayToken });
   const workspaceChannels = useWorkspaceChannels({ configVersion });
   const { setContextMenu } = workspaceChannels;
@@ -280,6 +293,10 @@ export function WorkspaceClonePage({
   useEffect(() => {
     void refreshSavedProviders().catch(() => {});
   }, [configVersion, refreshSavedProviders]);
+
+  useEffect(() => {
+    persistWorkspaceScenePresetOpenState(scenePresetOpenStateByKey);
+  }, [scenePresetOpenStateByKey]);
 
   const workspaceModelName = useMemo(
     () => resolveWorkspaceModelName(currentConfig, currentModelName),
@@ -433,9 +450,53 @@ export function WorkspaceClonePage({
     [activeType, homepageChat.selectedAgentId, selectedEntity?.id, selectedEntity?.runtimeAgentId, selectedEntityId],
   );
 
+  const showScenePresetToggle = activeMenu === "chat" && activeType === "agents" && Boolean(selectedEntity?.id);
+  const scenePresetStateKey = useMemo(
+    () => buildWorkspaceScenePresetStateKey({
+      enabled: showScenePresetToggle,
+      entityType: selectedEntity?.entityType ?? null,
+      entityId: selectedEntity?.id ?? null,
+      sessionId: homepageChat.currentMainSession?.sessionId ?? homepageChat.currentSessionKey ?? null,
+    }),
+    [
+      homepageChat.currentMainSession?.sessionId,
+      homepageChat.currentSessionKey,
+      selectedEntity?.entityType,
+      selectedEntity?.id,
+      showScenePresetToggle,
+    ],
+  );
+  const scenePresetsOpen = resolveWorkspaceScenePresetOpenState(scenePresetOpenStateByKey, scenePresetStateKey);
+
   useEffect(() => {
     currentAgentIdRef.current = currentMemoryAgentId;
   }, [currentMemoryAgentId]);
+
+  const toggleScenePresets = useCallback(() => {
+    if (!showScenePresetToggle) {
+      return;
+    }
+
+    setScenePresetOpenStateByKey((current) =>
+      updateWorkspaceScenePresetOpenState(
+        current,
+        scenePresetStateKey,
+        !resolveWorkspaceScenePresetOpenState(current, scenePresetStateKey),
+      ),
+    );
+  }, [scenePresetStateKey, showScenePresetToggle]);
+
+  const closeScenePresets = useCallback(() => {
+    if (!showScenePresetToggle) {
+      return;
+    }
+
+    setScenePresetOpenStateByKey((current) => updateWorkspaceScenePresetOpenState(current, scenePresetStateKey, false));
+  }, [scenePresetStateKey, showScenePresetToggle]);
+
+  const handleSelectScenePreset = useCallback((content: string) => {
+    setComposerDraft(content);
+  }, []);
 
   const activeMemoryFile = useMemo(
     () => memoryFiles.find((file) => file.id === selectedMemoryFileId) ?? memoryFiles[0] ?? null,
@@ -1059,8 +1120,9 @@ export function WorkspaceClonePage({
         <section
           className={[
             "workspace-clone__workspace",
-            activeMenu !== "chat" && activeMenu !== "employees" ? "is-compact" : "",
+            activeMenu !== "chat" && activeMenu !== "employees" && activeMenu !== "skills" ? "is-compact" : "",
             activeMenu === "employees" ? "is-employees" : "",
+            activeMenu === "skills" ? "is-skills" : "",
           ].join(" ").trim()}
         >
           {activeMenu === "chat" ? (
@@ -1103,6 +1165,7 @@ export function WorkspaceClonePage({
                 currentModelName={workspaceModelName}
                 currentProviderName={workspaceProviderName}
                 running={running}
+                showHomeSuggestions={activeType !== "agents"}
                 onCloseUtilityPanel={() => setUtilityPanel(null)}
                 onSelectSessionSection={setActiveSessionSection}
                 onOpenRelatedResource={handleOpenRelatedResource}
@@ -1112,12 +1175,24 @@ export function WorkspaceClonePage({
                 onOpenLogs={() => toggleUtilityPanel("logs")}
               />
 
+              {showScenePresetToggle && scenePresetsOpen && (
+                <div className="workspace-clone__scene-switcher-shell">
+                  <WorkspaceCloneScenePresetSwitcher onSelectCase={handleSelectScenePreset} />
+                </div>
+              )}
+
               <WorkspaceCloneComposer
                 running={running}
                 chatEnabled={chatEnabled}
                 connectionStatus={homepageChat.status}
                 selectedEntityName={selectedEntity?.name || null}
                 currentModelName={workspaceModelName}
+                draftValue={composerDraft}
+                onDraftValueChange={setComposerDraft}
+                scenePresetsOpen={scenePresetsOpen}
+                showScenePresetToggle={showScenePresetToggle}
+                onToggleScenePresets={toggleScenePresets}
+                onCloseScenePresets={closeScenePresets}
                 sending={homepageChat.sending}
                 isGenerating={homepageChat.isGenerating}
                 resettingSession={homepageChat.resettingSession}
@@ -1129,7 +1204,16 @@ export function WorkspaceClonePage({
                 onResetSession={homepageChat.resetSession}
               />
             </>
-          ) : activeMenu === "employees" ? <WorkspaceCloneEmployeesView /> : renderCompactWorkspace()}
+          ) : activeMenu === "employees" ? (
+            <WorkspaceCloneEmployeesView />
+          ) : activeMenu === "skills" ? (
+            <WorkspaceCloneSkillsMarketView
+              currentAgentId={currentMemoryAgentId}
+              onRefreshCurrentAgentSkills={() => refreshSkillOptions({ showLoading: true })}
+            />
+          ) : (
+            renderCompactWorkspace()
+          )}
         </section>
 
         <WorkspaceCloneOverlayStack

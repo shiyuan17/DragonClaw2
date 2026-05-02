@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Clock3,
   Cpu,
+  Folder,
   Pencil,
   Globe,
   Info,
@@ -22,6 +23,7 @@ import {
   RefreshCw,
   Search,
   Settings2,
+  ShoppingBag,
   Sparkles,
   SquareTerminal,
   Trash2,
@@ -33,6 +35,7 @@ import {
 } from "lucide-react";
 
 const ICON_MAP = {
+  book: BookOpen,
   "book-open": BookOpen,
   bot: Bot,
   "calendar-clock": CalendarClock,
@@ -41,6 +44,7 @@ const ICON_MAP = {
   clock: Clock3,
   cpu: Cpu,
   edit: Pencil,
+  folder: Folder,
   globe: Globe,
   info: Info,
   languages: Languages,
@@ -58,6 +62,7 @@ const ICON_MAP = {
   settings: Settings2,
   sparkles: Sparkles,
   terminal: SquareTerminal,
+  shop: ShoppingBag,
   trash: Trash2,
   users: Users,
   voice: Volume2,

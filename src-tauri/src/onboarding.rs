@@ -518,6 +518,37 @@ fn build_command_result(
     }
 }
 
+pub(crate) fn install_skillhub_skill_to_dir(
+    slug: &str,
+    install_root: &Path,
+) -> Result<SkillHubCommandResult, String> {
+    let runtime_info = build_runtime_info()?;
+    if !official_skillhub_cli_installed() {
+        return Err("SkillHub CLI 尚未安装，无法继续安装技能".to_string());
+    }
+
+    let normalized_slug = slug.trim().to_string();
+    if normalized_slug.is_empty() {
+        return Err("技能安装参数不能为空".to_string());
+    }
+
+    fs::create_dir_all(install_root).map_err(|error| format!("创建技能目录失败: {error}"))?;
+
+    let cli_script_path = shell_path_for_runtime(
+        &PathBuf::from(&runtime_info.skillhub_cli_script_path),
+        &runtime_info,
+    )?;
+    let install_root_shell_path = shell_path_for_runtime(install_root, &runtime_info)?;
+    let script = format!(
+        "set -euo pipefail; python3 {cli} --skip-self-upgrade --dir {dir} install {slug} --force",
+        cli = shell_quote(&cli_script_path),
+        slug = shell_quote(&normalized_slug),
+        dir = shell_quote(&install_root_shell_path),
+    );
+    let output = run_bash_command(&runtime_info, &script)?;
+    Ok(build_command_result(runtime_info, output))
+}
+
 #[tauri::command]
 pub fn get_skillhub_install_runtime_info() -> Result<SkillHubInstallRuntimeInfo, String> {
     build_runtime_info()
