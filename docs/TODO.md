@@ -272,8 +272,8 @@
 - [ ] Phase 5.19: 将 `workspace-clone` 从独立浅蓝 clone 子主题全量迁移到 ElevenLabs 统一 token 与品牌体系，覆盖三栏壳层与相关 drawer / modal / popover / context menu
 - [x] 2026-05-02: update onboarding recommended skill installs to support the `opencli-agent` alias chain and add GitHub-based `html-ppt-skill`.
 - [x] 2026-05-02: polish the workspace-clone skills modal so skill card hover/selection is fully visible, remove redundant Installed/Built-in row badges, and align built-in skill rows with the installed list styling.
-- [ ] 2026-05-02: align the workspace-clone skill detail and install-target popups with the memory modal reference so both use a denser header, panel layout, and less empty space without changing install behavior.
-- [ ] 2026-05-02: make workspace-clone skill market cards fully clickable like the employees roster cards, and compact the skill detail modal into a smaller single-column narrative layout.
+- [x] 2026-05-02: align the workspace-clone skill detail and install-target popups with the memory modal reference so both use a denser header, panel layout, and less empty space without changing install behavior.
+- [x] 2026-05-02: make workspace-clone skill market cards fully clickable like the employees roster cards, and compact the skill detail modal into a smaller single-column narrative layout.
 - [x] 2026-05-02: unify the workspace-clone sidebar and directory collapse toggles, pin both to 25% divider height, and reveal them only on divider hover/focus.
 - [x] 2026-05-02: reduce the shared custom window titlebar height to 45px and keep narrow-width layouts aligned with the same token source.
 - [ ] 2026-05-02: compact the workspace-clone home suggestion cards so the scene card row takes less space above the composer.

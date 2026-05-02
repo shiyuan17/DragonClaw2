@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Modal } from "../ui/Modal";
 import type { AgentInfo } from "../../types";
@@ -28,6 +28,15 @@ type InstallTargetOption = {
   subtitle: string;
   isMain: boolean;
 };
+
+function buildKeyboardHandler(onOpen: () => void) {
+  return (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onOpen();
+    }
+  };
+}
 
 const MARKET_CATEGORIES: MarketCategoryOption[] = [
   { id: "top", label: "热门推荐", hint: "Top 50 技能" },
@@ -304,11 +313,26 @@ export function WorkspaceCloneSkillsMarketView({
     }
   };
 
+  const detailInstalled = detailSkill ? installedSlugSet.has(normalizeSlug(detailSkill.slug)) : false;
+  const selectedInstallTargets = useMemo(
+    () => installTargets.filter((target) => selectedTargetIds.includes(target.id)),
+    [installTargets, selectedTargetIds],
+  );
+  const primarySelectedTarget = selectedInstallTargets[0] ?? null;
+
   const renderCard = (skill: SkillMarketSkill) => {
     const installed = installedSlugSet.has(normalizeSlug(skill.slug));
 
     return (
-      <article key={skill.slug || skill.name} className="workspace-skill-market__card">
+      <article
+        key={skill.slug || skill.name}
+        className="workspace-skill-market__card"
+        role="button"
+        tabIndex={0}
+        aria-label={`查看 ${skill.name} 详情`}
+        onClick={() => setDetailSkill(skill)}
+        onKeyDown={buildKeyboardHandler(() => setDetailSkill(skill))}
+      >
         <header className="workspace-skill-market__card-head">
           <div className="workspace-skill-market__card-avatar">
             {(skill.name.trim().charAt(0) || "S").toUpperCase()}
@@ -337,14 +361,20 @@ export function WorkspaceCloneSkillsMarketView({
             <button
               type="button"
               className="workspace-model-modal__ghost"
-              onClick={() => setDetailSkill(skill)}
+              onClick={(event) => {
+                event.stopPropagation();
+                setDetailSkill(skill);
+              }}
             >
               详情
             </button>
             <button
               type="button"
               className="workspace-model-modal__primary"
-              onClick={() => void handleOpenInstallModal(skill)}
+              onClick={(event) => {
+                event.stopPropagation();
+                void handleOpenInstallModal(skill);
+              }}
               disabled={!skill.slug.trim() || installing}
             >
               {installed ? "安装到其他 Agent" : "安装技能"}
@@ -473,13 +503,13 @@ export function WorkspaceCloneSkillsMarketView({
       <Modal
         show={Boolean(detailSkill)}
         onClose={() => setDetailSkill(null)}
-        maxWidth={760}
+        maxWidth={820}
         overlayClassName="workspace-resource-modal__overlay"
-        contentClassName="workspace-resource-modal__surface"
+        contentClassName="workspace-resource-modal__surface workspace-skill-market__modal-surface workspace-skill-market__modal-surface--detail"
       >
         {detailSkill ? (
-          <div className="workspace-skill-market__detail">
-            <div className="workspace-skill-market__detail-head">
+          <div className="workspace-skill-market__modal workspace-skill-market__modal--detail">
+            <div className="workspace-skill-market__modal-header">
               <div>
                 <h3>{detailSkill.name}</h3>
                 <p>{detailSkill.slug || "skill"}</p>
@@ -494,45 +524,54 @@ export function WorkspaceCloneSkillsMarketView({
               </button>
             </div>
 
-            <div className="workspace-skill-market__detail-meta">
-              <span>{getCategoryLabel(detailSkill.category)}</span>
-              <span>{formatVersion(detailSkill.version)}</span>
-              {detailSkill.ownerName?.trim() ? <span>@{detailSkill.ownerName}</span> : null}
-              {installedSlugSet.has(normalizeSlug(detailSkill.slug)) ? <span>已安装</span> : null}
+            <div className="workspace-skill-market__modal-body">
+              <div className="workspace-skill-market__detail-stack">
+                <section className="workspace-skill-market__detail-summary">
+                  <div className="workspace-skill-market__detail-copy">
+                    <div className="workspace-skill-market__detail-meta">
+                      <span className="workspace-clone__resource-tag">{getCategoryLabel(detailSkill.category)}</span>
+                    <span className="workspace-clone__resource-tag">{formatVersion(detailSkill.version)}</span>
+                    {detailSkill.ownerName?.trim() ? (
+                      <span className="workspace-clone__resource-tag">@{detailSkill.ownerName}</span>
+                    ) : null}
+                    {detailInstalled ? <span>已安装</span> : null}
+                  </div>
+                </div>
+                <p className="workspace-skill-market__detail-desc">{getSkillDescription(detailSkill)}</p>
+                <div className="workspace-skill-market__detail-actions">
+                  <button
+                    type="button"
+                    className="workspace-model-modal__primary"
+                    onClick={() => void handleOpenInstallModal(detailSkill)}
+                    disabled={!detailSkill.slug.trim() || installing}
+                  >
+                    {detailInstalled ? "安装到其他 Agent" : "安装技能"}
+                  </button>
+                  <button
+                    type="button"
+                    className="workspace-model-modal__ghost"
+                    onClick={() => void handleOpenHomepage(detailSkill)}
+                  >
+                    打开 SkillHub
+                  </button>
+                </div>
+              </section>
+
+              <section className="workspace-skill-market__detail-stats-grid">
+                <div>
+                  <strong>{formatCount(detailSkill.downloads)}</strong>
+                  <small>下载量</small>
+                </div>
+                <div>
+                  <strong>{formatCount(detailSkill.stars)}</strong>
+                  <small>星标</small>
+                </div>
+                <div>
+                  <strong>{formatCount(detailSkill.installs)}</strong>
+                  <small>安装量</small>
+                </div>
+              </section>
             </div>
-
-            <p className="workspace-skill-market__detail-desc">{getSkillDescription(detailSkill)}</p>
-
-            <div className="workspace-skill-market__detail-stats">
-              <div>
-                <strong>{formatCount(detailSkill.downloads)}</strong>
-                <small>下载量</small>
-              </div>
-              <div>
-                <strong>{formatCount(detailSkill.stars)}</strong>
-                <small>星标</small>
-              </div>
-              <div>
-                <strong>{formatCount(detailSkill.installs)}</strong>
-                <small>安装量</small>
-              </div>
-            </div>
-
-            <div className="workspace-skill-market__detail-actions">
-              <button
-                type="button"
-                className="workspace-model-modal__primary"
-                onClick={() => void handleOpenInstallModal(detailSkill)}
-              >
-                {installedSlugSet.has(normalizeSlug(detailSkill.slug)) ? "安装到其他 Agent" : "安装技能"}
-              </button>
-              <button
-                type="button"
-                className="workspace-model-modal__ghost"
-                onClick={() => void handleOpenHomepage(detailSkill)}
-              >
-                打开 SkillHub
-              </button>
             </div>
           </div>
         ) : null}
@@ -545,12 +584,12 @@ export function WorkspaceCloneSkillsMarketView({
             setInstallModalOpen(false);
           }
         }}
-        maxWidth={720}
+        maxWidth={860}
         overlayClassName="workspace-resource-modal__overlay"
-        contentClassName="workspace-resource-modal__surface"
+        contentClassName="workspace-resource-modal__surface workspace-skill-market__modal-surface workspace-skill-market__modal-surface--install"
       >
-        <div className="workspace-skill-market__install-modal">
-          <div className="workspace-skill-market__install-head">
+        <div className="workspace-skill-market__modal workspace-skill-market__modal--install">
+          <div className="workspace-skill-market__modal-header">
             <div>
               <h3>选择安装目标</h3>
               <p>{installSkill ? `技能：${installSkill.name}（支持多选）` : "请选择要安装技能的目标 Agent。"}</p>
@@ -569,52 +608,112 @@ export function WorkspaceCloneSkillsMarketView({
             </button>
           </div>
 
-          {installError ? <div className="workspace-model-modal__status is-error">{installError}</div> : null}
+          <div className="workspace-skill-market__modal-body">
+            {installError ? <div className="workspace-model-modal__status is-error">{installError}</div> : null}
 
-          {installTargetsLoading ? (
-            <div className="workspace-skill-market__empty">
-              <strong>正在读取安装目标</strong>
-              <p>请稍候，正在同步已安装 Agent 列表。</p>
-            </div>
-          ) : (
-            <div className="workspace-skill-market__target-list">
-              {installTargets.map((target) => (
-                <label key={target.id} className="workspace-skill-market__target-item">
-                  <input
-                    type="checkbox"
-                    checked={selectedTargetIds.includes(target.id)}
-                    onChange={() => handleToggleInstallTarget(target.id)}
-                    disabled={installing}
-                  />
-                  <div>
-                    <strong>{target.name}</strong>
-                    <small>{target.subtitle}</small>
+            {installTargetsLoading ? (
+              <div className="workspace-skill-market__empty">
+                <strong>正在读取安装目标</strong>
+                <p>请稍候，正在同步已安装 Agent 列表。</p>
+              </div>
+            ) : (
+              <div className="workspace-skill-market__install-stack">
+                <section className="workspace-skill-market__install-summary">
+                  <div className="workspace-skill-market__install-summary-head">
+                    <div>
+                      <span className="workspace-skill-market__panel-label">当前技能</span>
+                      <div className="workspace-skill-market__install-skill-head">
+                        <strong>{installSkill?.name ?? "未选择技能"}</strong>
+                        <small>{installSkill?.slug || "skill"}</small>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="workspace-model-modal__primary"
+                      onClick={() => void handleConfirmInstall()}
+                      disabled={installTargetsLoading || installing}
+                    >
+                      {installing ? "安装中..." : "确认安装"}
+                    </button>
                   </div>
-                </label>
-              ))}
-            </div>
-          )}
 
-          <div className="workspace-skill-market__install-footer">
-            <span>已选择 {selectedTargetIds.length} 个目标</span>
-            <div className="workspace-skill-market__actions">
-              <button
-                type="button"
-                className="workspace-model-modal__ghost"
-                onClick={() => setInstallModalOpen(false)}
-                disabled={installing}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                className="workspace-model-modal__primary"
-                onClick={() => void handleConfirmInstall()}
-                disabled={installTargetsLoading || installing}
-              >
-                {installing ? "安装中..." : "确认安装"}
-              </button>
-            </div>
+                  <div className="workspace-skill-market__detail-meta">
+                    {installSkill ? <span>{getCategoryLabel(installSkill.category)}</span> : null}
+                    {installSkill ? <span>{formatVersion(installSkill.version)}</span> : null}
+                    {installSkill?.ownerName?.trim() ? <span>@{installSkill.ownerName}</span> : null}
+                    {installSkill && installedSlugSet.has(normalizeSlug(installSkill.slug)) ? <span>已安装</span> : null}
+                  </div>
+
+                  <p className="workspace-skill-market__detail-desc">
+                    {installSkill ? getSkillDescription(installSkill) : "请选择要安装的技能。"}
+                  </p>
+
+                  <div className="workspace-skill-market__install-selection-grid">
+                    <div className="workspace-skill-market__install-selection-card">
+                      <strong>{installTargets.length}</strong>
+                      <small>可选目标</small>
+                    </div>
+                    <div className="workspace-skill-market__install-selection-card">
+                      <strong>{selectedTargetIds.length}</strong>
+                      <small>已选目标</small>
+                    </div>
+                    <div className="workspace-skill-market__install-selection-card">
+                      <strong>{primarySelectedTarget?.name ?? "未选择"}</strong>
+                      <small>首个目标</small>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="workspace-skill-market__install-content">
+                  <div className="workspace-skill-market__install-targets-head">
+                    <div>
+                      <span className="workspace-skill-market__panel-label">安装目标</span>
+                      <strong>{installTargets.length} 个 Agent</strong>
+                    </div>
+                    <span className="workspace-skill-market__install-count">{selectedTargetIds.length} 已选</span>
+                  </div>
+
+                  <div className="workspace-skill-market__target-list">
+                    {installTargets.map((target) => {
+                      const selected = selectedTargetIds.includes(target.id);
+
+                      return (
+                        <label
+                          key={target.id}
+                          className={`workspace-skill-market__target-item ${selected ? "is-selected" : ""}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => handleToggleInstallTarget(target.id)}
+                            disabled={installing}
+                          />
+                          <div className="workspace-skill-market__target-copy">
+                            <div className="workspace-skill-market__target-head">
+                              <strong>{target.name}</strong>
+                              {target.isMain ? <span className="workspace-clone__resource-tag">main</span> : null}
+                            </div>
+                            <small>{target.subtitle}</small>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  <div className="workspace-skill-market__install-footer">
+                    <span>已选择 {selectedTargetIds.length} 个目标</span>
+                    <button
+                      type="button"
+                      className="workspace-model-modal__ghost"
+                      onClick={() => setInstallModalOpen(false)}
+                      disabled={installing}
+                    >
+                      取消
+                    </button>
+                  </div>
+                </section>
+              </div>
+            )}
           </div>
         </div>
       </Modal>
