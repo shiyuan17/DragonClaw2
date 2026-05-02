@@ -1,0 +1,17 @@
+{
+  "astroncodingplan": {
+    "baseUrl": "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2",
+    "apiKey": "",
+    "api": "openai-completions",
+    "models": [
+      {
+        "id": "astron-code-latest",
+        "name": "astron-code-latest",
+        "reasoning": false,
+        "input": ["text"],
+        "contextWindow": 92160,
+        "maxTokens": 32768
+      }
+    ]
+  }
+}
