@@ -193,3 +193,13 @@ git checkout v2-dev
 > **CI 自动构建**：推送 tag 后，GitHub Actions 自动构建 Windows/macOS/Linux 安装包并发布到 Releases。
 > **Release Notes**：CI 创建的 Release 可能没有详细说明，**必须**手动补充或用 GitHub API 更新 body。
 
+---
+
+## Theme Token Rules
+
+- `docs/design/DESIGN-elevenlabs.md` is the visual source of truth for the current product theme.
+- `src/styles/tokens.css` is the only place allowed to define new brand colors, radii, spacing, typography, shadows, or motion primitives.
+- New UI work must consume `--dc-*` tokens or semantic aliases that resolve to them. Do not add new hard-coded visual values directly in component/page styles unless the value is first promoted into the token layer.
+- Legacy variables such as `--bg-*`, `--text-*`, and `--accent-*` may stay as compatibility aliases during migration, but they are not a second design system and must not receive new bespoke values.
+- `workspace-clone` is now part of the ElevenLabs theme system. Extend only `--dc-workspace-*` tokens in `src/styles/tokens.css` when that surface needs new semantics; do not create a new `--workspace-*` visual source of truth or reintroduce an independent clone sub-theme.
+

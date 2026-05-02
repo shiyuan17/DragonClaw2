@@ -268,9 +268,12 @@
 - [x] 让已绑定频道在首页复用对应 Agent 主会话，未绑定频道显示空态引导
 
 ## 2026-04-30 Pending Acceptance
+- [ ] Phase 5.18: 基于 `docs/design/DESIGN-elevenlabs.md` 建立全局 design token 底座，统一共享样式入口，并将后续 UI 开发约束为优先使用 `src/styles/tokens.css`
+- [ ] Phase 5.19: 将 `workspace-clone` 从独立浅蓝 clone 子主题全量迁移到 ElevenLabs 统一 token 与品牌体系，覆盖三栏壳层与相关 drawer / modal / popover / context menu
 - [x] 2026-05-02: update onboarding recommended skill installs to support the `opencli-agent` alias chain and add GitHub-based `html-ppt-skill`.
 - [x] 2026-05-02: polish the workspace-clone skills modal so skill card hover/selection is fully visible, remove redundant Installed/Built-in row badges, and align built-in skill rows with the installed list styling.
 - [x] 2026-05-02: unify the workspace-clone sidebar and directory collapse toggles, pin both to 25% divider height, and reveal them only on divider hover/focus.
+- [x] 2026-05-02: reduce the shared custom window titlebar height to 45px and keep narrow-width layouts aligned with the same token source.
 - [x] Phase 5.17.2: fix startup white-screen by showing an immediate boot splash and lazy-loading ready-page modules/styles without changing startup business logic.
 - [ ] Phase 5.15.10: remove native Windows titlebar and restore custom titlebar window controls permissions/behavior
 - [ ] 2026-04-30: remove workspace-clone chat header subtitle text under the avatar.

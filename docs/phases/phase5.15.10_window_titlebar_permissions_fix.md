@@ -70,6 +70,11 @@ At the same time, the custom minimize / maximize / close buttons and drag area c
    - drag and double-click maximize both work
    - startup, workspace-clone, and legacy home all use the same titlebar without extra top whitespace
 
+## 2026-05-02 Follow-up
+
+- Reduce the shared custom titlebar height to `45px`.
+- Keep the titlebar height sourced from `src/styles/tokens.css` so desktop and narrow-width layouts stay in sync.
+
 ## Rollback
 
 - Revert the `decorations` change if native window chrome must be temporarily restored.
