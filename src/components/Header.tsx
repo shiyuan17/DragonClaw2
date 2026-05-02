@@ -1,7 +1,7 @@
 // Copyright (C) 2026 shiyuan
 // SPDX-License-Identifier: GPL-3.0-only
 // This file is part of DragonClaw. See LICENSE for details.
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import logo from "../assets/dragonclaw-logo.png";
 import { WindowControls, type WindowPlatform } from "./WindowControls";
@@ -66,16 +66,6 @@ export function Header() {
     };
   }, []);
 
-  const handleDragMouseDown = async (event: ReactMouseEvent<HTMLElement>) => {
-    if (!tauriReady || event.button !== 0) return;
-
-    try {
-      await appWindowRef.current?.startDragging();
-    } catch (error) {
-      console.error("Failed to start dragging the window.", error);
-    }
-  };
-
   const handleMinimize = async () => {
     if (!tauriReady) return;
     try {
@@ -123,7 +113,6 @@ export function Header() {
       <div
         className="header__brand"
         data-tauri-drag-region
-        onMouseDown={handleDragMouseDown}
         onDoubleClick={handleToggleMaximize}
       >
         <span className="header__logo">
@@ -135,7 +124,6 @@ export function Header() {
       <div
         className="header__drag-fill"
         data-tauri-drag-region
-        onMouseDown={handleDragMouseDown}
         onDoubleClick={handleToggleMaximize}
       />
 
