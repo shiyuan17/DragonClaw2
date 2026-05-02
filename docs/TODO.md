@@ -310,3 +310,5 @@
 - [ ] Phase 5.15.12: fix the borderless window maximize display so double-click maximize keeps a safe frame inset and no longer clips the custom titlebar or workspace content on Windows.
 ## Phase 5.23: OpenClaw CLI PATH 暴露与退出保活
 - [ ] 2026-05-02: expose `openclaw` into the current user PATH during setup, keep OpenClaw running when DragonClaw exits from tray quit, and reuse that existing service on the next launch.
+## Phase 5.26: 全项目消息提示统一为顶部居中浮层
+- [ ] 2026-05-03: add a shared top-center feedback center, migrate App / setup / workspace-clone notices into it, and retire inline banners, modal status strips, and the legacy bottom repair toast.
