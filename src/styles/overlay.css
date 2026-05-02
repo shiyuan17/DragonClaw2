@@ -5,8 +5,8 @@
   inset: var(--dc-window-titlebar-height) 0 0 0;
   z-index: 999;
   background:
-    radial-gradient(circle at 18% 18%, var(--dc-page-orb-mint), transparent 26%),
-    radial-gradient(circle at 82% 14%, var(--dc-page-orb-peach), transparent 24%),
+    radial-gradient(circle at 22% 18%, var(--dc-component-startup-orb-mint), transparent 30%),
+    radial-gradient(circle at 78% 22%, var(--dc-component-startup-orb-peach), transparent 28%),
     var(--dc-component-overlay-surface);
   backdrop-filter: blur(16px);
   display: flex;
@@ -18,28 +18,61 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
+  text-align: center;
+}
+
+.startup-overlay-eyebrow {
+  color: var(--dc-component-startup-kicker);
+  font: 600 11px/1.3 var(--dc-font-caption);
+  letter-spacing: 0.16em;
+}
+
+.startup-overlay-stage {
+  width: 200px;
+  height: 200px;
+  display: grid;
+  place-items: center;
+  border-radius: 36px;
+  background: var(--dc-component-startup-stage-surface);
+  border: 1px solid var(--dc-component-startup-stage-border);
+  box-shadow:
+    inset 0 1px 0 var(--dc-component-startup-stage-topline),
+    var(--dc-component-startup-stage-shadow);
 }
 
 .startup-overlay-logo {
-  width: 68px;
-  height: 68px;
-  border-radius: var(--dc-radius-full);
-  object-fit: cover;
-  box-shadow: var(--dc-shadow-card);
+  width: 148px;
+  height: auto;
+  object-fit: contain;
+  filter: var(--dc-component-startup-logo-filter);
 }
 
 .startup-overlay-spinner {
-  color: var(--dc-color-muted);
+  margin-top: 4px;
+  color: var(--dc-color-body);
   animation: spin 1.2s linear infinite;
 }
 
 .startup-overlay-text {
-  color: var(--dc-color-ink);
-  font: 500 15px/1.4 var(--dc-font-body);
+  color: var(--dc-color-body-strong);
+  font: 500 13px/1.5 var(--dc-font-body);
 }
 
 .startup-overlay-hint {
-  color: var(--dc-color-body);
+  max-width: 28ch;
+  color: var(--dc-color-muted);
   font: 400 12px/1.5 var(--dc-font-caption);
+}
+
+@media (max-width: 480px) {
+  .startup-overlay-stage {
+    width: 176px;
+    height: 176px;
+    border-radius: 30px;
+  }
+
+  .startup-overlay-logo {
+    width: 132px;
+  }
 }

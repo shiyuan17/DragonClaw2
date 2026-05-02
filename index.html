@@ -7,12 +7,12 @@
     <title>DragonClaw</title>
     <style>
       :root {
-        color: #214f8d;
+        color: #0c0a09;
         background:
-          radial-gradient(circle at 50% 24%, rgba(229, 240, 255, 0.92), transparent 32%),
-          radial-gradient(circle at 22% 18%, rgba(215, 233, 255, 0.9), transparent 34%),
-          radial-gradient(circle at 82% 72%, rgba(220, 238, 255, 0.78), transparent 28%),
-          linear-gradient(180deg, #f9fbff 0%, #eef5ff 100%);
+          radial-gradient(circle at 50% 20%, rgba(168, 200, 232, 0.14), transparent 30%),
+          radial-gradient(circle at 22% 18%, rgba(167, 229, 211, 0.22), transparent 32%),
+          radial-gradient(circle at 78% 72%, rgba(200, 184, 224, 0.12), transparent 24%),
+          linear-gradient(180deg, rgba(251, 250, 248, 0.99) 0%, rgba(245, 245, 245, 0.98) 100%);
         font-family: Inter, "Segoe UI", sans-serif;
       }
 
@@ -27,10 +27,10 @@
         margin: 0;
         overflow: hidden;
         background:
-          radial-gradient(circle at 50% 24%, rgba(229, 240, 255, 0.92), transparent 32%),
-          radial-gradient(circle at 22% 18%, rgba(215, 233, 255, 0.9), transparent 34%),
-          radial-gradient(circle at 82% 72%, rgba(220, 238, 255, 0.78), transparent 28%),
-          linear-gradient(180deg, #f9fbff 0%, #eef5ff 100%);
+          radial-gradient(circle at 50% 20%, rgba(168, 200, 232, 0.14), transparent 30%),
+          radial-gradient(circle at 22% 18%, rgba(167, 229, 211, 0.22), transparent 32%),
+          radial-gradient(circle at 78% 72%, rgba(200, 184, 224, 0.12), transparent 24%),
+          linear-gradient(180deg, rgba(251, 250, 248, 0.99) 0%, rgba(245, 245, 245, 0.98) 100%);
       }
 
       #boot-splash {
@@ -43,10 +43,10 @@
         padding: 40px 24px;
         overflow: hidden;
         background:
-          radial-gradient(circle at 50% 24%, rgba(229, 240, 255, 0.92), transparent 32%),
-          radial-gradient(circle at 22% 18%, rgba(215, 233, 255, 0.9), transparent 34%),
-          radial-gradient(circle at 82% 72%, rgba(220, 238, 255, 0.78), transparent 28%),
-          linear-gradient(180deg, #f9fbff 0%, #eef5ff 100%);
+          radial-gradient(circle at 50% 20%, rgba(168, 200, 232, 0.14), transparent 30%),
+          radial-gradient(circle at 22% 18%, rgba(167, 229, 211, 0.22), transparent 32%),
+          radial-gradient(circle at 78% 72%, rgba(200, 184, 224, 0.12), transparent 24%),
+          linear-gradient(180deg, rgba(251, 250, 248, 0.99) 0%, rgba(245, 245, 245, 0.98) 100%);
         transition: opacity 220ms ease, transform 220ms ease;
       }
 
@@ -65,8 +65,8 @@
         left: 10%;
         width: min(42vw, 560px);
         height: min(26vw, 320px);
-        background: radial-gradient(circle, rgba(210, 228, 255, 0.82) 0%, rgba(210, 228, 255, 0) 72%);
-        animation: boot-splash-drift-left 11s ease-in-out infinite alternate;
+        background: radial-gradient(circle, rgba(244, 197, 168, 0.2) 0%, rgba(244, 197, 168, 0) 72%);
+        animation: boot-splash-drift-left 14s ease-in-out infinite alternate;
       }
 
       #boot-splash::after {
@@ -74,8 +74,8 @@
         bottom: 8%;
         width: min(38vw, 520px);
         height: min(24vw, 300px);
-        background: radial-gradient(circle, rgba(226, 239, 255, 0.78) 0%, rgba(226, 239, 255, 0) 74%);
-        animation: boot-splash-drift-right 14s ease-in-out infinite alternate;
+        background: radial-gradient(circle, rgba(232, 184, 196, 0.14) 0%, rgba(232, 184, 196, 0) 74%);
+        animation: boot-splash-drift-right 16s ease-in-out infinite alternate;
       }
 
       #boot-splash.is-leaving {
@@ -84,10 +84,10 @@
         pointer-events: none;
       }
 
-      .boot-splash__card {
+      .boot-splash__shell {
         position: relative;
         z-index: 1;
-        width: min(100%, 520px);
+        width: min(100%, 420px);
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -95,60 +95,61 @@
         text-align: center;
       }
 
-      .boot-splash__badge {
-        width: 96px;
-        height: 96px;
-        border-radius: 28px;
+      .boot-splash__eyebrow {
+        color: rgba(119, 113, 105, 0.92);
+        font-size: 11px;
+        font-weight: 600;
+        line-height: 1.3;
+        letter-spacing: 0.18em;
+      }
+
+      .boot-splash__stage {
+        width: 200px;
+        height: 200px;
         display: grid;
         place-items: center;
-        background: linear-gradient(135deg, rgba(47, 103, 173, 0.16), rgba(79, 137, 202, 0.24));
+        border-radius: 36px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(250, 249, 247, 0.96) 100%);
+        border: 1px solid rgba(214, 211, 209, 0.88);
         box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.65),
-          0 18px 38px rgba(169, 196, 228, 0.28);
-        color: #2f67ad;
-        font-size: 34px;
-        font-weight: 700;
-        letter-spacing: -0.06em;
+          inset 0 1px 0 rgba(255, 255, 255, 0.92),
+          0 20px 44px rgba(12, 10, 9, 0.08);
       }
 
-      .boot-splash__title {
-        margin: 0;
-        color: #214f8d;
-        font-size: clamp(28px, 3vw, 34px);
-        line-height: 1.06;
-        letter-spacing: -0.04em;
-      }
-
-      .boot-splash__subtitle {
-        margin: 0;
-        color: rgba(78, 116, 167, 0.88);
-        font-size: 13px;
-        line-height: 1.55;
+      .boot-splash__logo {
+        width: 148px;
+        height: auto;
+        object-fit: contain;
+        filter: drop-shadow(0 14px 24px rgba(12, 10, 9, 0.06));
       }
 
       .boot-splash__progress {
-        width: min(100%, 320px);
-        height: 10px;
-        margin-top: 6px;
+        width: 128px;
+        height: 8px;
+        margin-top: 2px;
         padding: 1px;
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.72);
-        border: 1px solid rgba(176, 201, 233, 0.56);
-        box-shadow:
-          inset 0 1px 1px rgba(255, 255, 255, 0.65),
-          0 12px 32px rgba(190, 213, 240, 0.18);
+        background: rgba(255, 255, 255, 0.82);
+        border: 1px solid rgba(214, 211, 208, 0.82);
+        box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.64);
       }
 
       .boot-splash__progress-fill {
         height: 100%;
-        width: 38%;
+        width: 42%;
         border-radius: inherit;
-        background: linear-gradient(90deg, rgba(111, 160, 225, 0.86), rgba(191, 224, 255, 0.96));
-        box-shadow:
-          0 0 0 1px rgba(255, 255, 255, 0.28),
-          0 8px 18px rgba(133, 179, 231, 0.28);
+        background: linear-gradient(90deg, rgba(41, 37, 36, 0.82), rgba(119, 113, 105, 0.78));
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18);
         background-size: 180% 100%;
         animation: boot-splash-shimmer 2.4s linear infinite;
+      }
+
+      .boot-splash__subtitle {
+        margin: 0;
+        max-width: 24ch;
+        color: rgba(119, 113, 105, 0.9);
+        font-size: 13px;
+        line-height: 1.55;
       }
 
       .boot-splash__version {
@@ -159,7 +160,19 @@
         font-family: "JetBrains Mono", monospace;
         font-size: 12px;
         letter-spacing: 0.08em;
-        color: rgba(112, 142, 181, 0.72);
+        color: rgba(119, 113, 105, 0.72);
+      }
+
+      @media (max-width: 480px) {
+        .boot-splash__stage {
+          width: 176px;
+          height: 176px;
+          border-radius: 30px;
+        }
+
+        .boot-splash__logo {
+          width: 132px;
+        }
       }
 
       @keyframes boot-splash-shimmer {
@@ -196,13 +209,15 @@
 
   <body>
     <div id="boot-splash" aria-hidden="true">
-      <div class="boot-splash__card">
-        <div class="boot-splash__badge">DC</div>
-        <h1 class="boot-splash__title">DragonClaw</h1>
-        <p class="boot-splash__subtitle">正在准备启动界面与工作台，请稍候。</p>
-        <div class="boot-splash__progress">
+      <div class="boot-splash__shell">
+        <div class="boot-splash__eyebrow">DRAGONCLAW</div>
+        <div class="boot-splash__stage">
+          <img class="boot-splash__logo" src="/src/assets/dragonclaw-logo.png" alt="DragonClaw" />
+        </div>
+        <div class="boot-splash__progress" aria-hidden="true">
           <div class="boot-splash__progress-fill"></div>
         </div>
+        <p class="boot-splash__subtitle">正在准备启动界面与工作台，请稍候。</p>
       </div>
       <div class="boot-splash__version">Booting...</div>
     </div>

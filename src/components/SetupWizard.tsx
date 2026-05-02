@@ -61,7 +61,10 @@ function SetupStageLayout({
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 transition={{ duration: 0.55, ease: "easeOut" }}
             >
-                <img src={logo} alt="DragonClaw" className="startup-hero-logo" />
+                <div className="startup-eyebrow">DRAGONCLAW</div>
+                <div className="startup-hero-stage">
+                    <img src={logo} alt="DragonClaw" className="startup-hero-logo" />
+                </div>
                 <h1 className="startup-title">{title}</h1>
 
                 {hasProgress && (
