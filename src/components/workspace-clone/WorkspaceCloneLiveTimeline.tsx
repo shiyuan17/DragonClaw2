@@ -18,7 +18,7 @@ const STEP_ICON_BY_KIND: Record<WorkspaceLiveStepKind, WorkspaceCloneIconName> =
 };
 
 const STEP_LABEL_BY_KIND: Record<WorkspaceLiveStepKind, string> = {
-  thinking: "正在分析",
+  thinking: "思考中",
   skill: "调用技能",
   tool: "调用工具",
   command: "执行命令",

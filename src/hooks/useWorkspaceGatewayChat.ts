@@ -261,6 +261,7 @@ type WorkspaceGatewayAgentEventPayload = {
 };
 
 const LIVE_STEP_LIMIT = 12;
+const POST_TOOL_THINKING_STEP_SUFFIX = "post-tool-thinking";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object";
@@ -272,6 +273,14 @@ function toStringValue(value: unknown, fallback = "") {
 
 function toFiniteTimestamp(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function getPostToolThinkingStepId(runId: string) {
+  return `${runId}:${POST_TOOL_THINKING_STEP_SUFFIX}`;
+}
+
+function isTerminalLiveStepStatus(status: WorkspaceLiveStepStatus) {
+  return status === "success" || status === "error" || status === "aborted";
 }
 
 function truncateInlineText(value: string, maxLength = 120) {
@@ -516,6 +525,16 @@ function updateLiveStepList(
   return next.slice(-LIVE_STEP_LIMIT);
 }
 
+function buildPostToolThinkingStep(runId: string, timestamp?: number | null): WorkspaceLiveStep {
+  return {
+    id: getPostToolThinkingStepId(runId),
+    kind: "thinking",
+    status: "running",
+    title: "思考中",
+    time: formatClockTime(timestamp ?? Date.now()),
+  };
+}
+
 const MISSING_GATEWAY_TOKEN_ERROR = "本地网关 token 缺失或未同步，请检查 ~/.openclaw/openclaw.json，或重新保存 Provider 配置后再试。";
 
 export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: UseWorkspaceGatewayChatOptions) {
@@ -523,6 +542,8 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
   const currentSessionKeyRef = useRef("");
   const currentRunIdRef = useRef<string | null>(null);
   const activeRunAliasesRef = useRef<Set<string>>(new Set());
+  const hasObservedNonThinkingStepRef = useRef(false);
+  const hasAssistantTextDeltaRef = useRef(false);
 
   const [status, setStatus] = useState<WorkspaceGatewayStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -562,8 +583,42 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     [agents, selectedAgent],
   );
 
-  const upsertLiveStep = useCallback((step: WorkspaceLiveStep) => {
-    setLiveSteps((current) => updateLiveStepList(current, step));
+  const applyLiveStep = useCallback(
+    (
+      step: WorkspaceLiveStep,
+      options?: {
+        insertPostToolThinking?: boolean;
+        bridgeRunId?: string;
+        bridgeTimestamp?: number | null;
+      },
+    ) => {
+      setLiveSteps((current) => {
+        const next = updateLiveStepList(current, step);
+        if (
+          !options?.insertPostToolThinking ||
+          !options.bridgeRunId ||
+          hasAssistantTextDeltaRef.current ||
+          !hasObservedNonThinkingStepRef.current
+        ) {
+          return next;
+        }
+
+        return updateLiveStepList(
+          next,
+          buildPostToolThinkingStep(options.bridgeRunId, options.bridgeTimestamp),
+        );
+      });
+    },
+    [],
+  );
+
+  const removeTransientThinkingBridge = useCallback((runId?: string | null) => {
+    if (!runId) {
+      return;
+    }
+
+    const bridgeStepId = getPostToolThinkingStepId(runId);
+    setLiveSteps((current) => current.filter((step) => step.id !== bridgeStepId));
   }, []);
 
   const finishLiveSteps = useCallback((status: WorkspaceLiveStepStatus) => {
@@ -587,6 +642,8 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
   const clearActiveRunRefs = useCallback(() => {
     currentRunIdRef.current = null;
     activeRunAliasesRef.current.clear();
+    hasObservedNonThinkingStepRef.current = false;
+    hasAssistantTextDeltaRef.current = false;
   }, []);
 
   const isKnownActiveRunId = useCallback((runId?: string | null) => {
@@ -713,7 +770,15 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
 
         const step = buildLiveStepFromAgentEvent(payload, payloadRunId || currentRunId || "run");
         if (step) {
-          upsertLiveStep(step);
+          if (step.kind !== "thinking") {
+            hasObservedNonThinkingStepRef.current = true;
+          }
+
+          applyLiveStep(step, {
+            insertPostToolThinking: step.kind !== "thinking" && isTerminalLiveStepStatus(step.status),
+            bridgeRunId: currentRunId || payloadRunId || "run",
+            bridgeTimestamp: toFiniteTimestamp(payload.ts),
+          });
         }
         return;
       }
@@ -735,6 +800,10 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
 
       if (payload.state === "delta" && isCurrentRun) {
         const nextText = extractGatewayMessageText(payload.message).trim();
+        if (nextText && !hasAssistantTextDeltaRef.current) {
+          hasAssistantTextDeltaRef.current = true;
+          removeTransientThinkingBridge(currentRunIdRef.current);
+        }
         setStreamText((current) => {
           if (!nextText) {
             return current;
@@ -758,6 +827,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
 
       if (payload.state === "final" || (payload.state !== "delta" && isCurrentRun)) {
         if (isCurrentRun) {
+          removeTransientThinkingBridge(currentRunIdRef.current);
           setActiveRunId(null);
           setPendingUserMessage(null);
           setStreamText(null);
@@ -770,7 +840,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
         void loadHistory(currentSessionKeyRef.current);
       }
     },
-    [clearActiveRunRefs, finishLiveSteps, isKnownActiveRunId, loadHistory, loadSessions, upsertLiveStep],
+    [applyLiveStep, clearActiveRunRefs, finishLiveSteps, isKnownActiveRunId, loadHistory, loadSessions, removeTransientThinkingBridge],
   );
 
   useEffect(() => {
@@ -858,6 +928,8 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       const runId = crypto.randomUUID();
       currentRunIdRef.current = runId;
       activeRunAliasesRef.current = new Set([runId]);
+      hasObservedNonThinkingStepRef.current = false;
+      hasAssistantTextDeltaRef.current = false;
 
       setPendingUserMessage({
         id: `pending-${runId}`,
@@ -873,7 +945,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
           id: `${runId}:thinking`,
           kind: "thinking",
           status: "running",
-          title: "正在分析",
+          title: "思考中",
           time: formatClockTime(Date.now()),
         },
       ]);
@@ -913,13 +985,14 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       await client.request("chat.abort", currentRunIdRef.current
         ? { sessionKey: currentSessionKey, runId: currentRunIdRef.current }
         : { sessionKey: currentSessionKey });
+      removeTransientThinkingBridge(currentRunIdRef.current);
       finishLiveSteps("aborted");
       return true;
     } catch (abortError) {
       setError(abortError instanceof Error ? abortError.message : String(abortError));
       return false;
     }
-  }, [currentSessionKey, finishLiveSteps]);
+  }, [currentSessionKey, finishLiveSteps, removeTransientThinkingBridge]);
 
   const resetSession = useCallback(async () => {
     const client = clientRef.current;
