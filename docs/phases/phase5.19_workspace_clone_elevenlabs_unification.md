@@ -12,6 +12,7 @@
 - 为 workspace-clone 新增 `--dc-workspace-*` token 语义层。
 - 收敛 `src/styles/workspace-clone.css` 顶部 `--workspace-*` 局部变量体系，使其只做兼容映射或被删除。
 - 统一三栏壳层、聊天主区、composer、drawer、popover、context menu、resource / memory / skills / tools / model config / binding 等次级表层的视觉语言。
+- 细化左侧一级菜单底部身份卡与辅助入口，让展开态底部按钮对齐参考图的轻量资料卡视觉，同时保留原有点击行为与折叠态交互。
 - 清理 workspace-clone 相关 TSX 中零散的内联视觉样式，尽量回收到 class 或 CSS 变量。
 
 ## 不包含
@@ -24,5 +25,6 @@
 
 - `workspace-clone.css` 不再承担独立品牌定义，新增视觉原语统一提升到 `src/styles/tokens.css`。
 - `workspace-clone` 默认首页、collapsed / expanded 状态、drawer / modal / popover / context menu 在 ElevenLabs 视觉语言下统一成立。
+- 左侧侧边栏底部按钮在展开态呈现“头像 / 名称 / 辅助入口”式资料卡层级，折叠态仍保持紧凑可点，不影响原有菜单与弹层操作。
 - 构建通过：`npm run build` 无 TS/CSS 编译错误。
 - 人工回归通过：聊天、切换侧栏、打开各 modal / drawer / popover、频道/Agent 切换与表单输入不受影响。
