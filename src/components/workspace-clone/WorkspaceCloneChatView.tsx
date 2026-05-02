@@ -4,6 +4,7 @@ import { WORKSPACE_HOME_SUGGESTIONS } from "./workspaceCloneData";
 import type {
   WorkspaceEntity,
   WorkspaceGatewayStatus,
+  WorkspaceHistoryFilter,
   WorkspaceHistoryItem,
   WorkspaceLiveStep,
   WorkspaceMessage,
@@ -94,6 +95,7 @@ export function WorkspaceCloneChatView({
   const wasNearBottomRef = useRef(true);
   const lastMessageSignatureRef = useRef("");
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [historyFilter, setHistoryFilter] = useState<WorkspaceHistoryFilter>("all");
 
   const hasMessages = messages.length > 0 || liveSteps.length > 0;
   const showDisconnectedState = !chatEnabled || !running || connectionStatus === "error";
@@ -346,6 +348,8 @@ export function WorkspaceCloneChatView({
         currentProviderName={currentProviderName}
         onClose={onCloseUtilityPanel}
         onSelectSessionSection={onSelectSessionSection}
+        historyFilter={historyFilter}
+        onSelectHistoryFilter={setHistoryFilter}
         onSelectHistorySession={onSelectHistorySession}
         onOpenRelatedResource={onOpenRelatedResource}
         onOpenModelConfig={onOpenModelConfig}

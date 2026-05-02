@@ -63,6 +63,19 @@ function formatRelativeSessionTime(timestamp?: number | null) {
   return `${dayLabel} ${formatClockTime(timestamp)}`;
 }
 
+function formatHistorySessionTime(timestamp?: number | null) {
+  if (!timestamp) {
+    return "暂无记录";
+  }
+
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(timestamp));
+}
+
 function extractAgentIdFromSessionKey(sessionKey: string) {
   const match = /^agent:([^:]+):/.exec(sessionKey);
   return match?.[1] ?? null;
@@ -321,11 +334,12 @@ function buildSessionHistoryItem(
   return {
     id: session.key,
     sessionKey: session.key,
+    updatedAt: session.updatedAt,
     active: session.key === params.currentSessionKey,
     isMain: session.key.endsWith(":main"),
     title: params.cachedTitle || resolveSessionFallbackTitle(session),
     subtitle: buildSessionHistorySubtitle(session),
-    time: formatRelativeSessionTime(session.updatedAt),
+    time: formatHistorySessionTime(session.updatedAt),
   };
 }
 

@@ -3,6 +3,7 @@ import type { WorkspaceChannelId, WorkspaceEntityType, WorkspaceMenuKey } from "
 export type WorkspaceUtilityPanel = "session" | "history" | "logs" | "schedule" | "workbench" | null;
 export type WorkspaceSessionSectionKey = "model" | "memory" | "skills" | "commands" | "tools" | "channel" | "schedule";
 export type WorkspaceRelatedResource = WorkspaceSessionSectionKey | null;
+export type WorkspaceHistoryFilter = "all" | "today" | "yesterday";
 export type WorkspaceSidebarAdminPanel = "theme" | "language" | null;
 export type WorkspaceComposerModal = "knowledge" | "knowledge-delete" | "slash-command" | "email-binding" | null;
 export type WorkspaceSuggestionMode = "slash" | "mention" | null;
@@ -110,6 +111,7 @@ export interface WorkspaceHistoryItem {
   title: string;
   subtitle: string;
   time: string;
+  updatedAt?: number | null;
   sessionKey?: string;
   active?: boolean;
   isMain?: boolean;

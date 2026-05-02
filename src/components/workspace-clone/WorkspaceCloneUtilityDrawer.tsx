@@ -1,6 +1,7 @@
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
 import type {
   WorkspaceEntity,
+  WorkspaceHistoryFilter,
   WorkspaceHistoryItem,
   WorkspaceRelatedResource,
   WorkspaceResourceItem,
@@ -26,8 +27,10 @@ interface WorkspaceCloneUtilityDrawerProps {
   toolItems: WorkspaceToolItem[];
   currentModelName: string;
   currentProviderName: string;
+  historyFilter: WorkspaceHistoryFilter;
   onClose: () => void;
   onSelectSessionSection: (section: WorkspaceSessionSectionKey) => void;
+  onSelectHistoryFilter: (filter: WorkspaceHistoryFilter) => void;
   onSelectHistorySession: (sessionKey: string) => void;
   onOpenRelatedResource: (resource: WorkspaceRelatedResource) => void;
   onOpenModelConfig: () => void;
@@ -51,6 +54,16 @@ const SECTION_TITLES: Record<WorkspaceSessionSectionKey, string> = {
   schedule: "定时任务",
 };
 
+const HISTORY_FILTERS: Array<{ key: WorkspaceHistoryFilter; label: string }> = [
+  { key: "all", label: "全部" },
+  { key: "today", label: "今天" },
+  { key: "yesterday", label: "昨天" },
+];
+
+function buildCalendarKey(date: Date) {
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
 export function WorkspaceCloneUtilityDrawer({
   panel,
   activeSessionSection,
@@ -65,8 +78,10 @@ export function WorkspaceCloneUtilityDrawer({
   toolItems,
   currentModelName,
   currentProviderName,
+  historyFilter,
   onClose,
   onSelectSessionSection,
+  onSelectHistoryFilter,
   onSelectHistorySession,
   onOpenRelatedResource,
   onOpenModelConfig,
@@ -78,6 +93,23 @@ export function WorkspaceCloneUtilityDrawer({
   const enabledSkillCount = skillItems.filter((item) => item.tag === "已启用").length;
   const enabledToolCount = toolItems.filter((item) => item.enabled).length;
   const enabledScheduleCount = schedules.filter((item) => item.enabled).length;
+  const now = new Date();
+  const todayKey = buildCalendarKey(now);
+  const yesterdayDate = new Date(now);
+  yesterdayDate.setDate(now.getDate() - 1);
+  const yesterdayKey = buildCalendarKey(yesterdayDate);
+  const filteredHistoryItems = historyItems.filter((item) => {
+    if (historyFilter === "all") {
+      return true;
+    }
+
+    if (!item.updatedAt) {
+      return false;
+    }
+
+    const itemKey = buildCalendarKey(new Date(item.updatedAt));
+    return historyFilter === "today" ? itemKey === todayKey : itemKey === yesterdayKey;
+  });
 
   const sessionCards: Array<{
     key: WorkspaceSessionSectionKey;
@@ -96,12 +128,28 @@ export function WorkspaceCloneUtilityDrawer({
   return (
     <aside className="workspace-clone__drawer">
       <header className="workspace-clone__drawer-head">
-        <div>
-          <strong>{PANEL_TITLES[panel]}</strong>
+        <div className="workspace-clone__drawer-head-top">
+          <div>
+            <strong>{PANEL_TITLES[panel]}</strong>
+          </div>
+          <button type="button" aria-label="关闭侧栏" onClick={onClose}>
+            <WorkspaceCloneIcon name="x" size={16} strokeWidth={1.9} />
+          </button>
         </div>
-        <button type="button" aria-label="关闭侧栏" onClick={onClose}>
-          <WorkspaceCloneIcon name="x" size={16} strokeWidth={1.9} />
-        </button>
+        {panel === "history" ? (
+          <div className="workspace-clone__drawer-filters" role="tablist" aria-label="历史会话时间筛选">
+            {HISTORY_FILTERS.map((filter) => (
+              <button
+                key={filter.key}
+                type="button"
+                className={`workspace-clone__drawer-filter ${historyFilter === filter.key ? "is-active" : ""}`}
+                onClick={() => onSelectHistoryFilter(filter.key)}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </header>
 
       <div className="workspace-clone__drawer-body">
@@ -158,22 +206,28 @@ export function WorkspaceCloneUtilityDrawer({
           </section>
         )}
 
-        {panel === "history" && historyItems.map((item) => {
+        {panel === "history" && filteredHistoryItems.map((item) => {
           const sessionKey = item.sessionKey || item.id;
 
           return (
             <button
               key={item.id}
               type="button"
-              className={`workspace-clone__drawer-card workspace-clone__drawer-card--button ${item.active ? "is-active" : ""}`}
+              className={`workspace-clone__drawer-card workspace-clone__drawer-card--button workspace-clone__drawer-card--history ${item.active ? "is-active" : ""}`}
               onClick={() => onSelectHistorySession(sessionKey)}
             >
-              <strong>{item.title}</strong>
-              <small>{item.subtitle}</small>
-              <span>{item.time}</span>
+              <strong className="workspace-clone__drawer-card-title">{item.title}</strong>
+              <span className="workspace-clone__drawer-card-time">{item.time}</span>
             </button>
           );
         })}
+
+        {panel === "history" && filteredHistoryItems.length === 0 ? (
+          <section className="workspace-clone__empty-card workspace-clone__drawer-empty">
+            <strong>暂无会话</strong>
+            <small>{historyFilter === "all" ? "当前还没有可展示的历史会话。" : "当前筛选条件下没有匹配的历史会话。"}</small>
+          </section>
+        ) : null}
 
         {panel === "logs" && logs.map((item) => (
           <section key={item.id} className="workspace-clone__drawer-card">
