@@ -43,7 +43,6 @@ interface WorkspaceCloneChatViewProps {
   onOpenRelatedResource: (resource: WorkspaceRelatedResource) => void;
   onOpenSettingsTextPreview: () => void;
   onStart: () => void;
-  onOpenConsole: () => void;
   onOpenModelConfig: () => void;
   onOpenLogs: () => void;
 }
@@ -76,7 +75,6 @@ export function WorkspaceCloneChatView({
   onOpenRelatedResource,
   onOpenSettingsTextPreview,
   onStart,
-  onOpenConsole,
   onOpenModelConfig,
   onOpenLogs,
 }: WorkspaceCloneChatViewProps) {
@@ -113,7 +111,7 @@ export function WorkspaceCloneChatView({
                       ? selectedEntity?.emptyHint || "请先完成频道绑定，绑定成功后首页主聊天区会直接复用目标 Agent 的主会话。"
                       : "当前阶段只有数字员工页会接入真实 Agent 主会话，其它区域仍保留工作台骨架。"
                     : connectionError || (running
-                      ? "正在等待本地网关握手完成，你也可以先打开控制台确认 OpenClaw 状态。"
+                      ? "正在等待本地网关握手完成，你也可以先查看运行日志确认 OpenClaw 状态。"
                       : "启动服务后，这里会自动接入当前 Agent 的主会话。")}
                 </p>
               </div>
@@ -123,14 +121,9 @@ export function WorkspaceCloneChatView({
                     启动服务
                   </button>
                 ) : (
-                  <>
-                    <button type="button" className="workspace-clone__composer-action-text is-solid" onClick={onOpenConsole}>
-                      打开控制台
-                    </button>
-                    <button type="button" className="workspace-clone__composer-action-text" onClick={onOpenLogs}>
-                      查看日志
-                    </button>
-                  </>
+                  <button type="button" className="workspace-clone__composer-action-text is-solid" onClick={onOpenLogs}>
+                    查看日志
+                  </button>
                 )}
               </div>
             </section>

@@ -5,12 +5,10 @@ import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { save } from "@tauri-apps/plugin-dialog";
 import "./App.css";
 import qrAlipay from "./assets/qr-alipay.jpg";
 import qrWechat from "./assets/qr-wechat.jpg";
 
-import type { HomeView, TabId } from "./types";
 import { ApiKeyModal } from "./components/ApiKeyModal";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { Header } from "./components/Header";
@@ -25,7 +23,6 @@ import { useService } from "./hooks/useService";
 import { useSetup } from "./hooks/useSetup";
 
 const WorkspaceCloneReadyPage = lazy(() => import("./components/ready/WorkspaceCloneReadyPage"));
-const LegacyHomeReadyPage = lazy(() => import("./components/ready/LegacyHomeReadyPage"));
 
 function dismissBootSplash() {
   if (typeof document === "undefined") return;
@@ -66,12 +63,8 @@ function ReadyPageFallback() {
 }
 
 function App() {
-  const [activeTab, setActiveTab] = useState<TabId>("dashboard");
-  const [homeView] = useState<HomeView>("workspace-clone");
-  const [activeSettingsTab, setActiveSettingsTab] = useState<"general" | "logs" | "about">("general");
   const [running, setRunning] = useState(false);
   const startingUpRef = useRef<(value: boolean) => void>(() => { });
-  const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [feedbackModal, setFeedbackModal] = useState<{ title: string; msg: string; url?: string } | null>(null);
   const [appVersion, setAppVersion] = useState("0.0.0");
   const updateChecked = useRef(false);
@@ -88,7 +81,6 @@ function App() {
     logs,
     repairToast,
     setRepairToast,
-    logRef,
     addLog,
   } = useLogs();
 
@@ -125,11 +117,8 @@ function App() {
     handleUpsertSavedProviderConfig,
     handleDeleteSavedProviderConfig,
     handleOpenRegister,
-    handleReset,
     confirmReset,
-    handleReinstall,
     configVersion,
-    resetModalState,
   } = useConfig({ addLog, running, setRunning, setStartingUp: (value) => startingUpRef.current(value) });
 
   const {
@@ -146,7 +135,6 @@ function App() {
     retrySetup,
     handleSelectFolder,
     handleConfirmWorkspace,
-    handleSwitchWorkspace,
   } = useSetup({ addLog, checkApiKey, setRunning });
 
   const {
@@ -155,7 +143,6 @@ function App() {
     setStartingUp,
     uptime,
     servicePort,
-    reinstalling,
     repairing,
     handleStart,
     handleStop,
@@ -226,57 +213,9 @@ function App() {
   const currentModelName = currentConfig?.model || "未选择";
 
   const gatewayToken = currentConfig?.gateway_token?.trim() || null;
-  const consoleUrl = servicePort
-    ? `http://localhost:${servicePort}`
-    : null;
-
-  const handleExportDiagnostics = async () => {
-    const savePath = await save({
-      defaultPath: `openclaw-diagnostics-${Date.now()}.zip`,
-      filters: [{ name: "ZIP", extensions: ["zip"] }],
-    });
-    if (!savePath) return;
-
-    const logLines = logs.map((entry) => `[${entry.time}] [${entry.level}] ${entry.humanized || entry.message}`);
-    try {
-      await invoke("export_diagnostics_zip", { savePath, logs: logLines });
-      setFeedbackModal({ title: "导出成功", msg: `诊断信息已导出到：\n${savePath}` });
-    } catch (error: unknown) {
-      setFeedbackModal({ title: "导出错误", msg: `导出失败: ${error}` });
-    }
-  };
-
-  const handleCheckUpdate = async () => {
-    setCheckingUpdate(true);
-    try {
-      const res = await fetch("https://api.github.com/repos/shiyuan/dragonclaw/releases/latest");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-      const data = await res.json();
-      const rawTag = data.tag_name || "";
-      const isSemver = /^v?\d+\.\d+\.\d+$/.test(rawTag);
-      const latestVersion = rawTag.replace(/^v/, "");
-
-      if (isSemver && latestVersion !== appVersion) {
-        setFeedbackModal({
-          title: "发现更新",
-          msg: `发现新版本 v${latestVersion}，\n当前版本 v${appVersion}`,
-          url: data.html_url || "https://github.com/shiyuan17/DragonClaw2/security/releases",
-        });
-      } else {
-        setFeedbackModal({ title: "无可用更新", msg: `当前版本 v${appVersion} 已是最新版本` });
-      }
-    } catch {
-      setFeedbackModal({ title: "网络错误", msg: "检查更新失败，请检查网络连接" });
-    } finally {
-      setCheckingUpdate(false);
-    }
-  };
-
-  const showWorkspaceCloneHome = phase === "ready" && homeView === "workspace-clone";
 
   return (
-    <div className={`app ${showWorkspaceCloneHome ? "app--workspace-clone" : ""}`}>
+    <div className={`app ${phase === "ready" ? "app--workspace-clone" : ""}`}>
       <Header />
 
       <div className="app-content">
@@ -296,83 +235,26 @@ function App() {
           />
         ) : (
           <Suspense fallback={<ReadyPageFallback />}>
-            {showWorkspaceCloneHome ? (
-              <WorkspaceCloneReadyPage
-                running={running}
-                loading={loading}
-                servicePort={servicePort}
-                gatewayToken={gatewayToken}
-                consoleUrl={consoleUrl}
-                uptime={uptime}
-                currentModelName={currentModelName}
-                currentProviderName={currentProviderName}
-                currentConfig={currentConfig}
-                configVersion={configVersion}
-                providers={providers}
-                workspacePath={workspacePath}
-                logs={logs}
-                handleStart={handleStart}
-                handleStop={handleStop}
-                refreshCurrentConfig={refreshCurrentConfig}
-                handleSetModel={handleSetModel}
-                handleUpsertSavedProviderConfig={handleUpsertSavedProviderConfig}
-                handleDeleteSavedProviderConfig={handleDeleteSavedProviderConfig}
-              />
-            ) : (
-              <LegacyHomeReadyPage
-                activeTab={activeTab}
-                setActiveTab={setActiveTab}
-                activeSettingsTab={activeSettingsTab}
-                setActiveSettingsTab={setActiveSettingsTab}
-                running={running}
-                loading={loading}
-                appVersion={appVersion}
-                servicePort={servicePort}
-                consoleUrl={consoleUrl}
-                uptime={uptime}
-                currentModelName={currentModelName}
-                currentProviderName={currentProviderName}
-                workspacePath={workspacePath}
-                currentConfig={currentConfig}
-                providers={providers}
-                filteredProviders={filteredProviders}
-                selectedCategory={selectedCategory}
-                setSelectedCategory={setSelectedCategory}
-                selectedProvider={selectedProvider}
-                setSelectedProvider={setSelectedProvider}
-                apiKeyInput={apiKeyInput}
-                setApiKeyInput={setApiKeyInput}
-                baseUrlInput={baseUrlInput}
-                setBaseUrlInput={setBaseUrlInput}
-                selectedModel={selectedModel}
-                setSelectedModel={setSelectedModel}
-                configSaving={configSaving}
-                setConfigStatus={setConfigStatus}
-                configVersion={configVersion}
-                resetModalState={resetModalState}
-                checkApiKey={checkApiKey}
-                handleSaveConfig={handleSaveConfig}
-                logs={logs}
-                logRef={logRef}
-                setShowKeyModal={setShowKeyModal}
-                setShowModelSwitchModal={setShowModelSwitchModal}
-                setStartingUp={setStartingUp}
-                setRunning={setRunning}
-                addLog={addLog}
-                reinstalling={reinstalling}
-                repairing={repairing}
-                handleStart={handleStart}
-                handleStop={handleStop}
-                handleSwitchWorkspace={handleSwitchWorkspace}
-                handleReinstall={handleReinstall}
-                handleRepairConnection={handleRepairConnection}
-                handleReset={handleReset}
-                setInfoModalTitle={setInfoModalTitle}
-                onExportDiagnostics={handleExportDiagnostics}
-                onCheckUpdate={handleCheckUpdate}
-                checkingUpdate={checkingUpdate}
-              />
-            )}
+            <WorkspaceCloneReadyPage
+              running={running}
+              loading={loading}
+              servicePort={servicePort}
+              gatewayToken={gatewayToken}
+              uptime={uptime}
+              currentModelName={currentModelName}
+              currentProviderName={currentProviderName}
+              currentConfig={currentConfig}
+              configVersion={configVersion}
+              providers={providers}
+              workspacePath={workspacePath}
+              logs={logs}
+              handleStart={handleStart}
+              handleStop={handleStop}
+              refreshCurrentConfig={refreshCurrentConfig}
+              handleSetModel={handleSetModel}
+              handleUpsertSavedProviderConfig={handleUpsertSavedProviderConfig}
+              handleDeleteSavedProviderConfig={handleDeleteSavedProviderConfig}
+            />
           </Suspense>
         )}
       </div>
@@ -507,7 +389,7 @@ function App() {
         providers={providers}
         filteredProviders={filteredProviders}
         currentConfig={currentConfig}
-        activeTab={activeTab}
+        activeTab="dashboard"
         selectedCategory={selectedCategory}
         setSelectedCategory={setSelectedCategory}
         selectedProvider={selectedProvider}

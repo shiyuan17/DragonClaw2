@@ -8,8 +8,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::config;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderInfo {
     pub id: String,
@@ -77,22 +75,5 @@ pub fn open_url(url: String) -> Result<String, String> {
     }
 
     open::that(&url).map_err(|error| format!("鎵撳紑閾炬帴澶辫触: {error}"))?;
-    Ok(format!("宸叉墦寮€: {url}"))
-}
-
-#[tauri::command]
-pub fn open_console(port: u16) -> Result<String, String> {
-    if port == 0 {
-        return Err("无效的控制台端口".to_string());
-    }
-
-    let token = config::get_current_config()
-        .ok()
-        .and_then(|current| current.gateway_token)
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| config::DEFAULT_GATEWAY_TOKEN.to_string());
-    let url = format!("http://localhost:{port}?token={token}");
-
-    open_url(url.clone())?;
     Ok(format!("宸叉墦寮€: {url}"))
 }

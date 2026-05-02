@@ -72,7 +72,6 @@ export interface WorkspaceClonePageProps {
   loading: boolean;
   servicePort: number;
   gatewayToken?: string | null;
-  consoleUrl: string | null;
   uptime: number;
   currentModelName: string;
   currentProviderName: string;
@@ -213,7 +212,6 @@ export function WorkspaceClonePage({
   running,
   servicePort,
   gatewayToken,
-  consoleUrl: _consoleUrl,
   uptime,
   currentModelName,
   currentProviderName,
@@ -1106,11 +1104,6 @@ export function WorkspaceClonePage({
                 onOpenRelatedResource={handleOpenRelatedResource}
                 onOpenSettingsTextPreview={() => setShowSettingsTextPreview(true)}
                 onStart={handleStart}
-                onOpenConsole={() => {
-                  if (servicePort) {
-                    void invoke("open_console", { port: servicePort });
-                  }
-                }}
                 onOpenModelConfig={openModelConfigModal}
                 onOpenLogs={() => toggleUtilityPanel("logs")}
               />
