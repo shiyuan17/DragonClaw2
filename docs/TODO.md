@@ -278,6 +278,7 @@
 - [x] Phase 5.17.2: fix startup white-screen by showing an immediate boot splash and lazy-loading ready-page modules/styles without changing startup business logic.
 - [ ] Phase 5.22: sync DragonClaw scene cards into `workspace-clone > chat > agents`, including grouped scene cards, case drill-down, composer prefills, per-session open-state persistence, and welcome-state card compaction without changing backend contracts.
 - [ ] 2026-05-02: refresh the workspace-clone sidebar footer buttons into a reference-style identity card with a trailing utility action, without changing existing frontend behavior.
+- [ ] Phase 5.21: sync DragonClaw skill market into `workspace-clone > skills`, including market browse/search/detail, multi-Agent install targets, and current-Agent skill visibility refresh.
 - [x] Phase 5.17.3: replace the blue first-paint boot splash with a compact 200x200 logo loading page, unify the later startup overlay, and tone down onboarding colors to match the ElevenLabs theme tokens.
 - [ ] Phase 5.15.10: remove native Windows titlebar and restore custom titlebar window controls permissions/behavior
 - [ ] 2026-04-30: remove workspace-clone chat header subtitle text under the avatar.
