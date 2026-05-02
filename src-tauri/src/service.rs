@@ -820,9 +820,13 @@ mod tests {
 
     #[test]
     fn stale_runtime_state_detection_fails_for_dead_process() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let unused_port = listener.local_addr().unwrap().port();
+        drop(listener);
+
         let tracked = TrackedServiceProcess {
-            pid: u32::MAX,
-            port: 18789,
+            pid: std::process::id(),
+            port: unused_port,
             started_at: 1,
         };
         assert!(!validate_external_process(&tracked));
