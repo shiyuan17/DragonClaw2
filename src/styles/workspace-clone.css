@@ -4370,16 +4370,17 @@
 .workspace-clone__live-step::before {
   content: "";
   position: absolute;
-  inset: -8px;
+  inset: -6px;
   border-radius: inherit;
   opacity: 0;
   pointer-events: none;
   background-image: var(--dc-workspace-live-sheen);
   background-repeat: no-repeat;
-  background-size: 185% 100%;
-  background-position: -48% 0%;
-  filter: blur(10px);
-  transform: scale(1.06);
+  background-size: 220% 100%;
+  background-position: -72% 0%;
+  filter: blur(8px);
+  transform: translateX(-1%) scale(1.03);
+  will-change: background-position, opacity;
 }
 
 .workspace-clone__live-step::after {
@@ -4390,8 +4391,10 @@
   opacity: 0;
   pointer-events: none;
   background-image: var(--dc-workspace-live-veil);
-  background-size: 100% 100%;
-  background-repeat: no-repeat;
+  background-size: 140% 100%, 100% 100%;
+  background-position: -12% 0%, 0 0;
+  background-repeat: no-repeat, no-repeat;
+  will-change: background-position, opacity;
 }
 
 .workspace-clone__live-step-icon {
@@ -4475,11 +4478,11 @@
 
 .workspace-clone__live-step.is-running {
   border-color: var(--dc-workspace-live-running-border);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99) 0%, rgba(250, 249, 247, 0.98) 100%);
+  background: var(--dc-workspace-live-running-surface);
   box-shadow:
     var(--dc-workspace-shadow-inset),
     var(--dc-workspace-live-running-shadow),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.42);
+    inset 0 0 0 1px rgba(255, 255, 255, 0.46);
 }
 
 .workspace-clone__live-step.is-running::before {
@@ -4489,7 +4492,9 @@
 }
 
 .workspace-clone__live-step.is-running::after {
-  animation: workspace-live-step-veil-opacity var(--dc-workspace-live-sheen-duration) var(--dc-motion-ease-standard) infinite;
+  animation:
+    workspace-live-step-veil-drift var(--dc-workspace-live-sheen-duration) linear infinite,
+    workspace-live-step-veil-opacity var(--dc-workspace-live-sheen-duration) var(--dc-motion-ease-standard) infinite;
 }
 
 .workspace-clone__live-step.is-success .workspace-clone__live-step-status {
@@ -4537,37 +4542,55 @@
 
 @keyframes workspace-live-step-sheen-drift {
   0% {
-    background-position: -64% 0%;
+    background-position: -82% 0%;
   }
 
   100% {
-    background-position: 92% 0%;
+    background-position: 108% 0%;
   }
 }
 
 @keyframes workspace-live-step-sheen-opacity {
   0%,
   100% {
-    opacity: 0.42;
+    opacity: 0.3;
   }
 
-  35% {
-    opacity: 0.68;
+  24% {
+    opacity: 0.58;
   }
 
-  65% {
-    opacity: 0.86;
+  58% {
+    opacity: 0.96;
+  }
+
+  82% {
+    opacity: 0.76;
+  }
+}
+
+@keyframes workspace-live-step-veil-drift {
+  0% {
+    background-position: -16% 0%, 0 0;
+  }
+
+  100% {
+    background-position: 20% 0%, 0 0;
   }
 }
 
 @keyframes workspace-live-step-veil-opacity {
   0%,
   100% {
-    opacity: 0.14;
+    opacity: 0.2;
   }
 
-  50% {
-    opacity: 0.32;
+  42% {
+    opacity: 0.34;
+  }
+
+  72% {
+    opacity: 0.46;
   }
 }
 
