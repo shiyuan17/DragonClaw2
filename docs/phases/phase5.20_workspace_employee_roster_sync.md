@@ -92,3 +92,47 @@
 - 删除新增的角色库数据包、Tauri 命令与员工页组件
 - 将 `employees` 菜单恢复为 compact placeholder
 - 保留既有 Agent 管理与 `workspace-clone` 其他能力不动
+
+## 2026-05-03 Follow-up: 数字员工中文名称统一显示
+
+### Goal
+
+在 `workspace-clone` 范围内统一将 Agent 的用户可见名称切换到中文展示来源，并将 `main` 显示为“主分身”。
+
+### Scope
+
+- 仅调整前端展示层，不修改任何 `invoke()` 契约、Rust command 签名、session key、agent id、安装/绑定逻辑
+- 全局覆盖 `workspace-clone` 内所有 Agent 展示入口：
+  - 左侧数字员工/会话目录
+  - 当前会话头部标题
+  - Agent 信息弹层
+  - 记忆、技能库、工具权限弹窗标题
+  - composer 的 `@Agent` 提示 fallback
+  - 技能市场安装目标列表与 `main` 标记
+  - 频道绑定弹窗里的数字员工选择器
+- 不扩散到 legacy 区域或 `src/components/AgentsTab.tsx`
+
+### Display Name Rules
+
+- `agentId === "main"` 时，所有用户可见名称显示为 `主分身`
+- 若 `agentId` 命中 `agency-agent-index.json` / `agencyRoster`，显示角色库中的中文 `name`
+- 若未命中角色库，回退到当前 Agent 的自定义名 / identity name
+- 最后才回退到原始 `agentId`
+- 所有提交、安装、绑定、session 路由继续使用原始 `agentId`，只调整展示文本
+
+### Search Compatibility
+
+- 为避免中文展示后无法通过英文 slug 检索，目录搜索需同时命中：
+  - 中文展示名
+  - 原始 `agentId`
+  - 现有 `subtitle`
+- 员工市场页保持现状，因为其搜索文本本身已包含中文与 `agentId`
+
+### Validation
+
+1. `workspace-clone > chat > 数字员工` 中已安装角色显示中文名，不再显示 `engineering-*`
+2. `main` 在目录、头部、弹窗、技能安装目标里都显示为“主分身”
+3. 搜索框输入中文名可命中，输入原始英文 `agentId` 也能命中
+4. 技能市场安装目标提交后仍使用原始 `agentId`
+5. 频道绑定弹窗选择器显示中文名，但保存绑定后关联值仍是原始 `agentId`
+6. 非 roster 管理的自定义 Agent 继续显示原有自定义名
