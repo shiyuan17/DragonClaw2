@@ -319,3 +319,6 @@
 - [x] 2026-05-03: move setup, service prebuild, and onboarding heavy local work off UI-related command threads so the launcher stays responsive during install and first-run startup.
 ## Phase 5.30: Homepage Lazy Data Loading
 - [ ] Limit ready homepage eager data to chat essentials; lazy load logs, history title backfill, channels, memory, skills, tools, model config, drawers, and modals after user interaction
+
+## Phase 5.31: Homepage Chat Freeze Fix
+- [ ] Fix ready homepage chat freezes by guarding gateway reconnect loops, deduplicating initial history loads, lazy-loading markdown rendering, and batching high-frequency log updates.
