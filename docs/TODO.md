@@ -1,7 +1,7 @@
 # DragonClaw - 开发任务总表 (AI 开发规范版)
 
 ## Phase 5.27: Workspace 数字员工注册自愈与聊天目录同步修复
-- [ ] 为 `workspace-clone > employees` 和 `workspace-clone > chat` 修复数字员工 registry 丢失后的自愈恢复，使已存在于 `~/.openclaw/agents` / `workspace-dragonclaw/agency-agents` 的角色库员工可重新被识别、加入并在首页聊天目录中立即显示
+- [x] 为 `workspace-clone > employees` 和 `workspace-clone > chat` 修复数字员工 registry 丢失后的自愈恢复，使已存在于 `~/.openclaw/agents` / `workspace-dragonclaw/agency-agents` 的角色库员工可重新被识别、加入并在首页聊天目录中立即显示
 
 ## Phase 5.15.9: 首页收缩侧边栏视觉重设计
 - [x] `workspace-clone` 首页收缩态侧边栏改为参考图风格的双轨轻量导航，统一左侧菜单轨与右侧迷你目录轨的卡片节奏、间距、阴影和选中态

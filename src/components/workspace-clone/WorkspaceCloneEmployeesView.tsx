@@ -2,6 +2,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useState, type Keybo
 import { invoke } from "@tauri-apps/api/core";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useFeedback } from "../../hooks/useFeedback";
 import { Modal } from "../ui/Modal";
 import type { AgencyRosterDivision, AgencyRosterRole } from "../../types";
 import { loadAgencyRoster } from "../../data/agencyRoster";
@@ -38,7 +39,12 @@ function buildKeyboardHandler(onOpen: () => void) {
   };
 }
 
-export function WorkspaceCloneEmployeesView() {
+interface WorkspaceCloneEmployeesViewProps {
+  onRosterChanged?: () => void | Promise<void>;
+}
+
+export function WorkspaceCloneEmployeesView({ onRosterChanged }: WorkspaceCloneEmployeesViewProps) {
+  const { pushFeedback } = useFeedback();
   const [divisionFilter, setDivisionFilter] = useState(DIVISION_FILTER_ALL);
   const [searchValue, setSearchValue] = useState("");
   const [installedIds, setInstalledIds] = useState<string[]>([]);
@@ -77,6 +83,19 @@ export function WorkspaceCloneEmployeesView() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!error.trim() && !notice.trim()) {
+      return;
+    }
+
+    pushFeedback({
+      tone: error.trim() ? "error" : "success",
+      title: error.trim() ? "数字员工操作失败" : "数字员工操作成功",
+      message: error.trim() || notice.trim(),
+      dedupeKey: "workspace-employees-feedback",
+    });
+  }, [error, notice, pushFeedback]);
 
   const normalizedQuery = deferredSearchValue.trim().toLowerCase();
 
@@ -150,6 +169,7 @@ export function WorkspaceCloneEmployeesView() {
       try {
         await invoke<string>("install_agency_agent", { agentId: role.agentId });
         await refreshInstalledIds();
+        await onRosterChanged?.();
         setNotice(`已将「${role.name}」加入本地员工列表。`);
       } catch (installError) {
         setError(installError instanceof Error ? installError.message : `加入「${role.name}」失败。`);
@@ -157,7 +177,7 @@ export function WorkspaceCloneEmployeesView() {
         setInstallingIds((current) => current.filter((item) => item !== role.agentId));
       }
     },
-    [installingIds, installedIds, refreshInstalledIds],
+    [installingIds, installedIds, onRosterChanged, refreshInstalledIds],
   );
 
   const handleRemove = useCallback(
@@ -173,6 +193,7 @@ export function WorkspaceCloneEmployeesView() {
       try {
         await invoke<string>("uninstall_agency_agent", { agentId: role.agentId });
         await refreshInstalledIds();
+        await onRosterChanged?.();
         setNotice(`已移除「${role.name}」。`);
       } catch (removeError) {
         setError(removeError instanceof Error ? removeError.message : `移除「${role.name}」失败。`);
@@ -180,7 +201,7 @@ export function WorkspaceCloneEmployeesView() {
         setRemovingIds((current) => current.filter((item) => item !== role.agentId));
       }
     },
-    [refreshInstalledIds, removingIds],
+    [onRosterChanged, refreshInstalledIds, removingIds],
   );
 
   return (
@@ -214,12 +235,6 @@ export function WorkspaceCloneEmployeesView() {
             />
           </label>
         </section>
-
-        {(notice || error) && (
-          <div className={`workspace-employees__feedback ${error ? "is-error" : "is-success"}`}>
-            <span>{error || notice}</span>
-          </div>
-        )}
 
         {filteredDivisions.length === 0 ? (
           <div className="workspace-employees__empty workspace-employees__empty--roles">

@@ -499,6 +499,10 @@ export function WorkspaceClonePage({
     setComposerDraft(content);
   }, []);
 
+  const handleEmployeeRosterChanged = useCallback(async () => {
+    await homepageChat.reload().catch(() => undefined);
+  }, [homepageChat.reload]);
+
   const activeMemoryFile = useMemo(
     () => memoryFiles.find((file) => file.id === selectedMemoryFileId) ?? memoryFiles[0] ?? null,
     [memoryFiles, selectedMemoryFileId],
@@ -1208,7 +1212,7 @@ export function WorkspaceClonePage({
               />
             </>
           ) : activeMenu === "employees" ? (
-            <WorkspaceCloneEmployeesView />
+            <WorkspaceCloneEmployeesView onRosterChanged={handleEmployeeRosterChanged} />
           ) : activeMenu === "skills" ? (
             <WorkspaceCloneSkillsMarketView
               currentAgentId={currentMemoryAgentId}
