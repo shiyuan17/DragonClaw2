@@ -1,5 +1,8 @@
 # DragonClaw - 开发任务总表 (AI 开发规范版)
 
+## Phase 5.32: 首页无响应崩溃的服务心跳与日志风暴修复
+- [ ] 修复 OpenClaw 服务心跳线程叠加、Windows PowerShell 进程探测和高频日志事件导致的首页无响应/AppHang 风险，保持既有 Tauri command 签名不变
+
 ## Phase 5.29: 首页未响应与 SkillHub 后台安装修复
 - [ ] 拆分 `agency-agents.json` 为轻量 roster 与按 Agent ID 分片模板，员工页/技能市场懒加载，员工详情按需加载模板，并将 onboarding SkillHub 推荐技能安装切到后端后台任务
 
