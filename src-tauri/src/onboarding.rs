@@ -7,6 +7,7 @@ use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use crate::{agents, config, openclaw_cli, paths};
 
@@ -394,6 +395,8 @@ fn build_runtime_env(
 fn run_bash_command(
     runtime_info: &SkillHubInstallRuntimeInfo,
     script: &str,
+    timeout: Duration,
+    context: &str,
 ) -> Result<std::process::Output, String> {
     if !runtime_info.bash_available {
         return Err("bash 不可用，无法运行 SkillHub 官方安装器".to_string());
@@ -414,9 +417,7 @@ fn run_bash_command(
         command.env(key, value);
     }
 
-    command
-        .output()
-        .map_err(|error| format!("运行 SkillHub bash 命令失败: {error}"))
+    openclaw_cli::run_command_with_timeout(&mut command, timeout, context)
 }
 
 fn bootstrap_skill_path(name: &str) -> Result<PathBuf, String> {
@@ -545,21 +546,22 @@ pub(crate) fn install_skillhub_skill_to_dir(
         slug = shell_quote(&normalized_slug),
         dir = shell_quote(&install_root_shell_path),
     );
-    let output = run_bash_command(&runtime_info, &script)?;
+    let output = run_bash_command(
+        &runtime_info,
+        &script,
+        Duration::from_secs(3 * 60),
+        "安装 SkillHub 推荐技能",
+    )?;
     Ok(build_command_result(runtime_info, output))
 }
 
-#[tauri::command]
-pub fn get_skillhub_install_runtime_info() -> Result<SkillHubInstallRuntimeInfo, String> {
-    build_runtime_info()
-}
-
-#[tauri::command]
-pub fn install_official_skillhub() -> Result<SkillHubCommandResult, String> {
+fn install_official_skillhub_blocking() -> Result<SkillHubCommandResult, String> {
     let runtime_info = build_runtime_info()?;
     let output = run_bash_command(
         &runtime_info,
         "set -euo pipefail; curl -fsSL https://skillhub.cn/install/install.sh | bash",
+        Duration::from_secs(5 * 60),
+        "安装 SkillHub 官方 CLI",
     )?;
     let result = build_command_result(runtime_info.clone(), output);
 
@@ -580,8 +582,7 @@ pub fn install_official_skillhub() -> Result<SkillHubCommandResult, String> {
     Ok(result)
 }
 
-#[tauri::command]
-pub fn install_skillhub_recommended_skill(
+fn install_skillhub_recommended_skill_blocking(
     slug: String,
     display_name: String,
 ) -> Result<SkillHubCommandResult, String> {
@@ -612,7 +613,12 @@ pub fn install_skillhub_recommended_skill(
         slug = shell_quote(&slug),
         dir = shell_quote(&install_root_shell_path),
     );
-    let output = run_bash_command(&runtime_info, &script)?;
+    let output = run_bash_command(
+        &runtime_info,
+        &script,
+        Duration::from_secs(3 * 60),
+        "安装 SkillHub 推荐技能",
+    )?;
     let result = build_command_result(runtime_info, output);
 
     if !result.success {
@@ -637,8 +643,7 @@ pub fn install_skillhub_recommended_skill(
     Ok(result)
 }
 
-#[tauri::command]
-pub fn install_github_skill_from_url(
+fn install_github_skill_from_url_blocking(
     repo_url: String,
     display_name: String,
     skill_name: Option<String>,
@@ -691,9 +696,11 @@ pub fn install_github_skill_from_url(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    let output = command
-        .output()
-        .map_err(|error| format!("执行 GitHub 技能安装命令失败: {error}"))?;
+    let output = openclaw_cli::run_command_with_timeout(
+        &mut command,
+        Duration::from_secs(5 * 60),
+        "安装 GitHub 技能",
+    )?;
     let result = build_command_result(runtime_info, output);
 
     if !result.success {
@@ -715,6 +722,45 @@ pub fn install_github_skill_from_url(
     })?;
 
     Ok(result)
+}
+
+#[tauri::command]
+pub async fn get_skillhub_install_runtime_info() -> Result<SkillHubInstallRuntimeInfo, String> {
+    tokio::task::spawn_blocking(build_runtime_info)
+        .await
+        .map_err(|error| format!("SkillHub 运行时信息收集任务调度失败: {error}"))?
+}
+
+#[tauri::command]
+pub async fn install_official_skillhub() -> Result<SkillHubCommandResult, String> {
+    tokio::task::spawn_blocking(install_official_skillhub_blocking)
+        .await
+        .map_err(|error| format!("SkillHub 官方安装任务调度失败: {error}"))?
+}
+
+#[tauri::command]
+pub async fn install_skillhub_recommended_skill(
+    slug: String,
+    display_name: String,
+) -> Result<SkillHubCommandResult, String> {
+    tokio::task::spawn_blocking(move || {
+        install_skillhub_recommended_skill_blocking(slug, display_name)
+    })
+    .await
+    .map_err(|error| format!("SkillHub 技能安装任务调度失败: {error}"))?
+}
+
+#[tauri::command]
+pub async fn install_github_skill_from_url(
+    repo_url: String,
+    display_name: String,
+    skill_name: Option<String>,
+) -> Result<SkillHubCommandResult, String> {
+    tokio::task::spawn_blocking(move || {
+        install_github_skill_from_url_blocking(repo_url, display_name, skill_name)
+    })
+    .await
+    .map_err(|error| format!("GitHub 技能安装任务调度失败: {error}"))?
 }
 
 #[tauri::command]

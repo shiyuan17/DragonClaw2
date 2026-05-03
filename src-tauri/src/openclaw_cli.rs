@@ -4,8 +4,11 @@
 
 use std::ffi::{OsStr, OsString};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -56,16 +59,79 @@ fn create_bundled_node_script_command(script_path: &Path) -> Result<Command, Str
     Ok(command)
 }
 
+pub fn run_command_with_timeout(
+    command: &mut Command,
+    timeout: Duration,
+    context: &str,
+) -> Result<Output, String> {
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("{context} 启动失败: {error}"))?;
+
+    let stdout_handle = child.stdout.take().map(|mut stdout| {
+        thread::spawn(move || {
+            let mut bytes = Vec::new();
+            let _ = stdout.read_to_end(&mut bytes);
+            bytes
+        })
+    });
+    let stderr_handle = child.stderr.take().map(|mut stderr| {
+        thread::spawn(move || {
+            let mut bytes = Vec::new();
+            let _ = stderr.read_to_end(&mut bytes);
+            bytes
+        })
+    });
+
+    let started_at = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let stdout = stdout_handle
+                    .map(|handle| handle.join().unwrap_or_default())
+                    .unwrap_or_default();
+                let stderr = stderr_handle
+                    .map(|handle| handle.join().unwrap_or_default())
+                    .unwrap_or_default();
+                return Ok(Output {
+                    status,
+                    stdout,
+                    stderr,
+                });
+            }
+            Ok(None) if started_at.elapsed() >= timeout => {
+                let _ = child.kill();
+                let _ = child.wait();
+                if let Some(handle) = stdout_handle {
+                    let _ = handle.join();
+                }
+                if let Some(handle) = stderr_handle {
+                    let _ = handle.join();
+                }
+                return Err(format!("{context} 超时（超过 {} 秒）", timeout.as_secs()));
+            }
+            Ok(None) => thread::sleep(Duration::from_millis(100)),
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("{context} 等待失败: {error}"));
+            }
+        }
+    }
+}
+
 fn openclaw_entry_path() -> Result<PathBuf, String> {
     Ok(paths::engine_dir()?.join("openclaw.mjs"))
 }
 
 fn openclaw_shim_path() -> Result<PathBuf, String> {
-    Ok(paths::local_bin_dir()?.join(if cfg!(target_os = "windows") {
-        "openclaw.cmd"
-    } else {
-        "openclaw"
-    }))
+    Ok(
+        paths::local_bin_dir()?.join(if cfg!(target_os = "windows") {
+            "openclaw.cmd"
+        } else {
+            "openclaw"
+        }),
+    )
 }
 
 fn normalize_path_for_compare(path: &Path) -> String {
@@ -83,7 +149,10 @@ fn merge_path_entries(current: Option<&OsStr>, target: &Path) -> Result<(OsStrin
         .iter()
         .any(|entry| normalize_path_for_compare(entry) == normalize_path_for_compare(target))
     {
-        return Ok((current.unwrap_or_else(|| OsStr::new("")).to_os_string(), false));
+        return Ok((
+            current.unwrap_or_else(|| OsStr::new("")).to_os_string(),
+            false,
+        ));
     }
 
     let mut merged_entries = current_entries;
@@ -139,10 +208,8 @@ fn run_powershell_script(script: &str, args: &[&str]) -> Result<Output, String> 
 
 #[cfg(target_os = "windows")]
 fn read_user_path_value() -> Result<Option<String>, String> {
-    let output = run_powershell_script(
-        "[Environment]::GetEnvironmentVariable('Path', 'User')",
-        &[],
-    )?;
+    let output =
+        run_powershell_script("[Environment]::GetEnvironmentVariable('Path', 'User')", &[])?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -197,7 +264,8 @@ public static class NativeMethods {
 #[cfg(target_os = "windows")]
 fn ensure_windows_user_path_contains(target_dir: &Path) -> Result<bool, String> {
     let current_path = read_user_path_value()?;
-    let (merged, updated) = merge_path_entries(current_path.as_deref().map(OsStr::new), target_dir)?;
+    let (merged, updated) =
+        merge_path_entries(current_path.as_deref().map(OsStr::new), target_dir)?;
     if updated {
         write_user_path_value(&merged.to_string_lossy())?;
     }
@@ -317,7 +385,10 @@ mod tests {
         let current = Some(OsStr::new(r"C:\Windows\System32;C:\Users\Alice\.local\bin"));
         let (merged, updated) = merge_path_entries(current, &target).unwrap();
         assert!(!updated);
-        assert_eq!(merged.to_string_lossy(), r"C:\Windows\System32;C:\Users\Alice\.local\bin");
+        assert_eq!(
+            merged.to_string_lossy(),
+            r"C:\Windows\System32;C:\Users\Alice\.local\bin"
+        );
     }
 
     #[cfg(target_os = "windows")]
@@ -328,7 +399,8 @@ mod tests {
             Path::new(r"C:\Users\Alice\AppData\Local\DragonClaw\openclaw-engine\openclaw.mjs"),
         );
         assert!(shim.contains(r#""C:\Program Files\DragonClaw\node.exe""#));
-        assert!(shim.contains(r#""C:\Users\Alice\AppData\Local\DragonClaw\openclaw-engine\openclaw.mjs""#));
+        assert!(shim
+            .contains(r#""C:\Users\Alice\AppData\Local\DragonClaw\openclaw-engine\openclaw.mjs""#));
         assert!(shim.ends_with("%*\r\n"));
     }
 }

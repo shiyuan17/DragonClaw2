@@ -5,14 +5,15 @@
 ///
 /// Installs pnpm via npm, then runs `pnpm install` in the OpenClaw engine directory.
 /// Automatically detects and uses Taobao registry mirror when npmjs.org is slow.
-
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::time::Duration;
 use tauri::Emitter;
 
-use crate::environment;
-use crate::paths;
 use crate::download;
+use crate::environment;
+use crate::openclaw_cli;
+use crate::paths;
 
 pub fn has_cli_build_output(openclaw_dir: &Path) -> bool {
     openclaw_dir.join("dist").join("entry.js").exists()
@@ -23,32 +24,29 @@ pub fn has_cli_build_output(openclaw_dir: &Path) -> bool {
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
-/// Run `pnpm install` using sandboxed Node.js
-/// First installs pnpm via npm, then uses pnpm for proper workspace dependency resolution
-/// Automatically sets Taobao registry mirror if main registry is slow
-#[tauri::command]
-pub async fn run_npm_install(app: tauri::AppHandle) -> Result<String, String> {
-    let openclaw_dir = paths::get_openclaw_dir()?;
-    if !openclaw_dir.join("package.json").exists() {
-        return Err("OpenClaw 源码未找到，请先下载源码".to_string());
-    }
-
+fn install_openclaw_dependencies_blocking(
+    app: tauri::AppHandle,
+    openclaw_dir: PathBuf,
+    use_mirror: bool,
+) -> Result<String, String> {
     let node_modules = openclaw_dir.join("node_modules");
     let install_marker = node_modules.join(".install_complete");
 
     if node_modules.exists() {
-        if node_modules.join(".pnpm").exists()
+        let looks_complete = node_modules.join(".pnpm").exists()
             && install_marker.exists()
-            && has_cli_build_output(&openclaw_dir)
-        {
-            return Ok("node_modules already installed (pnpm)".to_string());
+            && has_cli_build_output(&openclaw_dir);
+        if !looks_complete {
+            let _ = app.emit(
+                "setup-progress",
+                serde_json::json!({
+                    "stage": "npm_install",
+                    "message": "检测到不完整的依赖或缺失的构建产物，正在自动清理后重新安装...",
+                    "percent": 86
+                }),
+            );
+            let _ = std::fs::remove_dir_all(&node_modules);
         }
-        let _ = app.emit("setup-progress", serde_json::json!({
-            "stage": "npm_install",
-            "message": "检测到不完整的依赖或缺失的构建产物，正在自动清理后重新安装...",
-            "percent": 86
-        }));
-        let _ = std::fs::remove_dir_all(&node_modules);
     }
 
     let node_bin = environment::get_node_binary()?;
@@ -64,18 +62,19 @@ pub async fn run_npm_install(app: tauri::AppHandle) -> Result<String, String> {
         std::ffi::OsString::from(&node_dir)
     };
 
-    // Test if default npm registry is reachable
-    let use_mirror = !download::test_url_reachable("https://registry.npmjs.org/").await;
-
     // ===== Step 1: Install pnpm globally via npm =====
-    let _ = app.emit("setup-progress", serde_json::json!({
-        "stage": "npm_install",
-        "message": "正在安装 pnpm 包管理器...",
-        "percent": 87
-    }));
+    let _ = app.emit(
+        "setup-progress",
+        serde_json::json!({
+            "stage": "npm_install",
+            "message": "正在安装 pnpm 包管理器...",
+            "percent": 87
+        }),
+    );
 
     let mut pnpm_cmd = std::process::Command::new(&node_bin);
-    pnpm_cmd.arg(&npm_bin)
+    pnpm_cmd
+        .arg(&npm_bin)
         .arg("install")
         .arg("-g")
         .arg("pnpm")
@@ -91,8 +90,11 @@ pub async fn run_npm_install(app: tauri::AppHandle) -> Result<String, String> {
         pnpm_cmd.arg("--registry=https://registry.npmmirror.com");
     }
 
-    let pnpm_output = pnpm_cmd.output()
-        .map_err(|e| format!("安装 pnpm 失败: {}", e))?;
+    let pnpm_output = openclaw_cli::run_command_with_timeout(
+        &mut pnpm_cmd,
+        Duration::from_secs(20 * 60),
+        "安装 pnpm",
+    )?;
 
     if !pnpm_output.status.success() {
         let stderr = String::from_utf8_lossy(&pnpm_output.stderr);
@@ -100,11 +102,14 @@ pub async fn run_npm_install(app: tauri::AppHandle) -> Result<String, String> {
     }
 
     // ===== Step 2: Run pnpm install =====
-    let _ = app.emit("setup-progress", serde_json::json!({
-        "stage": "npm_install",
-        "message": "正在安装 OpenClaw 依赖包 (这可能需要几分钟)...",
-        "percent": 90
-    }));
+    let _ = app.emit(
+        "setup-progress",
+        serde_json::json!({
+            "stage": "npm_install",
+            "message": "正在安装 OpenClaw 依赖包 (这可能需要几分钟)...",
+            "percent": 90
+        }),
+    );
 
     // Find pnpm binary — first try `npm root -g`, then fall back to static paths
     let mut pnpm_cli: Option<PathBuf> = None;
@@ -112,7 +117,10 @@ pub async fn run_npm_install(app: tauri::AppHandle) -> Result<String, String> {
     // Phase 1: Dynamic discovery via `npm root -g`
     {
         let mut root_cmd = std::process::Command::new(&node_bin);
-        root_cmd.arg(&npm_bin).arg("root").arg("-g")
+        root_cmd
+            .arg(&npm_bin)
+            .arg("root")
+            .arg("-g")
             .env("PATH", &sandbox_path);
         #[cfg(target_os = "windows")]
         root_cmd.creation_flags(0x08000000);
@@ -134,35 +142,70 @@ pub async fn run_npm_install(app: tauri::AppHandle) -> Result<String, String> {
     if pnpm_cli.is_none() {
         let pnpm_candidates: Vec<PathBuf> = if cfg!(target_os = "windows") {
             vec![
-                node_dir.join("node_modules").join("pnpm").join("bin").join("pnpm.cjs"),
-                node_dir.join("node_modules").join("pnpm").join("dist").join("pnpm.cjs"),
-                node_dir.join("lib").join("node_modules").join("pnpm").join("bin").join("pnpm.cjs"),
-                node_dir.join("lib").join("node_modules").join("pnpm").join("dist").join("pnpm.cjs"),
+                node_dir
+                    .join("node_modules")
+                    .join("pnpm")
+                    .join("bin")
+                    .join("pnpm.cjs"),
+                node_dir
+                    .join("node_modules")
+                    .join("pnpm")
+                    .join("dist")
+                    .join("pnpm.cjs"),
+                node_dir
+                    .join("lib")
+                    .join("node_modules")
+                    .join("pnpm")
+                    .join("bin")
+                    .join("pnpm.cjs"),
+                node_dir
+                    .join("lib")
+                    .join("node_modules")
+                    .join("pnpm")
+                    .join("dist")
+                    .join("pnpm.cjs"),
                 node_dir.join("pnpm.cmd"),
                 node_dir.join("pnpm"),
             ]
         } else {
             vec![
-                node_dir.join("..").join("lib").join("node_modules").join("pnpm").join("bin").join("pnpm.cjs"),
-                node_dir.join("..").join("lib").join("node_modules").join("pnpm").join("dist").join("pnpm.cjs"),
+                node_dir
+                    .join("..")
+                    .join("lib")
+                    .join("node_modules")
+                    .join("pnpm")
+                    .join("bin")
+                    .join("pnpm.cjs"),
+                node_dir
+                    .join("..")
+                    .join("lib")
+                    .join("node_modules")
+                    .join("pnpm")
+                    .join("dist")
+                    .join("pnpm.cjs"),
                 node_dir.join("pnpm"),
             ]
         };
 
         pnpm_cli = pnpm_candidates.iter().find(|p| p.exists()).cloned();
         if pnpm_cli.is_none() {
-            let searched = pnpm_candidates.iter()
+            let searched = pnpm_candidates
+                .iter()
                 .map(|p| p.to_string_lossy().to_string())
                 .collect::<Vec<_>>()
                 .join("\n  ");
-            return Err(format!("pnpm 安装成功但找不到 pnpm.cjs，已搜索:\n  {}", searched));
+            return Err(format!(
+                "pnpm 安装成功但找不到 pnpm.cjs，已搜索:\n  {}",
+                searched
+            ));
         }
     }
 
     let pnpm_cli = pnpm_cli.unwrap();
 
     let mut install_cmd = std::process::Command::new(&node_bin);
-    install_cmd.arg(&pnpm_cli)
+    install_cmd
+        .arg(&pnpm_cli)
         .arg("install")
         .current_dir(&openclaw_dir)
         .stdout(Stdio::piped())
@@ -173,22 +216,31 @@ pub async fn run_npm_install(app: tauri::AppHandle) -> Result<String, String> {
     install_cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
 
     if use_mirror {
-        let _ = app.emit("setup-progress", serde_json::json!({
-            "stage": "npm_install",
-            "message": "NPM 官方源连接慢，已切换淘宝镜像加速...",
-            "percent": 91
-        }));
+        let _ = app.emit(
+            "setup-progress",
+            serde_json::json!({
+                "stage": "npm_install",
+                "message": "NPM 官方源连接慢，已切换淘宝镜像加速...",
+                "percent": 91
+            }),
+        );
         install_cmd.env("npm_config_registry", "https://registry.npmmirror.com");
     }
 
-    let _ = app.emit("setup-progress", serde_json::json!({
-        "stage": "npm_install",
-        "message": "正在执行 pnpm install (请耐心等待)...",
-        "percent": 92
-    }));
+    let _ = app.emit(
+        "setup-progress",
+        serde_json::json!({
+            "stage": "npm_install",
+            "message": "正在执行 pnpm install (请耐心等待)...",
+            "percent": 92
+        }),
+    );
 
-    let output = install_cmd.output()
-        .map_err(|e| format!("执行 pnpm install 失败: {}", e))?;
+    let output = openclaw_cli::run_command_with_timeout(
+        &mut install_cmd,
+        Duration::from_secs(20 * 60),
+        "执行 pnpm install",
+    )?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -208,17 +260,21 @@ pub async fn run_npm_install(app: tauri::AppHandle) -> Result<String, String> {
 
         if is_llama_crash {
             // ===== Smart retry: skip node-llama-cpp binary download =====
-            let _ = app.emit("setup-progress", serde_json::json!({
-                "stage": "npm_install",
-                "message": "检测到本地推理组件不兼容，正在兼容性适配...",
-                "percent": 93
-            }));
+            let _ = app.emit(
+                "setup-progress",
+                serde_json::json!({
+                    "stage": "npm_install",
+                    "message": "检测到本地推理组件不兼容，正在兼容性适配...",
+                    "percent": 93
+                }),
+            );
 
             let node_modules_retry = openclaw_dir.join("node_modules");
             let _ = std::fs::remove_dir_all(&node_modules_retry);
 
             let mut retry_cmd = std::process::Command::new(&node_bin);
-            retry_cmd.arg(&pnpm_cli)
+            retry_cmd
+                .arg(&pnpm_cli)
                 .arg("install")
                 .current_dir(&openclaw_dir)
                 .stdout(Stdio::piped())
@@ -234,8 +290,11 @@ pub async fn run_npm_install(app: tauri::AppHandle) -> Result<String, String> {
                 retry_cmd.env("npm_config_registry", "https://registry.npmmirror.com");
             }
 
-            let retry_output = retry_cmd.output()
-                .map_err(|e| format!("重试 pnpm install 失败: {}", e))?;
+            let retry_output = openclaw_cli::run_command_with_timeout(
+                &mut retry_cmd,
+                Duration::from_secs(20 * 60),
+                "重试 pnpm install",
+            )?;
 
             if !retry_output.status.success() {
                 let retry_stderr = String::from_utf8_lossy(&retry_output.stderr);
@@ -246,17 +305,21 @@ pub async fn run_npm_install(app: tauri::AppHandle) -> Result<String, String> {
             }
         } else {
             // ===== Generic retry: clean node_modules and try once more =====
-            let _ = app.emit("setup-progress", serde_json::json!({
-                "stage": "npm_install",
-                "message": "安装遇到问题，正在清理环境并重试...",
-                "percent": 93
-            }));
+            let _ = app.emit(
+                "setup-progress",
+                serde_json::json!({
+                    "stage": "npm_install",
+                    "message": "安装遇到问题，正在清理环境并重试...",
+                    "percent": 93
+                }),
+            );
 
             let node_modules_retry = openclaw_dir.join("node_modules");
             let _ = std::fs::remove_dir_all(&node_modules_retry);
 
             let mut retry_cmd = std::process::Command::new(&node_bin);
-            retry_cmd.arg(&pnpm_cli)
+            retry_cmd
+                .arg(&pnpm_cli)
                 .arg("install")
                 .current_dir(&openclaw_dir)
                 .stdout(Stdio::piped())
@@ -270,8 +333,11 @@ pub async fn run_npm_install(app: tauri::AppHandle) -> Result<String, String> {
                 retry_cmd.env("npm_config_registry", "https://registry.npmmirror.com");
             }
 
-            let retry_output = retry_cmd.output()
-                .map_err(|e| format!("重试 pnpm install 失败: {}", e))?;
+            let retry_output = openclaw_cli::run_command_with_timeout(
+                &mut retry_cmd,
+                Duration::from_secs(20 * 60),
+                "重试 pnpm install",
+            )?;
 
             if !retry_output.status.success() {
                 let retry_stderr = String::from_utf8_lossy(&retry_output.stderr);
@@ -289,14 +355,18 @@ pub async fn run_npm_install(app: tauri::AppHandle) -> Result<String, String> {
     }
 
     if !has_cli_build_output(&openclaw_dir) {
-        let _ = app.emit("setup-progress", serde_json::json!({
-            "stage": "npm_build",
-            "message": "检测到新版 OpenClaw 缺少 CLI 构建产物，正在执行 pnpm build...",
-            "percent": 96
-        }));
+        let _ = app.emit(
+            "setup-progress",
+            serde_json::json!({
+                "stage": "npm_build",
+                "message": "检测到新版 OpenClaw 缺少 CLI 构建产物，正在执行 pnpm build...",
+                "percent": 96
+            }),
+        );
 
         let mut build_cmd = std::process::Command::new(&node_bin);
-        build_cmd.arg(&pnpm_cli)
+        build_cmd
+            .arg(&pnpm_cli)
             .arg("build")
             .current_dir(&openclaw_dir)
             .stdout(Stdio::piped())
@@ -310,8 +380,11 @@ pub async fn run_npm_install(app: tauri::AppHandle) -> Result<String, String> {
             build_cmd.env("npm_config_registry", "https://registry.npmmirror.com");
         }
 
-        let build_output = build_cmd.output()
-            .map_err(|e| format!("执行 pnpm build 失败: {}", e))?;
+        let build_output = openclaw_cli::run_command_with_timeout(
+            &mut build_cmd,
+            Duration::from_secs(20 * 60),
+            "执行 pnpm build",
+        )?;
 
         if !build_output.status.success() {
             let stderr = String::from_utf8_lossy(&build_output.stderr);
@@ -333,18 +406,52 @@ pub async fn run_npm_install(app: tauri::AppHandle) -> Result<String, String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs().to_string())
         .unwrap_or_else(|_| "unknown".to_string());
-    let _ = std::fs::write(&marker_path, format!(
-        "installed_at={}\npnpm=true\n",
-        timestamp
-    ));
+    let _ = std::fs::write(
+        &marker_path,
+        format!("installed_at={}\npnpm=true\n", timestamp),
+    );
 
-    let _ = app.emit("setup-progress", serde_json::json!({
-        "stage": "npm_done",
-        "message": "✅ 所有依赖与构建产物已就绪！",
-        "percent": 98
-    }));
+    let _ = app.emit(
+        "setup-progress",
+        serde_json::json!({
+            "stage": "npm_done",
+            "message": "✅ 所有依赖与构建产物已就绪！",
+            "percent": 98
+        }),
+    );
 
     Ok("npm install completed successfully".to_string())
+}
+
+/// Run `pnpm install` using sandboxed Node.js
+/// First installs pnpm via npm, then uses pnpm for proper workspace dependency resolution
+/// Automatically sets Taobao registry mirror when npmjs.org is slow
+#[tauri::command]
+pub async fn run_npm_install(app: tauri::AppHandle) -> Result<String, String> {
+    let openclaw_dir = paths::get_openclaw_dir()?;
+    if !openclaw_dir.join("package.json").exists() {
+        return Err("OpenClaw 源码未找到，请先下载源码".to_string());
+    }
+
+    let node_modules = openclaw_dir.join("node_modules");
+    let install_marker = node_modules.join(".install_complete");
+
+    if node_modules.exists()
+        && node_modules.join(".pnpm").exists()
+        && install_marker.exists()
+        && has_cli_build_output(&openclaw_dir)
+    {
+        return Ok("node_modules already installed (pnpm)".to_string());
+    }
+
+    let use_mirror = !download::test_url_reachable("https://registry.npmjs.org/").await;
+
+    let app_clone = app.clone();
+    tokio::task::spawn_blocking(move || {
+        install_openclaw_dependencies_blocking(app_clone, openclaw_dir, use_mirror)
+    })
+    .await
+    .map_err(|error| format!("依赖安装任务调度失败: {error}"))?
 }
 
 #[cfg(test)]

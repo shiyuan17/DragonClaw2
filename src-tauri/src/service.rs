@@ -106,8 +106,9 @@ fn read_runtime_state_from_path(path: &Path) -> Result<Option<ServiceRuntimeStat
 
 fn write_runtime_state_to_path(path: &Path, runtime: &ServiceRuntimeState) -> Result<(), String> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|error| format!("Failed to create OpenClaw runtime state directory: {error}"))?;
+        fs::create_dir_all(parent).map_err(|error| {
+            format!("Failed to create OpenClaw runtime state directory: {error}")
+        })?;
     }
 
     let serialized = serde_json::to_string_pretty(runtime)
@@ -121,7 +122,8 @@ fn remove_runtime_state_file_at(path: &Path) -> Result<(), String> {
         return Ok(());
     }
 
-    fs::remove_file(path).map_err(|error| format!("Failed to remove OpenClaw runtime state: {error}"))
+    fs::remove_file(path)
+        .map_err(|error| format!("Failed to remove OpenClaw runtime state: {error}"))
 }
 
 fn read_runtime_state() -> Result<Option<ServiceRuntimeState>, String> {
@@ -207,7 +209,11 @@ fn ensure_control_ui_built(app: &tauri::AppHandle) {
             #[cfg(target_os = "windows")]
             npm_cmd.creation_flags(WINDOWS_HIDDEN_WINDOW_FLAG);
 
-            match npm_cmd.output() {
+            match openclaw_cli::run_command_with_timeout(
+                &mut npm_cmd,
+                Duration::from_secs(10 * 60),
+                "Control UI 依赖安装",
+            ) {
                 Ok(output) if output.status.success() => {
                     let _ = app.emit(
                         "service-log",
@@ -269,7 +275,11 @@ fn ensure_control_ui_built(app: &tauri::AppHandle) {
     #[cfg(target_os = "windows")]
     build_cmd.creation_flags(WINDOWS_HIDDEN_WINDOW_FLAG);
 
-    match build_cmd.output() {
+    match openclaw_cli::run_command_with_timeout(
+        &mut build_cmd,
+        Duration::from_secs(10 * 60),
+        "Control UI 构建",
+    ) {
         Ok(output) if output.status.success() => {
             let _ = app.emit(
                 "service-log",
@@ -310,7 +320,8 @@ fn is_port_available(port: u16) -> bool {
 
 #[cfg(target_os = "windows")]
 fn is_process_running(pid: u32) -> bool {
-    let script = "if (Get-Process -Id $args[0] -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }";
+    let script =
+        "if (Get-Process -Id $args[0] -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }";
     let mut command = std::process::Command::new("powershell");
     command
         .args([
@@ -325,7 +336,10 @@ fn is_process_running(pid: u32) -> bool {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .creation_flags(WINDOWS_HIDDEN_WINDOW_FLAG);
-    command.status().map(|status| status.success()).unwrap_or(false)
+    command
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -384,7 +398,10 @@ fn terminate_process_by_pid(pid: u32) -> Result<(), String> {
 }
 
 fn set_tracked_process(state: &ServiceState, tracked: Option<TrackedServiceProcess>) {
-    let tracked_port = tracked.as_ref().map(|process| process.port).unwrap_or(DEFAULT_PORT);
+    let tracked_port = tracked
+        .as_ref()
+        .map(|process| process.port)
+        .unwrap_or(DEFAULT_PORT);
     *state.tracked_process.lock().unwrap() = tracked;
     *state.port.lock().unwrap() = tracked_port;
 }
@@ -498,13 +515,19 @@ pub async fn start_service_silent(
     start_service_impl(app, state, false).await
 }
 
+async fn ensure_control_ui_built_nonblocking(app: tauri::AppHandle) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        ensure_control_ui_built(&app);
+    })
+    .await
+    .map_err(|error| format!("Control UI 预构建任务调度失败: {error}"))
+}
+
 async fn start_service_impl(
     app: tauri::AppHandle,
     state: tauri::State<'_, ServiceState>,
     open_browser: bool,
 ) -> Result<String, String> {
-    ensure_control_ui_built(&app);
-
     if let Some(existing) = resolve_known_process(state.inner())? {
         emit_service_port(&app, existing.port);
         let _ = app.emit(
@@ -523,6 +546,8 @@ async fn start_service_impl(
         }
         return Ok("Service is already running".to_string());
     }
+
+    ensure_control_ui_built_nonblocking(app.clone()).await?;
 
     let openclaw_dir = paths::get_openclaw_dir()?;
     if !openclaw_dir.join("package.json").exists() {

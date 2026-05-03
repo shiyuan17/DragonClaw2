@@ -1,16 +1,17 @@
 // Copyright (C) 2026 shiyuan
 // SPDX-License-Identifier: GPL-3.0-only
 // This file is part of DragonClaw. See LICENSE for details.
-use std::path::PathBuf;
-use std::io::Write;
 use futures_util::StreamExt;
+use std::path::PathBuf;
 use tauri::Emitter;
+use tokio::io::AsyncWriteExt;
 
 /// Get the sandbox base directory: AppData/Local/OpenClawLauncher (Win) or ~/Library/.../OpenClawLauncher (Mac) or ~/.local/share/OpenClawLauncher (Linux)
 pub fn get_sandbox_dir() -> Result<PathBuf, String> {
     let base = dirs::data_local_dir().ok_or("Cannot determine AppData/Local directory")?;
     let sandbox = base.join("OpenClawLauncher");
-    std::fs::create_dir_all(&sandbox).map_err(|e| format!("Failed to create sandbox dir: {}", e))?;
+    std::fs::create_dir_all(&sandbox)
+        .map_err(|e| format!("Failed to create sandbox dir: {}", e))?;
     Ok(sandbox)
 }
 
@@ -18,8 +19,8 @@ pub fn get_sandbox_dir() -> Result<PathBuf, String> {
 pub fn check_disk_space(path: &PathBuf, required_mb: u64) -> Result<bool, String> {
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::ffi::OsStrExt;
         use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
         // Use GetDiskFreeSpaceExW on Windows
         let wide_path: Vec<u16> = OsStr::new(path.to_string_lossy().as_ref())
             .encode_wide()
@@ -81,7 +82,7 @@ pub fn check_disk_space(path: &PathBuf, required_mb: u64) -> Result<bool, String
 /// and warn the user. Returns a warning message if path has issues, None otherwise.
 pub fn check_path_compatibility(path: &PathBuf) -> Option<String> {
     let path_str = path.to_string_lossy();
-    
+
     // Check for non-ASCII characters (Chinese usernames etc.)
     if path_str.chars().any(|c| !c.is_ascii()) {
         return Some(format!(
@@ -90,7 +91,7 @@ pub fn check_path_compatibility(path: &PathBuf) -> Option<String> {
             path_str
         ));
     }
-    
+
     // Check for path length on Windows (260 char limit)
     #[cfg(target_os = "windows")]
     if path_str.len() > 200 {
@@ -100,7 +101,7 @@ pub fn check_path_compatibility(path: &PathBuf) -> Option<String> {
             path_str.len()
         ));
     }
-    
+
     None
 }
 
@@ -110,8 +111,17 @@ pub fn enable_windows_long_paths() {
     use std::process::Command;
     // Try to enable LongPathsEnabled in registry (requires admin, best-effort)
     let _ = Command::new("reg")
-        .args(["add", "HKLM\\SYSTEM\\CurrentControlSet\\Control\\FileSystem", 
-               "/v", "LongPathsEnabled", "/t", "REG_DWORD", "/d", "1", "/f"])
+        .args([
+            "add",
+            "HKLM\\SYSTEM\\CurrentControlSet\\Control\\FileSystem",
+            "/v",
+            "LongPathsEnabled",
+            "/t",
+            "REG_DWORD",
+            "/d",
+            "1",
+            "/f",
+        ])
         .output();
 }
 
@@ -126,7 +136,10 @@ pub fn humanize_network_error(err: &str) -> String {
         "❌ 连接被拒绝：服务器未响应。可能是防火墙或代理设置问题。".to_string()
     } else if err_lower.contains("connection reset") || err_lower.contains("econnreset") {
         "❌ 连接被重置：网络不稳定。请检查 VPN/代理或稍后重试。".to_string()
-    } else if err_lower.contains("ssl") || err_lower.contains("tls") || err_lower.contains("certificate") {
+    } else if err_lower.contains("ssl")
+        || err_lower.contains("tls")
+        || err_lower.contains("certificate")
+    {
         "❌ SSL/TLS 证书错误：请检查系统时间是否正确，或代理是否干扰了 HTTPS。".to_string()
     } else if err_lower.contains("no such host") || err_lower.contains("not found") {
         "❌ 找不到服务器：请确认已连接到互联网。".to_string()
@@ -152,7 +165,11 @@ pub fn get_node_binary() -> Result<PathBuf, String> {
         if let Ok(entries) = std::fs::read_dir(&node_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_dir() && path.file_name().map_or(false, |n| n.to_string_lossy().starts_with("node-")) {
+                if path.is_dir()
+                    && path
+                        .file_name()
+                        .map_or(false, |n| n.to_string_lossy().starts_with("node-"))
+                {
                     let exe = path.join("node.exe");
                     if exe.exists() {
                         return Ok(exe);
@@ -166,7 +183,11 @@ pub fn get_node_binary() -> Result<PathBuf, String> {
         if let Ok(entries) = std::fs::read_dir(&node_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_dir() && path.file_name().map_or(false, |n| n.to_string_lossy().starts_with("node-")) {
+                if path.is_dir()
+                    && path
+                        .file_name()
+                        .map_or(false, |n| n.to_string_lossy().starts_with("node-"))
+                {
                     let exe = path.join("bin").join("node");
                     if exe.exists() {
                         return Ok(exe);
@@ -193,9 +214,18 @@ pub fn get_npm_binary() -> Result<PathBuf, String> {
 
     // Primary: the actual npm-cli.js embedded in Node's distribution
     let npm_cli = if cfg!(target_os = "windows") {
-        node_root.join("node_modules").join("npm").join("bin").join("npm-cli.js")
+        node_root
+            .join("node_modules")
+            .join("npm")
+            .join("bin")
+            .join("npm-cli.js")
     } else {
-        node_root.join("lib").join("node_modules").join("npm").join("bin").join("npm-cli.js")
+        node_root
+            .join("lib")
+            .join("node_modules")
+            .join("npm")
+            .join("bin")
+            .join("npm-cli.js")
     };
 
     if npm_cli.exists() {
@@ -210,7 +240,10 @@ pub fn get_npm_binary() -> Result<PathBuf, String> {
         }
     }
 
-    Err(format!("npm-cli.js not found. Searched: {}", npm_cli.display()))
+    Err(format!(
+        "npm-cli.js not found. Searched: {}",
+        npm_cli.display()
+    ))
 }
 
 /// Check if Node.js is already available in the sandbox
@@ -256,7 +289,10 @@ fn get_node_download_url() -> Result<(String, String), String> {
     let filename = format!("node-{}-{}-{}.{}", version, os, arch, ext);
     // Primary: official Node.js, Fallback: npmmirror.com (China mirror)
     let primary = format!("https://nodejs.org/dist/{}/{}", version, filename);
-    let fallback = format!("https://npmmirror.com/mirrors/node/{}/{}", version, filename);
+    let fallback = format!(
+        "https://npmmirror.com/mirrors/node/{}/{}",
+        version, filename
+    );
 
     Ok((primary, fallback))
 }
@@ -274,21 +310,27 @@ pub async fn download_and_install_node(app: tauri::AppHandle) -> Result<String, 
 
     // Step 2: Get download URL
     let (primary_url, fallback_url) = get_node_download_url()?;
-    let _ = app.emit("setup-progress", serde_json::json!({
-        "stage": "download_node",
-        "message": "正在下载 Node.js 运行环境...",
-        "percent": 10
-    }));
+    let _ = app.emit(
+        "setup-progress",
+        serde_json::json!({
+            "stage": "download_node",
+            "message": "正在下载 Node.js 运行环境...",
+            "percent": 10
+        }),
+    );
 
     // Step 3: Try primary URL first, fallback if failed
     let download_url = match test_url_reachable(&primary_url).await {
         true => &primary_url,
         false => {
-            let _ = app.emit("setup-progress", serde_json::json!({
-                "stage": "download_node",
-                "message": "官方源连接缓慢，已自动切换国内镜像...",
-                "percent": 12
-            }));
+            let _ = app.emit(
+                "setup-progress",
+                serde_json::json!({
+                    "stage": "download_node",
+                    "message": "官方源连接缓慢，已自动切换国内镜像...",
+                    "percent": 12
+                }),
+            );
             &fallback_url
         }
     };
@@ -302,14 +344,21 @@ pub async fn download_and_install_node(app: tauri::AppHandle) -> Result<String, 
     let mut downloaded: u64 = 0;
     let mut stream = response.bytes_stream();
 
-    let archive_ext = if download_url.ends_with(".zip") { "zip" } else { "tar.gz" };
+    let archive_ext = if download_url.ends_with(".zip") {
+        "zip"
+    } else {
+        "tar.gz"
+    };
     let archive_path = node_dir.join(format!("node_portable.{}", archive_ext));
-    let mut file = std::fs::File::create(&archive_path)
+    let mut file = tokio::fs::File::create(&archive_path)
+        .await
         .map_err(|e| format!("Failed to create archive file: {}", e))?;
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| humanize_network_error(&e.to_string()))?;
-        file.write_all(&chunk).map_err(|e| format!("Write error: {}", e))?;
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| format!("Write error: {}", e))?;
         downloaded += chunk.len() as u64;
 
         if total_size > 0 {
@@ -323,21 +372,30 @@ pub async fn download_and_install_node(app: tauri::AppHandle) -> Result<String, 
     }
     drop(file);
 
-    // Step 5: Extract archive
-    let _ = app.emit("setup-progress", serde_json::json!({
-        "stage": "extract_node",
-        "message": "正在解压 Node.js 运行环境...",
-        "percent": 55
-    }));
+    // Step 5: Extract archive (CPU/disk heavy — run off the async runtime worker)
+    let _ = app.emit(
+        "setup-progress",
+        serde_json::json!({
+            "stage": "extract_node",
+            "message": "正在解压 Node.js 运行环境...",
+            "percent": 55
+        }),
+    );
 
-    if archive_ext == "zip" {
-        extract_zip(&archive_path, &node_dir)?;
-    } else {
-        extract_tar_gz(&archive_path, &node_dir)?;
-    }
-
-    // Step 6: Cleanup archive to save space
-    let _ = std::fs::remove_file(&archive_path);
+    let archive_path_clone = archive_path.clone();
+    let node_dir_clone = node_dir.clone();
+    let archive_ext_owned = archive_ext.to_string();
+    tokio::task::spawn_blocking(move || {
+        let extract_result = if archive_ext_owned == "zip" {
+            extract_zip(&archive_path_clone, &node_dir_clone)
+        } else {
+            extract_tar_gz(&archive_path_clone, &node_dir_clone)
+        };
+        let _ = std::fs::remove_file(&archive_path_clone);
+        extract_result
+    })
+    .await
+    .map_err(|error| format!("Node.js 解压任务调度失败: {error}"))??;
 
     // Step 7: Verify binary exists
     let node_bin = get_node_binary()?;
@@ -352,24 +410,28 @@ pub async fn download_and_install_node(app: tauri::AppHandle) -> Result<String, 
         let _ = std::fs::set_permissions(&node_bin, std::fs::Permissions::from_mode(0o755));
     }
 
-    let _ = app.emit("setup-progress", serde_json::json!({
-        "stage": "node_ready",
-        "message": "✅ Node.js 运行环境就绪！",
-        "percent": 60
-    }));
+    let _ = app.emit(
+        "setup-progress",
+        serde_json::json!({
+            "stage": "node_ready",
+            "message": "✅ Node.js 运行环境就绪！",
+            "percent": 60
+        }),
+    );
 
     Ok(format!("Node.js installed at: {}", node_bin.display()))
 }
 
 /// Extract a ZIP file
 fn extract_zip(archive_path: &PathBuf, dest: &PathBuf) -> Result<(), String> {
-    let file = std::fs::File::open(archive_path)
-        .map_err(|e| format!("Failed to open zip: {}", e))?;
-    let mut archive = zip::ZipArchive::new(file)
-        .map_err(|e| format!("Failed to read zip: {}", e))?;
+    let file =
+        std::fs::File::open(archive_path).map_err(|e| format!("Failed to open zip: {}", e))?;
+    let mut archive =
+        zip::ZipArchive::new(file).map_err(|e| format!("Failed to read zip: {}", e))?;
 
     for i in 0..archive.len() {
-        let mut file = archive.by_index(i)
+        let mut file = archive
+            .by_index(i)
             .map_err(|e| format!("Failed to read zip entry {}: {}", i, e))?;
 
         let out_path = dest.join(file.mangled_name());
@@ -395,7 +457,12 @@ fn extract_zip(archive_path: &PathBuf, dest: &PathBuf) -> Result<(), String> {
 /// Extract a tar.gz file (used on Linux/Mac)
 fn extract_tar_gz(archive_path: &PathBuf, dest: &PathBuf) -> Result<(), String> {
     let output = std::process::Command::new("tar")
-        .args(["-xzf", &archive_path.to_string_lossy(), "-C", &dest.to_string_lossy()])
+        .args([
+            "-xzf",
+            &archive_path.to_string_lossy(),
+            "-C",
+            &dest.to_string_lossy(),
+        ])
         .output()
         .map_err(|e| format!("Failed to run tar: {}", e))?;
 

@@ -313,4 +313,4 @@
 ## Phase 5.26: 全项目消息提示统一为顶部居中浮层
 - [ ] 2026-05-03: add a shared top-center feedback center, migrate App / setup / workspace-clone notices into it, and retire inline banners, modal status strips, and the legacy bottom repair toast.
 ## Phase 5.28: 引导安装与启动链路去阻塞化
-- [ ] 2026-05-03: move setup, service prebuild, and onboarding heavy local work off UI-related command threads so the launcher stays responsive during install and first-run startup.
+- [x] 2026-05-03: move setup, service prebuild, and onboarding heavy local work off UI-related command threads so the launcher stays responsive during install and first-run startup.

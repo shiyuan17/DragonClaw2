@@ -21,6 +21,9 @@ import {
   shouldRunOnboardingSkillInstall,
 } from "../utils/onboardingSkillInstaller";
 
+const LAUNCH_POLL_INTERVAL_MS = 2000;
+const LAUNCH_POLL_TIMEOUT_MS = 60000;
+
 interface UseSetupOptions {
   addLog: (level: string, message: string) => void;
   checkApiKey: () => Promise<void>;
@@ -39,6 +42,7 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
   const phaseRef = useRef<AppPhase>("checking");
   const launchStartedRef = useRef(false);
   const launchFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onboardingInstallRunningRef = useRef(false);
   const startupFinalizingRef = useRef(false);
   const servicePortRef = useRef(18789);
   const finalizeStartupRef = useRef<(force?: boolean) => Promise<void>>(async () => {});
@@ -91,6 +95,43 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
     await markOnboardingSkillInstallRequired();
     return await syncWorkspacePath(trimmedWorkspacePath || undefined);
   }, [syncWorkspacePath]);
+
+  const startBackgroundOnboardingSkillInstall = useCallback(async () => {
+    if (onboardingInstallRunningRef.current) {
+      return;
+    }
+
+    let needsOnboardingSkills = false;
+    try {
+      needsOnboardingSkills = await shouldRunOnboardingSkillInstall();
+    } catch (error) {
+      addLog("warn", `Onboarding skill install state check failed; background install skipped: ${error}`);
+      return;
+    }
+
+    if (!needsOnboardingSkills) {
+      return;
+    }
+
+    onboardingInstallRunningRef.current = true;
+    addLog("info", "Onboarding recommended skill install will continue in the background.");
+
+    try {
+      const installResult = await runOnboardingSkillInstall({
+        servicePort: servicePortRef.current,
+        addLog,
+        onProgress: (message) => {
+          addLog("info", message);
+        },
+      });
+      addLog("info", installResult.summaryMessage);
+    } catch (error) {
+      addLog("error", `Background onboarding skill install failed: ${error}`);
+    } finally {
+      onboardingInstallRunningRef.current = false;
+    }
+  }, [addLog]);
+
   const finalizeStartup = useCallback(async (force = false) => {
     if ((!force && phaseRef.current !== "launching") || startupFinalizingRef.current) {
       return;
@@ -104,33 +145,19 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
     setSetupError(null);
 
     try {
-      const needsOnboardingSkills = await shouldRunOnboardingSkillInstall();
-      if (needsOnboardingSkills) {
-        setSetupPhase("launching");
-        const installResult = await runOnboardingSkillInstall({
-          servicePort: servicePortRef.current,
-          addLog,
-          onProgress: (message, nextPercent) => {
-            setProgress(nextPercent);
-            setProgressMsg(message);
-          },
-        });
-        setProgress(99);
-        setProgressMsg(installResult.summaryMessage);
-      } else {
-        setProgress(100);
-        setProgressMsg("OpenClaw 服务已就绪");
-      }
+      setProgress(100);
+      setProgressMsg("OpenClaw 服务已就绪");
 
       setRunning(true);
       setSetupPhase("ready");
       addLog("success", "OpenClaw 服务已启动");
       await checkApiKey();
+      void startBackgroundOnboardingSkillInstall();
     } finally {
       startupFinalizingRef.current = false;
       setLoading(false);
     }
-  }, [addLog, checkApiKey, clearLaunchFallback, setRunning, setSetupPhase]);
+  }, [addLog, checkApiKey, clearLaunchFallback, setRunning, setSetupPhase, startBackgroundOnboardingSkillInstall]);
 
   const launchService = useCallback(async () => {
     if (launchStartedRef.current || startupFinalizingRef.current) {
@@ -159,7 +186,8 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
       }
 
       setProgressMsg("OpenClaw 服务启动中，等待就绪信号...");
-      launchFallbackRef.current = setTimeout(async () => {
+      const fallbackStartedAt = Date.now();
+      const pollServiceReady = async () => {
         if (phaseRef.current !== "launching" || startupFinalizingRef.current) {
           return;
         }
@@ -168,11 +196,24 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
           const alive = await invoke<boolean>("is_service_running");
           if (alive) {
             await finalizeStartup(true);
+            return;
           }
-        } catch {
-          // Visible error handling is done by the initial start call.
+        } catch (pollError) {
+          addLog("warn", `OpenClaw 启动状态检测失败: ${pollError}`);
         }
-      }, 15000);
+
+        if (Date.now() - fallbackStartedAt >= LAUNCH_POLL_TIMEOUT_MS) {
+          launchStartedRef.current = false;
+          setSetupError("OpenClaw 服务启动超时，请重试");
+          setProgressMsg("启动超时，请重试");
+          addLog("error", "OpenClaw 服务启动超时，未在 60 秒内确认 ready");
+          setLoading(false);
+          return;
+        }
+
+        launchFallbackRef.current = setTimeout(pollServiceReady, LAUNCH_POLL_INTERVAL_MS);
+      };
+      launchFallbackRef.current = setTimeout(pollServiceReady, LAUNCH_POLL_INTERVAL_MS);
     } catch (err) {
       launchStartedRef.current = false;
       setSetupError(String(err));

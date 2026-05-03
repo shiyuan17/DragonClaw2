@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // This file is part of DragonClaw. See LICENSE for details.
 /// OpenClaw setup orchestration.
-
 use std::fs;
 
 use serde_json::json;
@@ -80,12 +79,10 @@ pub fn check_node_modules_exists() -> Result<bool, String> {
     let dir = paths::engine_dir()?;
     let node_modules = dir.join("node_modules");
     let marker = node_modules.join(".install_complete");
-    Ok(
-        node_modules.exists()
-            && node_modules.join(".pnpm").exists()
-            && marker.exists()
-            && installer::has_cli_build_output(&dir),
-    )
+    Ok(node_modules.exists()
+        && node_modules.join(".pnpm").exists()
+        && marker.exists()
+        && installer::has_cli_build_output(&dir))
 }
 
 #[tauri::command]
@@ -197,7 +194,10 @@ pub fn install_preset_skills(app: tauri::AppHandle) -> Result<String, String> {
         }),
     );
 
-    Ok(format!("Preset skills installed at: {}", skills_dir.display()))
+    Ok(format!(
+        "Preset skills installed at: {}",
+        skills_dir.display()
+    ))
 }
 
 #[tauri::command]
@@ -205,7 +205,9 @@ pub async fn setup_openclaw(app: tauri::AppHandle) -> Result<String, String> {
     let sandbox = environment::get_sandbox_dir()?;
     match environment::check_disk_space(&sandbox, 500) {
         Ok(false) => {
-            return Err("磁盘空间不足，OpenClaw 至少需要 500MB 可用空间，请清理后重试。".to_string());
+            return Err(
+                "磁盘空间不足，OpenClaw 至少需要 500MB 可用空间，请清理后重试。".to_string(),
+            );
         }
         _ => {}
     }
@@ -230,10 +232,17 @@ pub async fn setup_openclaw(app: tauri::AppHandle) -> Result<String, String> {
 
     download::download_openclaw_source(app.clone()).await?;
     installer::run_npm_install(app.clone()).await?;
-    inject_default_config(app.clone(), None)?;
-    inject_default_models(app.clone())?;
-    install_preset_skills(app.clone())?;
-    let _ = openclaw_cli::ensure_openclaw_cli_available()?;
+
+    let app_setup = app.clone();
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        inject_default_config(app_setup.clone(), None)?;
+        inject_default_models(app_setup.clone())?;
+        install_preset_skills(app_setup)?;
+        let _ = openclaw_cli::ensure_openclaw_cli_available()?;
+        Ok(())
+    })
+    .await
+    .map_err(|error| format!("安装收尾配置任务调度失败: {error}"))??;
 
     let _ = app.emit(
         "setup-progress",
@@ -261,8 +270,11 @@ pub async fn reinstall_environment(app: tauri::AppHandle) -> Result<String, Stri
                 "percent": 5
             }),
         );
-        fs::remove_dir_all(&node_modules)
-            .map_err(|error| format!("清理 node_modules 失败: {error}"))?;
+        tokio::task::spawn_blocking(move || {
+            let _ = std::fs::remove_dir_all(&node_modules);
+        })
+        .await
+        .map_err(|error| format!("清理 node_modules 任务调度失败: {error}"))?;
     }
 
     let _ = app.emit(
