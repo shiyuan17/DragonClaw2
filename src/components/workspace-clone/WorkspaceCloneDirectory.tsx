@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import type { WorkspaceEntityType } from "../../types";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
 import type {
@@ -7,7 +8,12 @@ import type {
   WorkspaceEntity,
   WorkspaceTypeTab,
 } from "./workspaceCloneTypes";
-import { WorkspaceCloneChannelBindingModal } from "./WorkspaceCloneChannelBindingModal";
+
+const WorkspaceCloneChannelBindingModal = lazy(() =>
+  import("./WorkspaceCloneChannelBindingModal").then((module) => ({
+    default: module.WorkspaceCloneChannelBindingModal,
+  })),
+);
 
 interface WorkspaceCloneDirectoryProps {
   typeTabs: WorkspaceTypeTab[];
@@ -445,54 +451,58 @@ export function WorkspaceCloneDirectory({
         )}
       </aside>
 
-      <WorkspaceCloneChannelBindingModal
-        state={channelBindingModal}
-        availableAgents={channelBindingAgents}
-        selectedAgentId={channelBindingAgentId}
-        modalLoading={channelBindingModalLoading}
-        modalSaving={channelBindingModalSaving}
-        modalNotice={channelBindingNotice}
-        modalError={channelBindingError}
-        weixinQrStarting={weixinQrStarting}
-        weixinQrPolling={weixinQrPolling}
-        weixinQrUrl={weixinQrUrl}
-        weixinQrImageUrl={weixinQrImageUrl}
-        weixinQrDetail={weixinQrDetail}
-        weixinQrLogs={weixinQrLogs}
-        hasActiveWeixinQrSession={hasActiveWeixinQrSession}
-        isCurrentWeixinChannelAlreadyBound={isCurrentWeixinChannelAlreadyBound}
-        weixinQrStatusTone={weixinQrStatusTone}
-        weixinQrStatusText={weixinQrStatusText}
-        feishuQrRequesting={feishuQrRequesting}
-        feishuQrChecking={feishuQrChecking}
-        feishuQrVisible={feishuQrVisible}
-        feishuQrTargetUrl={feishuQrTargetUrl}
-        feishuQrUserCode={feishuQrUserCode}
-        feishuQrExpiresAtMs={feishuQrExpiresAtMs}
-        feishuAppId={feishuAppId}
-        feishuAppSecret={feishuAppSecret}
-        feishuAppSecretConfigured={feishuAppSecretConfigured}
-        feishuAppSecretVisible={feishuAppSecretVisible}
-        feishuDmPolicy={feishuDmPolicy}
-        feishuManualExpanded={feishuManualExpanded}
-        feishuAllowFromDraft={feishuAllowFromDraft}
-        feishuAllowFromSessionIds={feishuAllowFromSessionIds}
-        onClose={onCloseChannelBindingModal}
-        onSelectAgent={onSelectChannelBindingAgent}
-        onStartWeixinQrBinding={onStartWeixinQrBinding}
-        onOpenExternalLink={onOpenExternalBindingLink}
-        onRequestFeishuQr={onRequestFeishuQr}
-        onCheckFeishuQr={onCheckFeishuQr}
-        onChangeFeishuAppId={onChangeFeishuAppId}
-        onChangeFeishuAppSecret={onChangeFeishuAppSecret}
-        onChangeFeishuDmPolicy={onChangeFeishuDmPolicy}
-        onChangeFeishuAllowFromDraft={onChangeFeishuAllowFromDraft}
-        onAddFeishuAllowFromSessionId={onAddFeishuAllowFromSessionId}
-        onRemoveFeishuAllowFromSessionId={onRemoveFeishuAllowFromSessionId}
-        onToggleFeishuManualExpanded={onToggleFeishuManualExpanded}
-        onToggleFeishuAppSecretVisible={onToggleFeishuAppSecretVisible}
-        onSaveBinding={onSaveChannelBinding}
-      />
+      {channelBindingModal.open ? (
+        <Suspense fallback={null}>
+          <WorkspaceCloneChannelBindingModal
+            state={channelBindingModal}
+            availableAgents={channelBindingAgents}
+            selectedAgentId={channelBindingAgentId}
+            modalLoading={channelBindingModalLoading}
+            modalSaving={channelBindingModalSaving}
+            modalNotice={channelBindingNotice}
+            modalError={channelBindingError}
+            weixinQrStarting={weixinQrStarting}
+            weixinQrPolling={weixinQrPolling}
+            weixinQrUrl={weixinQrUrl}
+            weixinQrImageUrl={weixinQrImageUrl}
+            weixinQrDetail={weixinQrDetail}
+            weixinQrLogs={weixinQrLogs}
+            hasActiveWeixinQrSession={hasActiveWeixinQrSession}
+            isCurrentWeixinChannelAlreadyBound={isCurrentWeixinChannelAlreadyBound}
+            weixinQrStatusTone={weixinQrStatusTone}
+            weixinQrStatusText={weixinQrStatusText}
+            feishuQrRequesting={feishuQrRequesting}
+            feishuQrChecking={feishuQrChecking}
+            feishuQrVisible={feishuQrVisible}
+            feishuQrTargetUrl={feishuQrTargetUrl}
+            feishuQrUserCode={feishuQrUserCode}
+            feishuQrExpiresAtMs={feishuQrExpiresAtMs}
+            feishuAppId={feishuAppId}
+            feishuAppSecret={feishuAppSecret}
+            feishuAppSecretConfigured={feishuAppSecretConfigured}
+            feishuAppSecretVisible={feishuAppSecretVisible}
+            feishuDmPolicy={feishuDmPolicy}
+            feishuManualExpanded={feishuManualExpanded}
+            feishuAllowFromDraft={feishuAllowFromDraft}
+            feishuAllowFromSessionIds={feishuAllowFromSessionIds}
+            onClose={onCloseChannelBindingModal}
+            onSelectAgent={onSelectChannelBindingAgent}
+            onStartWeixinQrBinding={onStartWeixinQrBinding}
+            onOpenExternalLink={onOpenExternalBindingLink}
+            onRequestFeishuQr={onRequestFeishuQr}
+            onCheckFeishuQr={onCheckFeishuQr}
+            onChangeFeishuAppId={onChangeFeishuAppId}
+            onChangeFeishuAppSecret={onChangeFeishuAppSecret}
+            onChangeFeishuDmPolicy={onChangeFeishuDmPolicy}
+            onChangeFeishuAllowFromDraft={onChangeFeishuAllowFromDraft}
+            onAddFeishuAllowFromSessionId={onAddFeishuAllowFromSessionId}
+            onRemoveFeishuAllowFromSessionId={onRemoveFeishuAllowFromSessionId}
+            onToggleFeishuManualExpanded={onToggleFeishuManualExpanded}
+            onToggleFeishuAppSecretVisible={onToggleFeishuAppSecretVisible}
+            onSaveBinding={onSaveChannelBinding}
+          />
+        </Suspense>
+      ) : null}
     </>
   );
 }

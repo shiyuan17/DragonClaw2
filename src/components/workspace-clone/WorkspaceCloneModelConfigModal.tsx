@@ -17,6 +17,7 @@ interface WorkspaceCloneModelConfigModalProps {
   savedProviders: SavedProvider[];
   currentConfig: CurrentConfig | null;
   providers: ProviderInfo[];
+  loading?: boolean;
   onClose: () => void;
   onRefreshSavedProviders: () => Promise<void>;
   onRefreshCurrentConfig: () => Promise<CurrentConfig>;
@@ -175,6 +176,7 @@ export function WorkspaceCloneModelConfigModal({
   savedProviders,
   currentConfig,
   providers,
+  loading = false,
   onClose,
   onRefreshSavedProviders,
   onRefreshCurrentConfig,
@@ -427,7 +429,7 @@ export function WorkspaceCloneModelConfigModal({
               type="button"
               className="workspace-model-modal__ghost"
               onClick={() => void handleRefresh()}
-              disabled={refreshing || saving}
+              disabled={refreshing || saving || loading}
             >
               <WorkspaceCloneIcon name="refresh" size={14} strokeWidth={1.9} />
               <span>{refreshing ? "刷新中..." : "刷新"}</span>
@@ -438,6 +440,24 @@ export function WorkspaceCloneModelConfigModal({
           </div>
         </div>
 
+        {loading ? (
+          <div className="workspace-model-modal__body">
+            <section className="workspace-model-modal__cards">
+              <div className="workspace-model-modal__cards-grid">
+                {["one", "two", "three"].map((item) => (
+                  <article key={item} className="workspace-model-card">
+                    <button type="button" className="workspace-model-card__main" disabled>
+                      <div className="workspace-model-card__title-row">
+                        <strong>正在加载...</strong>
+                      </div>
+                      <p>模型配置准备中</p>
+                    </button>
+                  </article>
+                ))}
+              </div>
+            </section>
+          </div>
+        ) : (
         <div className="workspace-model-modal__body">
           <section className="workspace-model-modal__cards">
             <div className="workspace-model-modal__cards-grid">
@@ -601,6 +621,7 @@ export function WorkspaceCloneModelConfigModal({
             </div>
           </section>
         </div>
+        )}
       </div>
     </Modal>
   );

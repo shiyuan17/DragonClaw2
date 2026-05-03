@@ -33,6 +33,7 @@ interface ChatHistoryPayload {
 }
 
 const SESSION_TITLE_MAX_LENGTH = 56;
+const INITIAL_HISTORY_LIMIT = 50;
 
 function formatClockTime(timestamp?: number | null) {
   if (!timestamp) {
@@ -709,6 +710,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
   const activeRunAliasesRef = useRef<Set<string>>(new Set());
   const liveStepDedupeRef = useRef<Map<string, WorkspaceLiveStepDedupeEntry>>(new Map());
   const historyTitleFetchesRef = useRef<Set<string>>(new Set());
+  const historyLoadSeqRef = useRef(0);
   const hasObservedNonThinkingStepRef = useRef(false);
   const hasAssistantTextDeltaRef = useRef(false);
 
@@ -885,7 +887,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
   }, []);
 
   const loadSessionHistoryMessages = useCallback(
-    async (sessionKey: string, limit = 200) => {
+    async (sessionKey: string, limit = INITIAL_HISTORY_LIMIT) => {
       const client = clientRef.current;
       if (!client?.connected || !sessionKey) {
         return [];
@@ -907,23 +909,24 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
         return;
       }
 
+      const requestId = ++historyLoadSeqRef.current;
       setHistoryLoading(true);
 
       try {
-        const messages = await loadSessionHistoryMessages(sessionKey, 200);
+        const messages = await loadSessionHistoryMessages(sessionKey, INITIAL_HISTORY_LIMIT);
 
-        if (currentSessionKeyRef.current !== sessionKey) {
+        if (historyLoadSeqRef.current !== requestId || currentSessionKeyRef.current !== sessionKey) {
           return;
         }
 
         setHistoryRawMessages(messages);
         setError(null);
       } catch (loadError) {
-        if (currentSessionKeyRef.current === sessionKey) {
+        if (historyLoadSeqRef.current === requestId && currentSessionKeyRef.current === sessionKey) {
           setError(loadError instanceof Error ? loadError.message : String(loadError));
         }
       } finally {
-        if (currentSessionKeyRef.current === sessionKey) {
+        if (historyLoadSeqRef.current === requestId && currentSessionKeyRef.current === sessionKey) {
           setHistoryLoading(false);
         }
       }
@@ -967,14 +970,10 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
 
       setSelectedAgentId(nextAgentId);
       setSelectedSessionKey(nextSessionKey);
-
-      if (nextSessionKey) {
-        void loadHistory(nextSessionKey);
-      }
     } catch (bootstrapError) {
       setError(bootstrapError instanceof Error ? bootstrapError.message : String(bootstrapError));
     }
-  }, [loadHistory, selectedAgentId]);
+  }, [selectedAgentId]);
 
   const handleGatewayEvent = useCallback(
     (event: { event: string; payload?: unknown }) => {
@@ -1162,8 +1161,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     clearActiveRunRefs();
     setLiveSteps([]);
     void loadHistory(currentSessionKey);
-    void loadSessions();
-  }, [clearActiveRunRefs, connected, currentSessionKey, loadHistory, loadSessions]);
+  }, [clearActiveRunRefs, connected, currentSessionKey, loadHistory]);
 
   useEffect(() => {
     if (!selectedAgentId) {
@@ -1208,7 +1206,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     });
   }, [sessionsResult]);
 
-  useEffect(() => {
+  const loadHistoryTitles = useCallback(() => {
     if (!connected || !selectedAgentId) {
       return;
     }
@@ -1457,6 +1455,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     sendMessage,
     abortMessage,
     resetSession,
+    loadHistoryTitles,
     reload: bootstrapGatewayState,
   };
 }

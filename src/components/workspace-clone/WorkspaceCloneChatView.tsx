@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { WorkspaceCloneUtilityDrawer } from "./WorkspaceCloneUtilityDrawer";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { WORKSPACE_HOME_SUGGESTIONS } from "./workspaceCloneData";
 import type {
   WorkspaceEntity,
@@ -21,6 +20,34 @@ import { WorkspaceCloneLiveTimeline } from "./WorkspaceCloneLiveTimeline";
 import { shouldHideWorkspaceMessage, WorkspaceCloneMessagePreview } from "./WorkspaceCloneMessagePreview";
 
 const MESSAGE_BOTTOM_THRESHOLD_PX = 72;
+const MESSAGE_RENDER_LIMIT = 100;
+const WorkspaceCloneUtilityDrawer = lazy(() =>
+  import("./WorkspaceCloneUtilityDrawer").then((module) => ({ default: module.WorkspaceCloneUtilityDrawer })),
+);
+
+function WorkspaceCloneDrawerFallback() {
+  return (
+    <aside className="workspace-clone__drawer">
+      <div className="workspace-clone__drawer-head">
+        <div>
+          <span>Loading</span>
+          <strong>正在加载</strong>
+        </div>
+      </div>
+      <div className="workspace-clone__drawer-list">
+        {["one", "two", "three"].map((item) => (
+          <div key={item} className="workspace-clone__drawer-item">
+            <span className="workspace-clone__drawer-item-icon" />
+            <div>
+              <strong>...</strong>
+              <small>...</small>
+            </div>
+          </div>
+        ))}
+      </div>
+    </aside>
+  );
+}
 
 interface WorkspaceCloneChatViewProps {
   selectedEntity: WorkspaceEntity | null;
@@ -102,12 +129,19 @@ export function WorkspaceCloneChatView({
   const showConnectingState = running && connectionStatus === "connecting" && !hasMessages;
   const showMissingTokenState = Boolean(connectionError?.includes("本地网关 token"));
   const showUnboundChannelState = !chatEnabled && chatDisabledReason === "channel-unbound";
-  const visibleMessages = messages.filter((message) => !shouldHideWorkspaceMessage(message));
-  const hasStreamingMessage = visibleMessages.some((message) => message.status === "streaming");
-  const lastMessage = visibleMessages.length > 0 ? visibleMessages[visibleMessages.length - 1] : undefined;
+  const visibleMessages = useMemo(
+    () => messages.filter((message) => !shouldHideWorkspaceMessage(message)),
+    [messages],
+  );
+  const renderedMessages = useMemo(
+    () => (visibleMessages.length > MESSAGE_RENDER_LIMIT ? visibleMessages.slice(-MESSAGE_RENDER_LIMIT) : visibleMessages),
+    [visibleMessages],
+  );
+  const hasStreamingMessage = renderedMessages.some((message) => message.status === "streaming");
+  const lastMessage = renderedMessages.length > 0 ? renderedMessages[renderedMessages.length - 1] : undefined;
   const lastLiveStep = liveSteps.length > 0 ? liveSteps[liveSteps.length - 1] : undefined;
   const messageSignature = [
-    visibleMessages.length,
+    renderedMessages.length,
     lastMessage?.id ?? "",
     lastMessage?.role ?? "",
     lastMessage?.text.length ?? 0,
@@ -238,7 +272,7 @@ export function WorkspaceCloneChatView({
                 onScroll={updateScrollToBottomVisibility}
               >
                 <div className="workspace-clone__message-list">
-                  {visibleMessages.map((message) => {
+                  {renderedMessages.map((message) => {
                     const isStreaming = message.status === "streaming";
                     const hasStreamText = message.text.trim().length > 0;
                     const showPreview = !isStreaming || hasStreamText;
@@ -331,29 +365,33 @@ export function WorkspaceCloneChatView({
         </div>
       </div>
 
-      <WorkspaceCloneUtilityDrawer
-        panel={utilityPanel}
-        selectedEntity={selectedEntity}
-        activeSessionSection={activeSessionSection}
-        historyItems={historyItems}
-        logs={logs}
-        schedules={schedules}
-        workbenchItems={workbenchItems}
-        memoryItems={memoryItems}
-        skillItems={skillItems}
-        commandItems={commandItems}
-        channelItems={channelItems}
-        toolItems={toolItems}
-        currentModelName={currentModelName}
-        currentProviderName={currentProviderName}
-        onClose={onCloseUtilityPanel}
-        onSelectSessionSection={onSelectSessionSection}
-        historyFilter={historyFilter}
-        onSelectHistoryFilter={setHistoryFilter}
-        onSelectHistorySession={onSelectHistorySession}
-        onOpenRelatedResource={onOpenRelatedResource}
-        onOpenModelConfig={onOpenModelConfig}
-      />
+      {utilityPanel ? (
+        <Suspense fallback={<WorkspaceCloneDrawerFallback />}>
+          <WorkspaceCloneUtilityDrawer
+            panel={utilityPanel}
+            selectedEntity={selectedEntity}
+            activeSessionSection={activeSessionSection}
+            historyItems={historyItems}
+            logs={logs}
+            schedules={schedules}
+            workbenchItems={workbenchItems}
+            memoryItems={memoryItems}
+            skillItems={skillItems}
+            commandItems={commandItems}
+            channelItems={channelItems}
+            toolItems={toolItems}
+            currentModelName={currentModelName}
+            currentProviderName={currentProviderName}
+            onClose={onCloseUtilityPanel}
+            onSelectSessionSection={onSelectSessionSection}
+            historyFilter={historyFilter}
+            onSelectHistoryFilter={setHistoryFilter}
+            onSelectHistorySession={onSelectHistorySession}
+            onOpenRelatedResource={onOpenRelatedResource}
+            onOpenModelConfig={onOpenModelConfig}
+          />
+        </Suspense>
+      ) : null}
     </div>
   );
 }

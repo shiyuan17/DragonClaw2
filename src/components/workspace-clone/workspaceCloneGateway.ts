@@ -8,6 +8,7 @@ import type {
 
 const GATEWAY_PROTOCOL_VERSION = 3;
 const CONNECT_DELAY_MS = 250;
+const CONNECT_REQUEST_TIMEOUT_MS = 5_000;
 const RECONNECT_BASE_MS = 900;
 const RECONNECT_MAX_MS = 10_000;
 
@@ -81,10 +82,13 @@ export class WorkspaceGatewayClient {
   private pending = new Map<string, GatewayPendingRequest>();
   private stopped = false;
   private handshakeTimer: number | null = null;
+  private connectRequestTimer: number | null = null;
   private reconnectTimer: number | null = null;
   private connectNonce: string | null = null;
   private hasConnected = false;
   private reconnectDelayMs = RECONNECT_BASE_MS;
+  private socketSeq = 0;
+  private activeSocketSeq = 0;
 
   constructor(private options: WorkspaceGatewayClientOptions) {}
 
@@ -101,6 +105,7 @@ export class WorkspaceGatewayClient {
     this.rejectPending(new Error("gateway client stopped"));
     this.ws?.close();
     this.ws = null;
+    this.activeSocketSeq = 0;
   }
 
   get connected() {
@@ -130,30 +135,43 @@ export class WorkspaceGatewayClient {
     this.options.onConnecting?.();
 
     const ws = new WebSocket(this.options.url);
+    const socketSeq = ++this.socketSeq;
+    this.activeSocketSeq = socketSeq;
     this.ws = ws;
 
     ws.addEventListener("open", () => {
+      if (!this.isCurrentSocket(ws, socketSeq)) {
+        return;
+      }
       this.clearHandshakeTimer();
       this.handshakeTimer = window.setTimeout(() => {
-        void this.sendConnect();
+        void this.sendConnect(ws, socketSeq);
       }, CONNECT_DELAY_MS);
     });
 
     ws.addEventListener("message", (event) => {
-      this.handleMessage(String(event.data ?? ""));
+      this.handleMessage(String(event.data ?? ""), ws, socketSeq);
     });
 
     ws.addEventListener("close", (event) => {
       const reason = String(event.reason ?? "");
-      this.handleDisconnect(reason || `WebSocket closed (${event.code})`);
+      this.handleDisconnect(ws, socketSeq, reason || `WebSocket closed (${event.code})`);
     });
 
     ws.addEventListener("error", () => {
-      this.handleDisconnect("WebSocket connection error");
+      this.handleDisconnect(ws, socketSeq, "WebSocket connection error");
     });
   }
 
-  private handleMessage(raw: string) {
+  private isCurrentSocket(socket: WebSocket, socketSeq: number) {
+    return !this.stopped && this.ws === socket && this.activeSocketSeq === socketSeq;
+  }
+
+  private handleMessage(raw: string, socket: WebSocket, socketSeq: number) {
+    if (!this.isCurrentSocket(socket, socketSeq)) {
+      return;
+    }
+
     let parsed: GatewayEventFrame | GatewayResponseFrame | null = null;
     try {
       parsed = JSON.parse(raw) as GatewayEventFrame | GatewayResponseFrame;
@@ -173,7 +191,7 @@ export class WorkspaceGatewayClient {
             : undefined;
         this.connectNonce = typeof payload?.nonce === "string" ? payload.nonce : null;
         this.clearHandshakeTimer();
-        void this.sendConnect();
+        void this.sendConnect(socket, socketSeq);
         return;
       }
 
@@ -196,37 +214,48 @@ export class WorkspaceGatewayClient {
     pending.reject(new Error(parsed.error?.message ?? "gateway request failed"));
   }
 
-  private async sendConnect() {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+  private async sendConnect(socket: WebSocket, socketSeq: number) {
+    if (!this.isCurrentSocket(socket, socketSeq) || socket.readyState !== WebSocket.OPEN) {
       return;
     }
 
     try {
+      this.clearConnectRequestTimer();
+      this.connectRequestTimer = window.setTimeout(() => {
+        this.handleDisconnect(socket, socketSeq, "gateway connect timeout");
+      }, CONNECT_REQUEST_TIMEOUT_MS);
       const hello = await this.request<GatewayHelloOk>("connect", buildConnectParams(this.options.token, this.connectNonce));
+      this.clearConnectRequestTimer();
+      if (!this.isCurrentSocket(socket, socketSeq)) {
+        return;
+      }
       this.hasConnected = true;
       this.reconnectDelayMs = RECONNECT_BASE_MS;
       this.options.onConnected?.(hello);
     } catch (error) {
-      this.handleDisconnect(error instanceof Error ? error.message : String(error));
+      this.clearConnectRequestTimer();
+      this.handleDisconnect(socket, socketSeq, error instanceof Error ? error.message : String(error));
     }
   }
 
-  private handleDisconnect(errorMessage?: string) {
-    if (this.ws) {
-      this.ws.onclose = null;
-      this.ws.onerror = null;
-      this.ws.onmessage = null;
-      this.ws.onopen = null;
-      try {
-        this.ws.close();
-      } catch {
-        // ignore
-      }
+  private handleDisconnect(socket: WebSocket, socketSeq: number, errorMessage?: string) {
+    if (!this.isCurrentSocket(socket, socketSeq)) {
+      return;
+    }
+
+    this.clearHandshakeTimer();
+    this.clearConnectRequestTimer();
+    this.clearReconnectTimer();
+
+    try {
+      socket.close();
+    } catch {
+      // ignore
     }
 
     this.ws = null;
+    this.activeSocketSeq = 0;
     this.hasConnected = false;
-    this.clearHandshakeTimer();
     this.rejectPending(new Error(errorMessage ?? "gateway disconnected"));
     this.options.onDisconnected?.(errorMessage);
 
@@ -249,6 +278,7 @@ export class WorkspaceGatewayClient {
 
   private clearTimers() {
     this.clearHandshakeTimer();
+    this.clearConnectRequestTimer();
     this.clearReconnectTimer();
   }
 
@@ -263,6 +293,13 @@ export class WorkspaceGatewayClient {
     if (this.reconnectTimer !== null) {
       window.clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+  }
+
+  private clearConnectRequestTimer() {
+    if (this.connectRequestTimer !== null) {
+      window.clearTimeout(this.connectRequestTimer);
+      this.connectRequestTimer = null;
     }
   }
 }

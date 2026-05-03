@@ -1,5 +1,4 @@
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { lazy, Suspense } from "react";
 import type { WorkspaceMessage } from "./workspaceCloneTypes";
 
 type WorkspaceMessagePreviewKind = "plain" | "markdown" | "json";
@@ -7,6 +6,12 @@ type WorkspaceMessagePreviewKind = "plain" | "markdown" | "json";
 interface WorkspaceCloneMessagePreviewProps {
   message: WorkspaceMessage;
 }
+
+const WorkspaceCloneMarkdownMessagePreview = lazy(() =>
+  import("./WorkspaceCloneMarkdownMessagePreview").then((module) => ({
+    default: module.WorkspaceCloneMarkdownMessagePreview,
+  })),
+);
 
 function tryParseJsonRecord(text: string): Record<string, unknown> | null {
   const trimmed = text.trim();
@@ -141,14 +146,9 @@ export function WorkspaceCloneMessagePreview({ message }: WorkspaceCloneMessageP
   if (preview.kind === "markdown") {
     return (
       <div className="workspace-clone__message-rich workspace-clone__message-rich--markdown">
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          components={{
-            a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
-          }}
-        >
-          {preview.content}
-        </ReactMarkdown>
+        <Suspense fallback={<p>{preview.content}</p>}>
+          <WorkspaceCloneMarkdownMessagePreview content={preview.content} />
+        </Suspense>
       </div>
     );
   }

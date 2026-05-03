@@ -1,7 +1,7 @@
 // Copyright (C) 2026 shiyuan
 // SPDX-License-Identifier: GPL-3.0-only
 // This file is part of DragonClaw. See LICENSE for details.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { motion } from "framer-motion";
 import type {
@@ -25,32 +25,13 @@ import {
   WORKSPACE_TYPE_TABS,
   WORKSPACE_WORKBENCH,
 } from "./workspaceCloneData";
-import {
-  buildSkillOptions,
-  buildSkillSummaryItems,
-  buildToolOptions,
-  buildToolSummaryItems,
-  getWorkspaceToolProfileLabel,
-  normalizeWorkspaceStringList,
-} from "./workspaceCloneAgentResources";
 import { formatAgentAvatar, isGatewaySkillStatusResult } from "./workspaceCloneGateway";
-import {
-  buildWorkspaceMemoryResourceItems,
-  createWorkspaceFallbackMemoryFiles,
-  loadWorkspaceMemorySnapshot,
-  normalizeWorkspaceMemoryFile,
-  saveWorkspaceMemoryFile,
-} from "./workspaceCloneMemory";
 import { WorkspaceCloneChatView } from "./WorkspaceCloneChatView";
 import { WorkspaceCloneComposer } from "./WorkspaceCloneComposer";
 import { WorkspaceCloneDirectory } from "./WorkspaceCloneDirectory";
-import { WorkspaceCloneEmployeesView } from "./WorkspaceCloneEmployeesView";
 import { WorkspaceCloneHeader } from "./WorkspaceCloneHeader";
-import { WorkspaceCloneModelConfigModal } from "./WorkspaceCloneModelConfigModal";
-import { WorkspaceCloneOverlayStack } from "./WorkspaceCloneOverlayStack";
 import { WorkspaceCloneScenePresetSwitcher } from "./WorkspaceCloneScenePresetSwitcher";
 import { WorkspaceCloneSidebar } from "./WorkspaceCloneSidebar";
-import { WorkspaceCloneSkillsMarketView } from "./WorkspaceCloneSkillsMarketView";
 import {
   buildWorkspaceScenePresetStateKey,
   loadWorkspaceScenePresetOpenState,
@@ -68,14 +49,29 @@ import type {
   WorkspaceInstalledSkillInfo,
   WorkspaceMemoryFile,
   WorkspaceRelatedResource,
+  WorkspaceResourceItem,
   WorkspaceSkillCategory,
   WorkspaceSkillOption,
   WorkspaceSessionSectionKey,
   WorkspaceSidebarAdminPanel,
   WorkspaceToolCategory,
+  WorkspaceToolItem,
   WorkspaceToolOption,
   WorkspaceUtilityPanel,
 } from "./workspaceCloneTypes";
+
+const WorkspaceCloneEmployeesView = lazy(() =>
+  import("./WorkspaceCloneEmployeesView").then((module) => ({ default: module.WorkspaceCloneEmployeesView })),
+);
+const WorkspaceCloneSkillsMarketView = lazy(() =>
+  import("./WorkspaceCloneSkillsMarketView").then((module) => ({ default: module.WorkspaceCloneSkillsMarketView })),
+);
+const WorkspaceCloneOverlayStack = lazy(() =>
+  import("./WorkspaceCloneOverlayStack").then((module) => ({ default: module.WorkspaceCloneOverlayStack })),
+);
+const WorkspaceCloneModelConfigModal = lazy(() =>
+  import("./WorkspaceCloneModelConfigModal").then((module) => ({ default: module.WorkspaceCloneModelConfigModal })),
+);
 
 export interface WorkspaceClonePageProps {
   running: boolean;
@@ -149,6 +145,64 @@ function resolveWorkspaceModelName(currentConfig: CurrentConfig | null, fallback
     return fallbackModelName;
   }
   return primaryModel.includes("/") ? primaryModel.split("/").slice(1).join("/") : primaryModel;
+}
+
+function normalizeWorkspaceStringList(values: string[]) {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const value of values) {
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) {
+      continue;
+    }
+    seen.add(trimmed);
+    normalized.push(trimmed);
+  }
+
+  return normalized;
+}
+
+function buildWorkspaceMemoryResourceItems(files: WorkspaceMemoryFile[]): WorkspaceResourceItem[] {
+  return [...files]
+    .sort((left, right) => left.displayName.localeCompare(right.displayName, "zh-CN", { sensitivity: "base" }))
+    .map((file) => ({
+      id: file.id,
+      title: file.displayName,
+      subtitle: file.summary,
+      tag: file.isFocus ? "重点" : file.exists ? undefined : "待创建",
+    }));
+}
+
+function buildSkillSummaryItems(options: WorkspaceSkillOption[]): WorkspaceResourceItem[] {
+  return options.map((item) => ({
+    id: item.id,
+    title: item.title,
+    subtitle: item.description,
+    tag: item.selected ? "已启用" : item.tag,
+  }));
+}
+
+function buildToolSummaryItems(options: WorkspaceToolOption[]): WorkspaceToolItem[] {
+  return options.map((item) => ({
+    id: item.id,
+    title: item.title,
+    description: item.description,
+    enabled: item.selected,
+    tag: item.selected ? "已启用" : item.tag,
+  }));
+}
+
+function WorkspaceCloneLazyFallback({ label }: { label: string }) {
+  return (
+    <div className="workspace-clone__compact-panel">
+      <div className="workspace-clone__compact-hero">
+        <div className="workspace-clone__compact-badge">{label}</div>
+        <h1>正在加载</h1>
+        <p>页面资源准备中，请稍候。</p>
+      </div>
+    </div>
+  );
 }
 
 function buildGatewayAgentEntities(params: {
@@ -251,7 +305,8 @@ export function WorkspaceClonePage({
   const [relatedResource, setRelatedResource] = useState<WorkspaceRelatedResource>(null);
   const [isModelConfigOpen, setIsModelConfigOpen] = useState(false);
   const [savedProviders, setSavedProviders] = useState<SavedProvider[]>([]);
-  const [memoryFiles, setMemoryFiles] = useState<WorkspaceMemoryFile[]>(createWorkspaceFallbackMemoryFiles);
+  const [savedProvidersLoading, setSavedProvidersLoading] = useState(false);
+  const [memoryFiles, setMemoryFiles] = useState<WorkspaceMemoryFile[]>([]);
   const [selectedMemoryFileId, setSelectedMemoryFileId] = useState("agents.md");
   const [memoryDraftContent, setMemoryDraftContent] = useState("");
   const [memoryLoading, setMemoryLoading] = useState(false);
@@ -278,26 +333,35 @@ export function WorkspaceClonePage({
     () => loadWorkspaceScenePresetOpenState(),
   );
   const homepageChat = useWorkspaceGatewayChat({ running, servicePort, gatewayToken });
-  const workspaceChannels = useWorkspaceChannels({ configVersion });
-  const { setContextMenu } = workspaceChannels;
   const currentAgentIdRef = useRef<string | null>(null);
   const memoryLoadSeqRef = useRef(0);
   const skillLoadSeqRef = useRef(0);
   const toolLoadSeqRef = useRef(0);
+  const savedProvidersLoadSeqRef = useRef(0);
+  const modelConfigOpenRef = useRef(false);
   const showDirectory = activeMenu === "chat";
+  const channelDataEnabled =
+    showDirectory &&
+    (activeType === "channels" || relatedResource === "channel" || (utilityPanel === "session" && activeSessionSection === "channel"));
+  const workspaceChannels = useWorkspaceChannels({ configVersion, enabled: channelDataEnabled });
+  const { setContextMenu } = workspaceChannels;
 
   const refreshSavedProviders = useCallback(async () => {
+    const requestId = savedProvidersLoadSeqRef.current + 1;
+    savedProvidersLoadSeqRef.current = requestId;
     const nextProviders = await invoke<SavedProvider[]>("list_saved_providers");
-    setSavedProviders(nextProviders);
+    if (savedProvidersLoadSeqRef.current === requestId && modelConfigOpenRef.current) {
+      setSavedProviders(nextProviders);
+    }
   }, []);
-
-  useEffect(() => {
-    void refreshSavedProviders().catch(() => {});
-  }, [configVersion, refreshSavedProviders]);
 
   useEffect(() => {
     persistWorkspaceScenePresetOpenState(scenePresetOpenStateByKey);
   }, [scenePresetOpenStateByKey]);
+
+  useEffect(() => {
+    modelConfigOpenRef.current = isModelConfigOpen;
+  }, [isModelConfigOpen]);
 
   const workspaceModelName = useMemo(
     () => resolveWorkspaceModelName(currentConfig, currentModelName),
@@ -378,6 +442,11 @@ export function WorkspaceClonePage({
 
   useEffect(() => {
     if (activeMenu !== "chat") {
+      memoryLoadSeqRef.current += 1;
+      skillLoadSeqRef.current += 1;
+      toolLoadSeqRef.current += 1;
+      savedProvidersLoadSeqRef.current += 1;
+      modelConfigOpenRef.current = false;
       setUtilityPanel(null);
       setContextMenu(null);
       setRelatedResource(null);
@@ -400,6 +469,8 @@ export function WorkspaceClonePage({
       setToolSaving(false);
       setToolNotice("");
       setToolError("");
+      setIsModelConfigOpen(false);
+      setSavedProvidersLoading(false);
       setShowRuntimeLogDetail(false);
       setShowSettingsTextPreview(false);
     }
@@ -527,10 +598,9 @@ export function WorkspaceClonePage({
     const preferredId = options?.preferredId;
 
     if (!currentMemoryAgentId) {
-      const fallbackFiles = createWorkspaceFallbackMemoryFiles();
-      setMemoryFiles(fallbackFiles);
-      setSelectedMemoryFileId(fallbackFiles[0]?.id || "");
-      setMemoryDraftContent(fallbackFiles[0]?.content || "");
+      setMemoryFiles([]);
+      setSelectedMemoryFileId("");
+      setMemoryDraftContent("");
       return;
     }
 
@@ -543,13 +613,14 @@ export function WorkspaceClonePage({
     memoryLoadSeqRef.current = requestId;
 
     try {
-      const snapshot = await loadWorkspaceMemorySnapshot(targetAgentId);
+      const memoryModule = await import("./workspaceCloneMemory");
+      const snapshot = await memoryModule.loadWorkspaceMemorySnapshot(targetAgentId);
       if (memoryLoadSeqRef.current !== requestId || currentAgentIdRef.current !== targetAgentId) {
         return;
       }
       const nextFiles = snapshot.items.length > 0
-        ? snapshot.items.map((item) => normalizeWorkspaceMemoryFile(item))
-        : createWorkspaceFallbackMemoryFiles();
+        ? snapshot.items.map((item) => memoryModule.normalizeWorkspaceMemoryFile(item))
+        : memoryModule.createWorkspaceFallbackMemoryFiles();
       const nextSelectedId =
         preferredId && nextFiles.some((file) => file.id === preferredId)
           ? preferredId
@@ -568,7 +639,8 @@ export function WorkspaceClonePage({
       }
       setMemoryError(memoryLoadError instanceof Error ? memoryLoadError.message : "读取记忆文件失败");
       if (memoryFiles.length === 0) {
-        const fallbackFiles = createWorkspaceFallbackMemoryFiles();
+        const memoryModule = await import("./workspaceCloneMemory");
+        const fallbackFiles = memoryModule.createWorkspaceFallbackMemoryFiles();
         setMemoryFiles(fallbackFiles);
         setSelectedMemoryFileId(fallbackFiles[0]?.id || "");
         setMemoryDraftContent(fallbackFiles[0]?.content || "");
@@ -597,6 +669,7 @@ export function WorkspaceClonePage({
     skillLoadSeqRef.current = requestId;
 
     try {
+      const agentResources = await import("./workspaceCloneAgentResources");
       const savedConfig = await invoke<WorkspaceAgentSkillConfig>("get_agent_skill_config", {
         agentId: targetAgentId,
       });
@@ -619,7 +692,7 @@ export function WorkspaceClonePage({
         if (skillLoadSeqRef.current !== requestId || currentAgentIdRef.current !== targetAgentId) {
           return;
         }
-        nextOptions = buildSkillOptions({
+        nextOptions = agentResources.buildSkillOptions({
           selectedSkillNames: savedConfig.selectedSkillNames,
           statusEntries: report.skills,
           installedSkills,
@@ -629,7 +702,7 @@ export function WorkspaceClonePage({
         if (skillLoadSeqRef.current !== requestId || currentAgentIdRef.current !== targetAgentId) {
           return;
         }
-        nextOptions = buildSkillOptions({
+        nextOptions = agentResources.buildSkillOptions({
           selectedSkillNames: savedConfig.selectedSkillNames,
           installedSkills,
         });
@@ -646,9 +719,16 @@ export function WorkspaceClonePage({
       setSkillOptions((current) =>
         current.length > 0
           ? current
-          : buildSkillOptions({
-              selectedSkillNames: [],
-            }),
+          : [
+              {
+                id: "pending",
+                title: "技能配置",
+                description: "未能读取真实技能配置，请稍后刷新。",
+                tag: "Error",
+                category: "builtIn",
+                selected: false,
+              },
+            ],
       );
       setSkillDraftIds((current) => current);
     } finally {
@@ -676,15 +756,16 @@ export function WorkspaceClonePage({
     toolLoadSeqRef.current = requestId;
 
     try {
+      const agentResources = await import("./workspaceCloneAgentResources");
       const config = await invoke<WorkspaceAgentToolConfig>("get_agent_tool_config", {
         agentId: targetAgentId,
       });
       if (toolLoadSeqRef.current !== requestId || currentAgentIdRef.current !== targetAgentId) {
         return;
       }
-      const nextOptions = buildToolOptions(config);
+      const nextOptions = agentResources.buildToolOptions(config);
       setToolOptions(nextOptions);
-      setToolProfileLabel(getWorkspaceToolProfileLabel(config));
+      setToolProfileLabel(agentResources.getWorkspaceToolProfileLabel(config));
       setToolDraftIds(nextOptions.filter((item) => item.selected).map((item) => item.id));
       setToolError("");
     } catch (toolLoadError) {
@@ -692,13 +773,9 @@ export function WorkspaceClonePage({
         return;
       }
       setToolError(toolLoadError instanceof Error ? toolLoadError.message : "读取工具权限失败");
-      const fallbackOptions = buildToolOptions({
-        agentId: targetAgentId,
-        profile: "full",
-      });
-      setToolOptions(fallbackOptions);
+      setToolOptions([]);
       setToolProfileLabel("全量");
-      setToolDraftIds(fallbackOptions.map((item) => item.id));
+      setToolDraftIds([]);
     } finally {
       if (showLoading && toolLoadSeqRef.current === requestId && currentAgentIdRef.current === targetAgentId) {
         setToolLoading(false);
@@ -717,6 +794,7 @@ export function WorkspaceClonePage({
   }, [clearMemoryStatus, refreshMemoryFiles, selectedMemoryFileId]);
 
   const closeMemoryModal = useCallback(() => {
+    memoryLoadSeqRef.current += 1;
     setShowMemoryModal(false);
     setMemoryLoading(false);
     setMemorySaving(false);
@@ -731,6 +809,7 @@ export function WorkspaceClonePage({
   }, [clearSkillStatus, refreshSkillOptions]);
 
   const closeSkillsModal = useCallback(() => {
+    skillLoadSeqRef.current += 1;
     setShowSkillsModal(false);
     setSkillSearch("");
     setSkillLoading(false);
@@ -746,6 +825,7 @@ export function WorkspaceClonePage({
   }, [clearToolStatus, refreshToolOptions]);
 
   const closeToolsModal = useCallback(() => {
+    toolLoadSeqRef.current += 1;
     setShowToolsModal(false);
     setToolLoading(false);
     setToolSaving(false);
@@ -768,7 +848,8 @@ export function WorkspaceClonePage({
     setMemorySaving(true);
 
     try {
-      await saveWorkspaceMemoryFile({
+      const memoryModule = await import("./workspaceCloneMemory");
+      await memoryModule.saveWorkspaceMemoryFile({
         sourcePath: activeMemoryFile.sourcePath,
         content: memoryDraftContent,
         agentId: currentMemoryAgentId,
@@ -849,13 +930,6 @@ export function WorkspaceClonePage({
   }, [clearToolStatus, currentMemoryAgentId, refreshToolOptions, toolDraftIds]);
 
   useEffect(() => {
-    if (!currentMemoryAgentId) {
-      return;
-    }
-    void refreshMemoryFiles({ preferredId: selectedMemoryFileId || undefined });
-  }, [currentMemoryAgentId, refreshMemoryFiles, selectedMemoryFileId]);
-
-  useEffect(() => {
     setSkillSearch("");
     setSkillCategory("builtIn");
     setToolCategory("all");
@@ -864,43 +938,69 @@ export function WorkspaceClonePage({
   }, [clearSkillStatus, clearToolStatus, currentMemoryAgentId]);
 
   useEffect(() => {
-    if (!currentMemoryAgentId) {
-      return;
+    if (utilityPanel === "history") {
+      homepageChat.loadHistoryTitles();
     }
-    void refreshSkillOptions();
-  }, [currentMemoryAgentId, refreshSkillOptions]);
-
-  useEffect(() => {
-    if (!currentMemoryAgentId) {
-      return;
-    }
-    void refreshToolOptions();
-  }, [currentMemoryAgentId, refreshToolOptions]);
+  }, [homepageChat.loadHistoryTitles, utilityPanel]);
 
   const uptimeLabel = running ? formatUptime(uptime) : "未启动";
-  const derivedLogs = useMemo(() => buildWorkspaceLogs(logs), [logs]);
-  const memoryResourceItems = useMemo(() => buildWorkspaceMemoryResourceItems(memoryFiles), [memoryFiles]);
+  const shouldBuildLogRows = utilityPanel === "logs" || showRuntimeLogDetail;
+  const shouldBuildMemoryRows =
+    showMemoryModal || relatedResource === "memory" || (utilityPanel === "session" && activeSessionSection === "memory");
+  const shouldBuildSkillRows =
+    showSkillsModal || relatedResource === "skills" || (utilityPanel === "session" && activeSessionSection === "skills");
+  const shouldBuildToolRows =
+    showToolsModal || relatedResource === "tools" || (utilityPanel === "session" && activeSessionSection === "tools");
+  const shouldBuildChannelRows =
+    relatedResource === "channel" || (utilityPanel === "session" && activeSessionSection === "channel");
+  const derivedLogs = useMemo(() => (shouldBuildLogRows ? buildWorkspaceLogs(logs) : []), [logs, shouldBuildLogRows]);
+  const memoryResourceItems = useMemo(
+    () => (shouldBuildMemoryRows ? buildWorkspaceMemoryResourceItems(memoryFiles) : []),
+    [memoryFiles, shouldBuildMemoryRows],
+  );
   const skillResourceItems = useMemo(
     () =>
-      buildSkillSummaryItems(
-        skillOptions.map((item) => ({
-          ...item,
-          selected: skillDraftIds.includes(item.id),
-        })),
-      ),
-    [skillDraftIds, skillOptions],
+      shouldBuildSkillRows
+        ? buildSkillSummaryItems(
+            skillOptions.map((item) => ({
+              ...item,
+              selected: skillDraftIds.includes(item.id),
+            })),
+          )
+        : [],
+    [shouldBuildSkillRows, skillDraftIds, skillOptions],
   );
   const toolResourceItems = useMemo(
     () =>
-      buildToolSummaryItems(
-        toolOptions.map((item) => ({
-          ...item,
-          selected: toolDraftIds.includes(item.id),
-        })),
-      ),
-    [toolDraftIds, toolOptions],
+      shouldBuildToolRows
+        ? buildToolSummaryItems(
+            toolOptions.map((item) => ({
+              ...item,
+              selected: toolDraftIds.includes(item.id),
+            })),
+          )
+        : [],
+    [shouldBuildToolRows, toolDraftIds, toolOptions],
   );
-  const openModelConfigModal = () => setIsModelConfigOpen(true);
+  const openModelConfigModal = useCallback(() => {
+    modelConfigOpenRef.current = true;
+    setIsModelConfigOpen(true);
+    setSavedProvidersLoading(true);
+    void refreshSavedProviders()
+      .catch(() => undefined)
+      .finally(() => {
+        if (modelConfigOpenRef.current) {
+          setSavedProvidersLoading(false);
+        }
+      });
+  }, [refreshSavedProviders]);
+
+  const closeModelConfigModal = useCallback(() => {
+    savedProvidersLoadSeqRef.current += 1;
+    modelConfigOpenRef.current = false;
+    setIsModelConfigOpen(false);
+    setSavedProvidersLoading(false);
+  }, []);
 
   const toggleUtilityPanel = (panel: Exclude<WorkspaceUtilityPanel, null>) => {
     setUtilityPanel((current) => current === panel ? null : panel);
@@ -968,6 +1068,24 @@ export function WorkspaceClonePage({
       </div>
     );
   };
+
+  const shouldRenderOverlayStack = Boolean(
+    showAgentInfo ||
+    showMemoryModal ||
+    showSkillsModal ||
+    showToolsModal ||
+    showRuntimeLogDetail ||
+    showSettingsTextPreview ||
+    relatedResource,
+  );
+  const scheduleResourceItems = relatedResource === "schedule"
+    ? WORKSPACE_SCHEDULES.map((item) => ({
+        id: item.id,
+        title: item.title,
+        subtitle: item.subtitle,
+        tag: item.enabled ? "enabled" : "disabled",
+      }))
+    : [];
 
   return (
     <motion.section
@@ -1162,7 +1280,7 @@ export function WorkspaceClonePage({
                 memoryItems={memoryResourceItems}
                 skillItems={skillResourceItems}
                 commandItems={WORKSPACE_COMMAND_ITEMS}
-                channelItems={workspaceChannels.channelResourceItems}
+                channelItems={shouldBuildChannelRows ? workspaceChannels.channelResourceItems : []}
                 toolItems={toolResourceItems}
                 currentModelName={workspaceModelName}
                 currentProviderName={workspaceProviderName}
@@ -1208,18 +1326,24 @@ export function WorkspaceClonePage({
               />
             </>
           ) : activeMenu === "employees" ? (
-            <WorkspaceCloneEmployeesView />
+            <Suspense fallback={<WorkspaceCloneLazyFallback label="数字员工" />}>
+              <WorkspaceCloneEmployeesView />
+            </Suspense>
           ) : activeMenu === "skills" ? (
-            <WorkspaceCloneSkillsMarketView
-              currentAgentId={currentMemoryAgentId}
-              onRefreshCurrentAgentSkills={() => refreshSkillOptions({ showLoading: true })}
-            />
+            <Suspense fallback={<WorkspaceCloneLazyFallback label="技能市场" />}>
+              <WorkspaceCloneSkillsMarketView
+                currentAgentId={currentMemoryAgentId}
+                onRefreshCurrentAgentSkills={() => refreshSkillOptions({ showLoading: true })}
+              />
+            </Suspense>
           ) : (
             renderCompactWorkspace()
           )}
         </section>
 
-        <WorkspaceCloneOverlayStack
+        {shouldRenderOverlayStack ? (
+          <Suspense fallback={null}>
+            <WorkspaceCloneOverlayStack
           selectedEntity={selectedEntity}
           showAgentInfo={showAgentInfo}
           showMemoryModal={showMemoryModal}
@@ -1257,13 +1381,8 @@ export function WorkspaceClonePage({
           toolError={toolError}
           memoryItems={memoryResourceItems}
           commandItems={WORKSPACE_COMMAND_ITEMS}
-          channelItems={workspaceChannels.channelResourceItems}
-          scheduleItems={WORKSPACE_SCHEDULES.map((item) => ({
-            id: item.id,
-            title: item.title,
-            subtitle: item.subtitle,
-            tag: item.enabled ? "已启用" : "未启用",
-          }))}
+          channelItems={shouldBuildChannelRows ? workspaceChannels.channelResourceItems : []}
+          scheduleItems={scheduleResourceItems}
           onCloseAgentInfo={() => setShowAgentInfo(false)}
           onCloseMemoryModal={closeMemoryModal}
           onRefreshMemoryModal={() => {
@@ -1306,20 +1425,27 @@ export function WorkspaceClonePage({
           onCloseRuntimeLogDetail={() => setShowRuntimeLogDetail(false)}
           onCloseSettingsTextPreview={() => setShowSettingsTextPreview(false)}
           onCloseRelatedResource={() => setRelatedResource(null)}
-        />
+            />
+          </Suspense>
+        ) : null}
 
-        <WorkspaceCloneModelConfigModal
-          show={isModelConfigOpen}
-          savedProviders={savedProviders}
-          currentConfig={currentConfig}
-          providers={providers}
-          onClose={() => setIsModelConfigOpen(false)}
-          onRefreshSavedProviders={refreshSavedProviders}
-          onRefreshCurrentConfig={refreshCurrentConfig}
-          onSetModel={handleSetModel}
-          onUpsertSavedProviderConfig={handleUpsertSavedProviderConfig}
-          onDeleteSavedProviderConfig={handleDeleteSavedProviderConfig}
-        />
+        {isModelConfigOpen ? (
+          <Suspense fallback={<WorkspaceCloneLazyFallback label="模型配置" />}>
+            <WorkspaceCloneModelConfigModal
+              show={isModelConfigOpen}
+              savedProviders={savedProviders}
+              currentConfig={currentConfig}
+              providers={providers}
+              loading={savedProvidersLoading}
+              onClose={closeModelConfigModal}
+              onRefreshSavedProviders={refreshSavedProviders}
+              onRefreshCurrentConfig={refreshCurrentConfig}
+              onSetModel={handleSetModel}
+              onUpsertSavedProviderConfig={handleUpsertSavedProviderConfig}
+              onDeleteSavedProviderConfig={handleDeleteSavedProviderConfig}
+            />
+          </Suspense>
+        ) : null}
       </main>
     </motion.section>
   );

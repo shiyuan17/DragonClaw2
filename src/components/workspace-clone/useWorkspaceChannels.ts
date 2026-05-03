@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-import QRCode from "qrcode";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AgentInfo,
@@ -158,9 +157,10 @@ function resolveAgentOptions(items: AgentInfo[]) {
 
 export interface UseWorkspaceChannelsOptions {
   configVersion: number;
+  enabled?: boolean;
 }
 
-export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOptions) {
+export function useWorkspaceChannels({ configVersion, enabled = false }: UseWorkspaceChannelsOptions) {
   const [snapshot, setSnapshot] = useState<OpenClawChannelAccountsSnapshotResponse | null>(null);
   const [agents, setAgents] = useState<WorkspaceChannelAgentOption[]>([]);
   const [loading, setLoading] = useState(false);
@@ -201,6 +201,7 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
   const [feishuAllowFromSessionIds, setFeishuAllowFromSessionIds] = useState<string[]>([]);
 
   const weixinQrTimerRef = useRef<number>(0);
+  const channelRefreshSeqRef = useRef(0);
   const weixinQrSnapshotRef = useRef<OpenClawChannelQrBindingSessionSnapshot | null>(null);
   /** Bumped in resetWeixinState so late invoke/poll responses never overwrite a newer binding attempt. */
   const weixinQrBindingGenerationRef = useRef(0);
@@ -265,10 +266,15 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
   }, [clearFeishuQrTimer]);
 
   const refreshChannels = useCallback(async () => {
+    const requestId = channelRefreshSeqRef.current + 1;
+    channelRefreshSeqRef.current = requestId;
     const [nextSnapshot, nextAgents] = await Promise.all([
       loadOpenClawChannelAccountsSnapshot(),
       invoke<AgentInfo[]>("list_agents").catch(() => []),
     ]);
+    if (channelRefreshSeqRef.current !== requestId) {
+      return nextSnapshot;
+    }
     setSnapshot(nextSnapshot);
     const nextAgentOptions = resolveAgentOptions(nextAgents);
     setAgents(nextAgentOptions);
@@ -284,11 +290,28 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
   }, []);
 
   useEffect(() => {
+    if (!enabled) {
+      channelRefreshSeqRef.current += 1;
+      setLoading(false);
+      return;
+    }
+
+    let disposed = false;
     setLoading(true);
     void refreshChannels()
       .catch(() => undefined)
-      .finally(() => setLoading(false));
-  }, [configVersion, refreshChannels]);
+      .finally(() => {
+        if (!disposed) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      disposed = true;
+      channelRefreshSeqRef.current += 1;
+      setLoading(false);
+    };
+  }, [configVersion, enabled, refreshChannels]);
 
   useEffect(() => () => {
     void resetWeixinState(true);
@@ -503,11 +526,12 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
       return;
     }
     let disposed = false;
-    void QRCode.toDataURL(weixinQrUrl, {
-      errorCorrectionLevel: "M",
-      margin: 1,
-      width: 260,
-    })
+    void import("qrcode")
+      .then(({ default: QRCode }) => QRCode.toDataURL(weixinQrUrl, {
+        errorCorrectionLevel: "M",
+        margin: 1,
+        width: 260,
+      }))
       .then((imageUrl) => {
         if (disposed) {
           return;
@@ -676,6 +700,10 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
       return;
     }
 
+    if (!snapshot) {
+      await refreshChannels().catch(() => undefined);
+    }
+
     await resetWeixinState(true);
     resetFeishuState();
     resetModalFeedback();
@@ -751,7 +779,7 @@ export function useWorkspaceChannels({ configVersion }: UseWorkspaceChannelsOpti
         void startWeixinQrBindingFlow();
       }
     }
-  }, [agents, channelGroupMap, resetFeishuState, resetModalFeedback, resetWeixinState, startWeixinQrBindingFlow]);
+  }, [agents, channelGroupMap, refreshChannels, resetFeishuState, resetModalFeedback, resetWeixinState, snapshot, startWeixinQrBindingFlow]);
 
   const closeBindingModal = useCallback(async () => {
     setModal((current) => ({ ...current, open: false }));
