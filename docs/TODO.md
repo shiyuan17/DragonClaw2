@@ -304,8 +304,8 @@
 - [x] 2026-05-01: align the primary sidebar menu top edge with the directory search box top edge.
 - [x] 2026-05-02: remove the translucent DragonClaw logo watermark from the bottom of the workspace-clone sidebar rail.
 
-## Phase 5.20: Workspace 鏁板瓧鍛樺伐瑙掕壊搴撳悓姝?
-- [x] 鍦?`workspace-clone > employees` 鍚屾鏃т粨搴?DragonClaw 鐨勬暟瀛楀憳宸ヨ鑹插簱锛岃ˉ榻愬垎绫汇€佹悳绱€佸姞鍏ャ€佸凡鍔犲叆鍒楄〃涓庡嵏杞斤紝骞舵柊澧?`install_agency_agent` / `uninstall_agency_agent` / `load_installed_agency_agent_ids` 鍛戒护
+## Phase 5.20: Workspace 数字员工角色库同步
+- [x] 在 `workspace-clone > employees` 同步旧仓库 DragonClaw 的数字员工角色库，补齐分类、搜索、加入、已加入列表与移除卸载，并新增 `install_agency_agent` / `uninstall_agency_agent` / `load_installed_agency_agent_ids` 命令
 
 - [ ] Phase 5.15.12: fix the borderless window maximize display so double-click maximize keeps a safe frame inset and no longer clips the custom titlebar or workspace content on Windows.
 ## Phase 5.23: OpenClaw CLI PATH 暴露与退出保活
