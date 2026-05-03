@@ -323,7 +323,7 @@
 ## Phase 5.23: OpenClaw CLI PATH 暴露与退出保活
 - [ ] 2026-05-02: expose `openclaw` into the current user PATH during setup, keep OpenClaw running when DragonClaw exits from tray quit, and reuse that existing service on the next launch.
 ## Phase 5.26: 全项目消息提示统一为顶部居中浮层
-- [ ] 2026-05-03: add a shared top-center feedback center, migrate App / setup / workspace-clone notices into it, and retire inline banners, modal status strips, and the legacy bottom repair toast.
+- [ ] 2026-05-03: add a shared top-center feedback center for result-style prompts and actionable errors, migrate App / setup / workspace-clone notices into it, and retire inline banners, modal status strips, and the legacy bottom repair toast.
 ## Phase 5.28: 引导安装与启动链路去阻塞化
 - [x] 2026-05-03: move setup, service prebuild, and onboarding heavy local work off UI-related command threads so the launcher stays responsive during install and first-run startup.
 ## Phase 5.30: Homepage Lazy Data Loading

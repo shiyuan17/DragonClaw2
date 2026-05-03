@@ -88,6 +88,10 @@
 - `RepairToast` 退役为反馈中心中的一个带操作按钮的 sticky 项
 - 频道绑定中的流程内说明文本可保留，但 modal 顶部 / 底部反馈条需移除
 
+### Clarifications
+
+- 本次落地的浮层只承接“结果类提示 + 可操作错误”；加载中、扫码中、步骤说明继续保留在原上下文。
+- 视觉参考截图的深色胶囊风格，但颜色和间距仍通过 `src/styles/tokens.css` 统一供给。
 ## Validation
 
 1. `npm run build`
