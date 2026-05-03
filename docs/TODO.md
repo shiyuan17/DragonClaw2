@@ -1,5 +1,8 @@
 # DragonClaw - 开发任务总表 (AI 开发规范版)
 
+## Phase 5.29: 首页未响应与 SkillHub 后台安装修复
+- [ ] 拆分 `agency-agents.json` 为轻量 roster 与按 Agent ID 分片模板，员工页/技能市场懒加载，员工详情按需加载模板，并将 onboarding SkillHub 推荐技能安装切到后端后台任务
+
 ## Phase 5.15.9: 首页收缩侧边栏视觉重设计
 - [x] `workspace-clone` 首页收缩态侧边栏改为参考图风格的双轨轻量导航，统一左侧菜单轨与右侧迷你目录轨的卡片节奏、间距、阴影和选中态
 
