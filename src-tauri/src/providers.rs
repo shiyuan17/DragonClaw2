@@ -62,9 +62,9 @@ pub fn open_provider_register(provider_id: String) -> Result<String, String> {
     let providers = get_providers();
     if let Some(provider) = providers.iter().find(|item| item.id == provider_id) {
         open_url(provider.register_url.clone())?;
-        Ok(format!("宸叉墦寮€ {} 娉ㄥ唽椤甸潰", provider.name))
+        Ok(format!("已打开 {} 注册页面", provider.name))
     } else {
-        Err(format!("鏈煡鐨勬彁渚涘晢: {provider_id}"))
+        Err(format!("未知的提供商: {provider_id}"))
     }
 }
 
@@ -74,6 +74,6 @@ pub fn open_url(url: String) -> Result<String, String> {
         return Err("仅允许打开 https:// 链接或本地 localhost 控制台地址".to_string());
     }
 
-    open::that(&url).map_err(|error| format!("鎵撳紑閾炬帴澶辫触: {error}"))?;
-    Ok(format!("宸叉墦寮€: {url}"))
+    open::that(&url).map_err(|error| format!("打开链接失败: {error}"))?;
+    Ok(format!("已打开: {url}"))
 }

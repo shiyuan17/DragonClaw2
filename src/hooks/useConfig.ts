@@ -63,7 +63,7 @@ export function useConfig({ addLog, running, setRunning, setStartingUp }: UseCon
 
     const handleSaveConfig = useCallback(async () => {
         if (!apiKeyInput.trim()) {
-            setConfigStatus("[!] 璇疯緭鍏?API Key");
+            setConfigStatus("[!] 请输入 API Key");
             return;
         }
 
@@ -81,26 +81,26 @@ export function useConfig({ addLog, running, setRunning, setStartingUp }: UseCon
             setConfigStatus(result);
             addLog("success", result);
             await refreshCurrentConfig().catch((error) => {
-                addLog("error", `鍒锋柊褰撳墠閰嶇疆澶辫触: ${error}`);
+                addLog("error", `刷新当前配置失败: ${error}`);
             });
             setShowKeyModal(false);
             setConfigVersion((value) => value + 1);
 
             if (running) {
-                addLog("info", "姝ｅ湪閲嶅惎鏈嶅姟浠ュ姞杞芥柊閰嶇疆...");
+                addLog("info", "正在重启服务以加载新配置...");
                 try {
                     await invoke("stop_service");
                     setRunning(false);
                     await new Promise((resolve) => setTimeout(resolve, 1000));
                     await invoke("start_service_silent");
                     setRunning(true);
-                    addLog("success", "[OK] 鏈嶅姟宸查噸鍚紝鏂伴厤缃敓鏁?");
+                    addLog("success", "[OK] 服务已重启，新配置生效");
                 } catch (err) {
-                    addLog("error", `閲嶅惎鏈嶅姟澶辫触: ${err}`);
+                    addLog("error", `重启服务失败: ${err}`);
                 }
             }
         } catch (err) {
-            setConfigStatus(`[!] 淇濆瓨澶辫触: ${err}`);
+            setConfigStatus(`[!] 保存失败: ${err}`);
         } finally {
             setConfigSaving(false);
         }
@@ -113,27 +113,27 @@ export function useConfig({ addLog, running, setRunning, setStartingUp }: UseCon
             setConfigStatus(result);
             addLog("success", result);
             await refreshCurrentConfig().catch((error) => {
-                addLog("error", `鍒锋柊褰撳墠閰嶇疆澶辫触: ${error}`);
+                addLog("error", `刷新当前配置失败: ${error}`);
             });
             setConfigVersion((value) => value + 1);
 
             if (running) {
                 setStartingUp?.(true);
-                addLog("info", "姝ｅ湪閲嶅惎鏈嶅姟浠ュ姞杞芥柊妯″瀷...");
+                addLog("info", "正在重启服务以加载新模型...");
                 try {
                     await invoke("stop_service");
                     setRunning(false);
                     await new Promise((resolve) => setTimeout(resolve, 1000));
                     await invoke("start_service_silent");
                     setRunning(true);
-                    addLog("success", "[OK] 鏈嶅姟宸查噸鍚紝鏂版ā鍨嬮厤缃敓鏁?");
+                    addLog("success", "[OK] 服务已重启，新模型配置生效");
                 } catch (restartErr) {
-                    addLog("error", `閲嶅惎鏈嶅姟澶辫触: ${restartErr}`);
+                    addLog("error", `重启服务失败: ${restartErr}`);
                     setStartingUp?.(false);
                 }
             }
         } catch (err) {
-            setConfigStatus(`[!] 鍒囨崲澶辫触: ${err}`);
+            setConfigStatus(`[!] 切换失败: ${err}`);
         }
     }, [addLog, refreshCurrentConfig, running, setRunning, setStartingUp]);
 
@@ -159,22 +159,22 @@ export function useConfig({ addLog, running, setRunning, setStartingUp }: UseCon
         setConfigStatus(result);
         addLog("success", result);
         await refreshCurrentConfig().catch((error) => {
-            addLog("error", `閸掗攱鏌婅ぐ鎾冲闁板秶鐤嗘径杈Е: ${error}`);
+            addLog("error", `刷新当前配置失败: ${error}`);
         });
         setConfigVersion((value) => value + 1);
 
         if (running) {
             setStartingUp?.(true);
-            addLog("info", "姝ｅ湪閲嶅惎鏈嶅姟浠ュ簲鐢ㄦ柊妯″瀷閰嶇疆...");
+            addLog("info", "正在重启服务以应用新模型配置...");
             try {
                 await invoke("stop_service");
                 setRunning(false);
                 await new Promise((resolve) => setTimeout(resolve, 1000));
                 await invoke("start_service_silent");
                 setRunning(true);
-                addLog("success", "[OK] Workspace 妯″瀷閰嶇疆宸叉洿鏂板苟閲嶅惎鏈嶅姟");
+                addLog("success", "[OK] Workspace 模型配置已更新并重启服务");
             } catch (restartErr) {
-                addLog("error", `闁插秴鎯庨張宥呭婢惰精瑙? ${restartErr}`);
+                addLog("error", `重启服务失败: ${restartErr}`);
                 setStartingUp?.(false);
             }
         }
@@ -188,22 +188,22 @@ export function useConfig({ addLog, running, setRunning, setStartingUp }: UseCon
         setConfigStatus(result);
         addLog("success", result);
         await refreshCurrentConfig().catch((error) => {
-            addLog("error", `閸掗攱鏌婅ぐ鎾冲闁板秶鐤嗘径杈Е: ${error}`);
+            addLog("error", `刷新当前配置失败: ${error}`);
         });
         setConfigVersion((value) => value + 1);
 
         if (running) {
             setStartingUp?.(true);
-            addLog("info", "姝ｅ湪閲嶅惎鏈嶅姟浠ュ簲鐢ㄥ垹闄ゅ悗鐨勬ā鍨嬮厤缃?...");
+            addLog("info", "正在重启服务以应用删除后的模型配置...");
             try {
                 await invoke("stop_service");
                 setRunning(false);
                 await new Promise((resolve) => setTimeout(resolve, 1000));
                 await invoke("start_service_silent");
                 setRunning(true);
-                addLog("success", "[OK] Workspace 妯″瀷閰嶇疆宸插垹闄ゅ苟閲嶅惎鏈嶅姟");
+                addLog("success", "[OK] Workspace 模型配置已删除并重启服务");
             } catch (restartErr) {
-                addLog("error", `闁插秴鎯庨張宥呭婢惰精瑙? ${restartErr}`);
+                addLog("error", `重启服务失败: ${restartErr}`);
                 setStartingUp?.(false);
             }
         }
@@ -245,7 +245,7 @@ export function useConfig({ addLog, running, setRunning, setStartingUp }: UseCon
             addLog("success", result);
             setShowKeyModal(true);
         } catch (err) {
-            addLog("error", `閲嶇疆澶辫触: ${err}`);
+            addLog("error", `重置失败: ${err}`);
         }
     }, [addLog, refreshCurrentConfig]);
 
