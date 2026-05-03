@@ -15,7 +15,6 @@ use crate::{agents, config, paths};
 const MANAGED_SOURCE_FIELD: &str = "dragonclawManagedSource";
 const MANAGED_SOURCE_VALUE: &str = "agency-roster";
 const MANIFEST_JSON: &str = include_str!("../../src/data/agency-agents.json");
-const MANAGED_WORKSPACE_TEMPLATE_FILES: [&str; 3] = ["AGENTS.md", "IDENTITY.md", "SOUL.md"];
 #[cfg(test)]
 const USER_CONFIG_OVERRIDE_ENV: &str = "DRAGONCLAW_USER_CONFIG_DIR";
 #[cfg(test)]
@@ -283,33 +282,6 @@ fn is_managed_roster_entry(entry: Option<&Map<String, Value>>) -> bool {
         .unwrap_or(false)
 }
 
-fn managed_workspace_has_templates(workspace_dir: &Path) -> bool {
-    MANAGED_WORKSPACE_TEMPLATE_FILES
-        .iter()
-        .all(|name| workspace_dir.join(name).is_file())
-}
-
-fn recoverable_managed_workspace(
-    agent_id: &str,
-    registry_entry: Option<&Map<String, Value>>,
-) -> Result<Option<PathBuf>, String> {
-    if registry_entry.is_some() {
-        return Ok(None);
-    }
-
-    let agent_path = resolve_agent_path(agent_id)?;
-    if !agent_path.is_dir() {
-        return Ok(None);
-    }
-
-    let workspace_dir = managed_workspace_dir(agent_id)?;
-    if !workspace_dir.is_dir() || !managed_workspace_has_templates(&workspace_dir) {
-        return Ok(None);
-    }
-
-    Ok(Some(workspace_dir))
-}
-
 fn upsert_managed_registry_entry(
     config_value: &mut Value,
     agent_id: &str,
@@ -411,13 +383,7 @@ pub fn install_agency_agent(agent_id: String) -> Result<String, String> {
     let config_value = config::read_openclaw_config()?;
     let registry_entry = find_agent_registry_entry(&config_value, &normalized_agent_id);
     let managed_entry = is_managed_roster_entry(registry_entry);
-    let recoverable_workspace =
-        recoverable_managed_workspace(&normalized_agent_id, registry_entry)?;
-
-    if (registry_entry.is_some() || agent_path.exists())
-        && !managed_entry
-        && recoverable_workspace.is_none()
-    {
+    if (registry_entry.is_some() || agent_path.exists()) && !managed_entry {
         return Err(format!(
             "已存在同名 Agent '{normalized_agent_id}'，且不属于角色库托管，已拒绝覆盖"
         ));
@@ -506,47 +472,31 @@ pub fn uninstall_agency_agent(agent_id: String) -> Result<String, String> {
 pub fn load_installed_agency_agent_ids() -> Result<Vec<String>, String> {
     let manifest = agency_manifest();
     let config_value = config::read_openclaw_config()?;
-    let main_model_id = current_main_model_id(&config_value);
-    let mut next_config_value = config_value.clone();
-    let mut healed_registry = false;
-    let mut installed_ids = Vec::new();
+    let list = config_value
+        .get("agents")
+        .and_then(|agents| agents.get("list"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
 
-    for agent_id in &manifest.installable_ids {
-        let registry_entry = find_agent_registry_entry(&config_value, agent_id);
-        let agent_path = resolve_agent_path(agent_id)?;
-
-        if is_managed_roster_entry(registry_entry) {
+    let mut installed_ids = list
+        .iter()
+        .filter_map(|item| item.as_object())
+        .filter(|entry| is_managed_roster_entry(Some(*entry)))
+        .filter_map(|entry| entry.get("id").and_then(Value::as_str))
+        .map(str::trim)
+        .filter(|id| manifest.installable_ids.contains(*id))
+        .filter_map(|id| {
+            let agent_path = resolve_agent_path(id).ok()?;
             if agent_path.is_dir() {
-                installed_ids.push(agent_id.clone());
+                Some(id.to_string())
+            } else {
+                None
             }
-            continue;
-        }
-
-        let Some(workspace_dir) = recoverable_managed_workspace(agent_id, registry_entry)? else {
-            continue;
-        };
-
-        if !healed_registry {
-            config::ensure_config_roots(&mut next_config_value);
-            config::ensure_gateway_config(&mut next_config_value);
-            config::ensure_default_workspace(&mut next_config_value);
-            healed_registry = true;
-        }
-
-        upsert_managed_registry_entry(
-            &mut next_config_value,
-            agent_id,
-            &workspace_dir,
-            main_model_id.as_deref(),
-        )?;
-        installed_ids.push(agent_id.clone());
-    }
+        })
+        .collect::<Vec<_>>();
 
     installed_ids.sort();
-
-    if healed_registry {
-        config::write_openclaw_config(&next_config_value)?;
-    }
 
     Ok(installed_ids)
 }
@@ -670,23 +620,6 @@ mod tests {
         .expect("write main models");
     }
 
-    fn seed_recoverable_agency_agent(config_root: &Path, agent_id: &str) {
-        let agent_dir = config_root.join("agents").join(agent_id).join("agent");
-        fs::create_dir_all(&agent_dir).expect("create recoverable agent dir");
-        fs::write(agent_dir.join("agent.json"), "{}").expect("write recoverable agent json");
-
-        let template = agency_manifest()
-            .templates
-            .get(agent_id)
-            .expect("load recoverable template");
-        let workspace_dir = config_root
-            .join("workspace-dragonclaw")
-            .join("agency-agents")
-            .join(agent_id);
-        write_workspace_templates(&workspace_dir, template)
-            .expect("write recoverable workspace templates");
-    }
-
     #[test]
     fn install_and_uninstall_agency_agent_are_idempotent() {
         let temp_root = unique_temp_dir("agency-install");
@@ -748,63 +681,6 @@ mod tests {
 
             let result = install_agency_agent(agent_id.to_string());
             assert!(result.is_err());
-        });
-
-        let _ = fs::remove_dir_all(temp_root);
-    }
-
-    #[test]
-    fn install_agency_agent_recovers_missing_managed_registry_entry() {
-        let temp_root = unique_temp_dir("agency-recover-install");
-        let config_root = temp_root.join(".openclaw");
-        let default_workspace = temp_root.join("workspace-main");
-
-        write_mock_openclaw_config(&config_root);
-        write_mock_main_models(&config_root);
-
-        with_mock_env(config_root.as_path(), default_workspace.as_path(), || {
-            let agent_id = "engineering-frontend-developer";
-            seed_recoverable_agency_agent(&config_root, agent_id);
-            let expected_workspace = config_root
-                .join("workspace-dragonclaw")
-                .join("agency-agents")
-                .join(agent_id)
-                .to_string_lossy()
-                .to_string();
-
-            install_agency_agent(agent_id.to_string()).expect("recover managed registry entry");
-
-            let config_value = config::read_openclaw_config().expect("read healed config");
-            let entry = find_agent_registry_entry(&config_value, agent_id).expect("find healed entry");
-            assert!(is_managed_roster_entry(Some(entry)));
-            assert_eq!(
-                entry.get("workspace").and_then(Value::as_str),
-                Some(expected_workspace.as_str())
-            );
-        });
-
-        let _ = fs::remove_dir_all(temp_root);
-    }
-
-    #[test]
-    fn load_installed_agency_agent_ids_self_heals_missing_registry_entries() {
-        let temp_root = unique_temp_dir("agency-recover-list");
-        let config_root = temp_root.join(".openclaw");
-        let default_workspace = temp_root.join("workspace-main");
-
-        write_mock_openclaw_config(&config_root);
-        write_mock_main_models(&config_root);
-
-        with_mock_env(config_root.as_path(), default_workspace.as_path(), || {
-            let agent_id = "engineering-backend-architect";
-            seed_recoverable_agency_agent(&config_root, agent_id);
-
-            let installed_ids = load_installed_agency_agent_ids().expect("load healed installed ids");
-            assert!(installed_ids.contains(&agent_id.to_string()));
-
-            let config_value = config::read_openclaw_config().expect("read healed config");
-            let entry = find_agent_registry_entry(&config_value, agent_id).expect("find healed entry");
-            assert!(is_managed_roster_entry(Some(entry)));
         });
 
         let _ = fs::remove_dir_all(temp_root);
