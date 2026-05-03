@@ -1,17 +1,15 @@
-import agencyAgentManifestRaw from "./agency-agents.json";
+import agencyAgentIndexRaw from "./agency-agent-index.json";
 import type {
   AgencyAgentInfo,
-  AgencyAgentInfoRecord,
-  AgencyAgentManifest,
   AgencyAgentTemplate,
+  AgencyAgentIndexDivision,
+  AgencyAgentIndexManifest,
+  AgencyAgentIndexRole,
+  AgencyAgentProfile,
   AgencyRosterDefinitionSection,
   AgencyRosterDivision,
   AgencyRosterRole,
 } from "../types";
-
-const agencyAgentManifest = agencyAgentManifestRaw as unknown as AgencyAgentManifest;
-
-const DIVISION_FILTER_ALL = "__all__";
 
 interface NormalizedAgencyAgentInfo {
   name: string;
@@ -27,62 +25,15 @@ interface NormalizedAgencyAgentInfo {
   personalityRadar: Record<string, number>;
 }
 
-function slugify(value: string) {
-  const slug = value
-    .toLowerCase()
-    .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-
-  if (slug) {
-    return slug;
-  }
-
-  let hash = 0;
-  for (const char of value) {
-    hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  }
-  return `division-${hash.toString(36)}`;
-}
-
-function normalizeDivisionTitle(rawTitle: string) {
-  const withoutLeadingEmoji = rawTitle.replace(/^[^A-Za-z0-9\u4e00-\u9fa5]+/u, "").trim();
-  const withoutTrailingEn = withoutLeadingEmoji.replace(/\s*\([^)]*\)\s*$/u, "").trim();
-  return withoutTrailingEn || "未分组";
-}
-
-function parseMarkdownTableRow(line: string): string[] | null {
-  const trimmed = line.trim();
-  if (!trimmed.startsWith("|")) {
-    return null;
-  }
-
-  const cells = trimmed
-    .split("|")
-    .slice(1, -1)
-    .map((cell) => cell.trim());
-
-  if (cells.length < 4) {
-    return null;
-  }
-
-  if (cells.every((cell) => /^:?-{2,}:?$/.test(cell))) {
-    return null;
-  }
-
-  if (/^agent\s*id$/i.test(cells[0]) || cells[0] === "中文名") {
-    return null;
-  }
-
-  return cells;
-}
-
-function extractAgentId(cell: string) {
-  const codeMatch = cell.match(/`([^`]+)`/);
-  if (codeMatch?.[1]) {
-    return codeMatch[1].trim();
-  }
-  return cell.trim();
-}
+const agencyAgentIndex = agencyAgentIndexRaw as unknown as AgencyAgentIndexManifest;
+const agencyTemplateModules = import.meta.glob("./agency-agent-templates/*.json") as Record<
+  string,
+  () => Promise<{ default: AgencyAgentTemplate }>
+>;
+const agencyProfileModules = import.meta.glob("./agency-agent-profiles/*.json") as Record<
+  string,
+  () => Promise<{ default: AgencyAgentProfile }>
+>;
 
 function normalizeStringList(value: unknown) {
   return Array.isArray(value)
@@ -132,27 +83,6 @@ function hasMeaningfulInfo(info: NormalizedAgencyAgentInfo) {
       info.rules.length > 0 ||
       info.usageScenarios.length > 0,
   );
-}
-
-function buildInfoIndex(records: AgencyAgentInfoRecord[]) {
-  const zh = new Map<string, AgencyAgentInfo>();
-  const en = new Map<string, AgencyAgentInfo>();
-
-  for (const record of records) {
-    const agentId = record.agentId.trim();
-    if (!agentId) {
-      continue;
-    }
-
-    const normalizedLocale = record.locale.trim().toLowerCase();
-    if (normalizedLocale.startsWith("zh")) {
-      zh.set(agentId, record.info);
-    } else if (normalizedLocale.startsWith("en")) {
-      en.set(agentId, record.info);
-    }
-  }
-
-  return { zh, en };
 }
 
 function buildTemplateSections(template: AgencyAgentTemplate | undefined): AgencyRosterDefinitionSection[] {
@@ -226,132 +156,51 @@ function buildFallbackInfoSections(
   return sections;
 }
 
-function toPreviewText(value: string) {
-  return value
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/[#>*_\-\[\]`]/g, " ")
-    .replace(/\|/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+function buildRoleFallbackSections(role: AgencyAgentIndexRole): AgencyRosterDefinitionSection[] {
+  return role.definitionPreview || role.description
+    ? [{ id: "fallback", label: "定义概览", content: role.definitionPreview || role.description }]
+    : [];
 }
 
-function buildDefinitionPreview(
-  sections: AgencyRosterDefinitionSection[],
-  fallbackDescription: string,
-) {
-  const previewSource = sections.map((section) => section.content).join("\n\n") || fallbackDescription;
-  const normalized = toPreviewText(previewSource);
-  if (!normalized) {
-    return fallbackDescription;
-  }
-  return normalized.length > 180 ? `${normalized.slice(0, 180).trim()}...` : normalized;
-}
-
-const infoIndex = buildInfoIndex(agencyAgentManifest.agentInfos);
-
-function resolveRoleDetail(agentId: string, fallbackName: string, fallbackDescription: string) {
-  const zhInfo = normalizeInfo(infoIndex.zh.get(agentId));
-  const enInfo = normalizeInfo(infoIndex.en.get(agentId));
-  const hasZh = hasMeaningfulInfo(zhInfo);
-  const hasEn = hasMeaningfulInfo(enInfo);
-  const preferred = hasZh ? zhInfo : hasEn ? enInfo : zhInfo;
-  const definitionSections =
-    buildTemplateSections(agencyAgentManifest.templates[agentId]) ||
-    buildFallbackInfoSections(preferred, fallbackDescription);
-
+function toAgencyRosterRole(role: AgencyAgentIndexRole): AgencyRosterRole {
   return {
-    locale: hasZh ? "zh" : hasEn ? "en" : "zh",
-    name: preferred.name || fallbackName,
-    description: preferred.mission || preferred.workflow.slice(0, 2).join(" / ") || fallbackDescription,
-    tags: preferred.tags,
-    definitionSections: definitionSections.length > 0
-      ? definitionSections
-      : buildFallbackInfoSections(preferred, fallbackDescription),
-    definitionPreview: buildDefinitionPreview(definitionSections, fallbackDescription),
+    ...role,
+    definitionSections: buildRoleFallbackSections(role),
   };
 }
 
-function parseAgencyRoster(raw: string): AgencyRosterDivision[] {
-  const lines = raw.replace(/\r\n/g, "\n").split("\n");
-  const divisionOrder: string[] = [];
-  const roleBuckets = new Map<string, AgencyRosterRole[]>();
-
-  let currentDivisionId = DIVISION_FILTER_ALL;
-  let currentDivisionTitle = "全部";
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-
-    const headingMatch = line.match(/^##\s+(.+)$/);
-    if (headingMatch?.[1]) {
-      const title = normalizeDivisionTitle(headingMatch[1]);
-      const divisionId = `division-${slugify(title)}`;
-      currentDivisionId = divisionId;
-      currentDivisionTitle = title;
-      if (!roleBuckets.has(divisionId)) {
-        roleBuckets.set(divisionId, []);
-        divisionOrder.push(divisionId);
-      }
-      continue;
-    }
-
-    const cells = parseMarkdownTableRow(line);
-    if (!cells || currentDivisionId === DIVISION_FILTER_ALL) {
-      continue;
-    }
-
-    const agentId = extractAgentId(cells[0]);
-    const fallbackName = cells[1]?.trim() ?? "";
-    const fallbackDescription = cells[2]?.trim() ?? "";
-    const source = cells[3]?.trim() ?? "";
-    const isLikelyAgentId = /^[a-z0-9][a-z0-9-]{1,127}$/i.test(agentId);
-
-    if (!agentId || !isLikelyAgentId) {
-      continue;
-    }
-
-    const detail = resolveRoleDetail(agentId, fallbackName, fallbackDescription);
-    if (!detail.name || !detail.description) {
-      continue;
-    }
-
-    const role: AgencyRosterRole = {
-      id: agentId,
-      agentId,
-      divisionId: currentDivisionId,
-      divisionTitle: currentDivisionTitle,
-      source,
-      locale: detail.locale,
-      name: detail.name,
-      description: detail.description,
-      tags: detail.tags,
-      definitionPreview: detail.definitionPreview,
-      definitionSections: detail.definitionSections,
-    };
-
-    const list = roleBuckets.get(currentDivisionId) ?? [];
-    list.push(role);
-    roleBuckets.set(currentDivisionId, list);
-  }
-
-  return divisionOrder
-    .map((divisionId) => {
-      const roles = roleBuckets.get(divisionId) ?? [];
-      if (roles.length === 0) {
-        return null;
-      }
-
-      return {
-        id: divisionId,
-        title: roles[0]?.divisionTitle || "未分组",
-        count: roles.length,
-        roles,
-      } satisfies AgencyRosterDivision;
-    })
-    .filter((division): division is AgencyRosterDivision => Boolean(division));
+function toAgencyRosterDivision(division: AgencyAgentIndexDivision): AgencyRosterDivision {
+  const roles = division.roles.map(toAgencyRosterRole);
+  return {
+    id: division.id,
+    title: division.title,
+    count: division.count,
+    roles,
+  };
 }
 
-const agencyRoster = parseAgencyRoster(agencyAgentManifest.rosterZhRaw);
+function resolvePreferredProfileInfo(profile: AgencyAgentProfile | undefined) {
+  const zhInfo = profile?.infos.find((record) => record.locale.trim().toLowerCase().startsWith("zh"))?.info;
+  const enInfo = profile?.infos.find((record) => record.locale.trim().toLowerCase().startsWith("en"))?.info;
+  const normalizedZhInfo = normalizeInfo(zhInfo);
+  const normalizedEnInfo = normalizeInfo(enInfo);
+  if (hasMeaningfulInfo(normalizedZhInfo)) {
+    return normalizedZhInfo;
+  }
+  return hasMeaningfulInfo(normalizedEnInfo) ? normalizedEnInfo : normalizedZhInfo;
+}
+
+async function loadAgencyProfileSections(agentId: string, fallbackDescription: string) {
+  const loadProfile = agencyProfileModules[`./agency-agent-profiles/${agentId}.json`];
+  if (!loadProfile) {
+    return [];
+  }
+
+  const profileModule = await loadProfile();
+  return buildFallbackInfoSections(resolvePreferredProfileInfo(profileModule.default), fallbackDescription);
+}
+
+const agencyRoster = agencyAgentIndex.divisions.map(toAgencyRosterDivision);
 const agencyRoleMap = new Map<string, AgencyRosterRole>(
   agencyRoster.flatMap((division) => division.roles).map((role) => [role.agentId, role]),
 );
@@ -364,6 +213,31 @@ export function loadAgencyRoleMap() {
   return agencyRoleMap;
 }
 
+export async function loadAgencyRoleDefinition(agentId: string) {
+  const normalizedAgentId = agentId.trim();
+  const fallbackRole = agencyRoleMap.get(normalizedAgentId);
+  const loadTemplate = agencyTemplateModules[`./agency-agent-templates/${normalizedAgentId}.json`];
+
+  const templateSections = loadTemplate
+    ? await loadTemplate()
+        .then((templateModule) => buildTemplateSections(templateModule.default))
+        .catch(() => [])
+    : [];
+  if (templateSections.length > 0) {
+    return templateSections;
+  }
+
+  const profileSections = await loadAgencyProfileSections(
+    normalizedAgentId,
+    fallbackRole?.definitionPreview || fallbackRole?.description || "",
+  ).catch(() => []);
+  if (profileSections.length > 0) {
+    return profileSections;
+  }
+
+  return fallbackRole?.definitionSections ?? [];
+}
+
 export function loadAgencyRosterManifest() {
-  return agencyAgentManifest;
+  return agencyAgentIndex;
 }

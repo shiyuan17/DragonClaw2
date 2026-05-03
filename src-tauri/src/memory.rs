@@ -107,7 +107,9 @@ fn build_snapshot_item(path: &Path) -> MemoryFileSnapshotItem {
 }
 
 #[tauri::command]
-pub fn load_memory_file_snapshot(agent_id: Option<String>) -> Result<MemoryFileSnapshotResponse, String> {
+pub fn load_memory_file_snapshot(
+    agent_id: Option<String>,
+) -> Result<MemoryFileSnapshotResponse, String> {
     let workspace_root = paths::workspace_root_for_agent(agent_id.as_deref())?;
     let items = collect_memory_paths(agent_id.as_deref())?
         .iter()
@@ -154,16 +156,10 @@ pub fn save_source_file(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     const USER_CONFIG_OVERRIDE_ENV: &str = "DRAGONCLAW_USER_CONFIG_DIR";
     const DEFAULT_WORKSPACE_OVERRIDE_ENV: &str = "DRAGONCLAW_DEFAULT_WORKSPACE_DIR";
-
-    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(())).lock().expect("lock env")
-    }
 
     fn unique_temp_dir(prefix: &str) -> PathBuf {
         let nonce = SystemTime::now()
@@ -180,7 +176,7 @@ mod tests {
     where
         F: FnOnce() -> R,
     {
-        let _lock = env_lock();
+        let _lock = crate::test_env::env_lock();
         let previous_config_root = std::env::var(USER_CONFIG_OVERRIDE_ENV).ok();
         let previous_workspace = std::env::var(DEFAULT_WORKSPACE_OVERRIDE_ENV).ok();
 

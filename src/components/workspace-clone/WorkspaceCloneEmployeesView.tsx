@@ -1,10 +1,10 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Modal } from "../ui/Modal";
 import type { AgencyRosterDivision, AgencyRosterRole } from "../../types";
-import { loadAgencyRoster } from "../../data/agencyRoster";
+import { loadAgencyRoleDefinition, loadAgencyRoster } from "../../data/agencyRoster";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
 
 const DIVISION_FILTER_ALL = "__all__";
@@ -16,6 +16,10 @@ function includesAgentId(ids: string[], agentId: string) {
 }
 
 function buildSearchText(role: AgencyRosterRole) {
+  if (role.searchText) {
+    return role.searchText;
+  }
+
   return [
     role.name,
     role.description,
@@ -47,7 +51,10 @@ export function WorkspaceCloneEmployeesView() {
   const [installingIds, setInstallingIds] = useState<string[]>([]);
   const [removingIds, setRemovingIds] = useState<string[]>([]);
   const [selectedRole, setSelectedRole] = useState<AgencyRosterRole | null>(null);
+  const [definitionLoading, setDefinitionLoading] = useState(false);
+  const [definitionError, setDefinitionError] = useState("");
   const deferredSearchValue = useDeferredValue(searchValue);
+  const roleDefinitionLoadSeqRef = useRef(0);
 
   const refreshInstalledIds = useCallback(async () => {
     const nextIds = await invoke<string[]>("load_installed_agency_agent_ids");
@@ -183,6 +190,51 @@ export function WorkspaceCloneEmployeesView() {
     [refreshInstalledIds, removingIds],
   );
 
+  const closeSelectedRole = useCallback(() => {
+    roleDefinitionLoadSeqRef.current += 1;
+    setSelectedRole(null);
+    setDefinitionLoading(false);
+    setDefinitionError("");
+  }, []);
+
+  const handleOpenRole = useCallback((role: AgencyRosterRole) => {
+    const loadSeq = roleDefinitionLoadSeqRef.current + 1;
+    roleDefinitionLoadSeqRef.current = loadSeq;
+    setSelectedRole(role);
+    setDefinitionError("");
+    setDefinitionLoading(true);
+
+    void loadAgencyRoleDefinition(role.agentId)
+      .then((sections) => {
+        if (roleDefinitionLoadSeqRef.current !== loadSeq) {
+          return;
+        }
+
+        if (sections.length > 0) {
+          setSelectedRole((current) =>
+            current?.agentId === role.agentId
+              ? {
+                  ...current,
+                  definitionSections: sections,
+                }
+              : current,
+          );
+        }
+      })
+      .catch((loadError) => {
+        if (roleDefinitionLoadSeqRef.current !== loadSeq) {
+          return;
+        }
+
+        setDefinitionError(loadError instanceof Error ? loadError.message : "完整分身定义加载失败。");
+      })
+      .finally(() => {
+        if (roleDefinitionLoadSeqRef.current === loadSeq) {
+          setDefinitionLoading(false);
+        }
+      });
+  }, []);
+
   return (
     <>
       <div className="workspace-employees">
@@ -251,8 +303,8 @@ export function WorkspaceCloneEmployeesView() {
                         role="button"
                         tabIndex={0}
                         aria-label={`查看 ${role.name} 的分身定义详情`}
-                        onClick={() => setSelectedRole(role)}
-                        onKeyDown={buildKeyboardHandler(() => setSelectedRole(role))}
+                        onClick={() => handleOpenRole(role)}
+                        onKeyDown={buildKeyboardHandler(() => handleOpenRole(role))}
                       >
                         <div className="workspace-employees__role-card-head">
                           <div className="workspace-employees__role-avatar">
@@ -317,7 +369,7 @@ export function WorkspaceCloneEmployeesView() {
 
       <Modal
         show={Boolean(selectedRole)}
-        onClose={() => setSelectedRole(null)}
+        onClose={closeSelectedRole}
         maxWidth={980}
         overlayClassName="workspace-employees-modal__overlay"
         contentClassName="workspace-employees-modal__surface"
@@ -334,7 +386,7 @@ export function WorkspaceCloneEmployeesView() {
                 <button
                   type="button"
                   className="workspace-model-modal__icon"
-                  onClick={() => setSelectedRole(null)}
+                  onClick={closeSelectedRole}
                   aria-label="关闭分身定义详情"
                 >
                   <WorkspaceCloneIcon name="x" size={15} strokeWidth={1.9} />
@@ -370,6 +422,12 @@ export function WorkspaceCloneEmployeesView() {
                     </span>
                   ))}
                 </section>
+              )}
+
+              {(definitionLoading || definitionError) && (
+                <div className={`workspace-employees__feedback ${definitionError ? "is-error" : "is-success"}`}>
+                  <span>{definitionError || "正在加载完整分身定义..."}</span>
+                </div>
               )}
 
               <section className="workspace-employees-modal__content">

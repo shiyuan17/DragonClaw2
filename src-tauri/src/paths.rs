@@ -340,15 +340,7 @@ fn collect_agent_workspace_candidates(scope: &str) -> Result<Vec<PathBuf>, Strin
 mod tests {
     use super::*;
     use std::path::Path;
-    use std::sync::{Mutex, OnceLock};
     use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-            .lock()
-            .expect("lock env")
-    }
 
     fn unique_temp_dir(prefix: &str) -> PathBuf {
         let nonce = SystemTime::now()
@@ -395,7 +387,7 @@ mod tests {
     where
         F: FnOnce() -> R,
     {
-        let _lock = env_lock();
+        let _lock = crate::test_env::env_lock();
         let previous_config_root = std::env::var(USER_CONFIG_OVERRIDE_ENV).ok();
         let previous_workspace = std::env::var(DEFAULT_WORKSPACE_OVERRIDE_ENV).ok();
 

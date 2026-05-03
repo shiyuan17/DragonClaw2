@@ -20,6 +20,18 @@ mod service;
 mod setup;
 mod skill_market;
 
+#[cfg(test)]
+pub(crate) mod test_env {
+    use std::sync::{Mutex, MutexGuard, OnceLock};
+
+    pub(crate) fn env_lock() -> MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager};
@@ -174,6 +186,7 @@ pub fn run() {
             onboarding::get_onboarding_skill_install_state,
             onboarding::get_onboarding_skill_install_diagnostics,
             onboarding::save_onboarding_skill_install_state,
+            onboarding::start_onboarding_skill_install_background,
             skill_market::load_skill_market_top,
             skill_market::load_skill_market_by_category,
             skill_market::load_installed_skill_market_slugs,
