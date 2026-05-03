@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "../ui/Modal";
 import type { CurrentConfig, ProviderInfo, SavedProvider } from "../../types";
+import { useFeedback } from "../../hooks/useFeedback";
 import type {
   WorkspaceModelConfigDraft,
   WorkspaceModelProviderApi,
@@ -184,6 +185,7 @@ export function WorkspaceCloneModelConfigModal({
   onUpsertSavedProviderConfig,
   onDeleteSavedProviderConfig,
 }: WorkspaceCloneModelConfigModalProps) {
+  const { pushFeedback } = useFeedback();
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [selectedVendorPresetId, setSelectedVendorPresetId] = useState("custom");
   const [draft, setDraft] = useState<WorkspaceModelConfigDraft>(createDraftFromPreset("custom"));
@@ -227,6 +229,37 @@ export function WorkspaceCloneModelConfigModal({
     setSelectedVendorPresetId("custom");
     setDraft(customDraft);
   }, [cards, currentConfig, savedProviders, show]);
+
+  useEffect(() => {
+    const message = notice.trim();
+    if (!message) {
+      return;
+    }
+
+    pushFeedback({
+      tone: deletePendingProviderId ? "warning" : "success",
+      message,
+      dedupeKey: deletePendingProviderId ? "workspace-model-delete-confirm" : "workspace-model-notice",
+      persistent: false,
+      autoCloseMs: deletePendingProviderId ? 3600 : undefined,
+    });
+  }, [deletePendingProviderId, notice, pushFeedback]);
+
+  useEffect(() => {
+    const message = error.trim();
+    if (!message) {
+      return;
+    }
+
+    pushFeedback({
+      tone: "error",
+      title: "妯″瀷閰嶇疆",
+      message,
+      dedupeKey: "workspace-model-error",
+      persistent: false,
+      autoCloseMs: 3600,
+    });
+  }, [error, pushFeedback]);
 
   const clearStatus = () => {
     setNotice("");
@@ -604,13 +637,6 @@ export function WorkspaceCloneModelConfigModal({
                 </select>
               </label>
             </div>
-
-            {(notice || error) && (
-              <div className={`workspace-model-modal__status ${error ? "is-error" : "is-success"}`}>
-                {error || notice}
-              </div>
-            )}
-
             <div className="workspace-model-modal__footer">
               <button type="button" className="workspace-model-modal__ghost" onClick={handleAddConfig}>
                 重置表单

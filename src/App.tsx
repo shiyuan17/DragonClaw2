@@ -8,16 +8,16 @@ import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 import qrAlipay from "./assets/qr-alipay.jpg";
 import qrWechat from "./assets/qr-wechat.jpg";
-
+import { FeedbackCenterHost } from "./components/FeedbackCenterHost";
 import { ApiKeyModal } from "./components/ApiKeyModal";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { Header } from "./components/Header";
 import { ModelSwitchModal } from "./components/ModelSwitchModal";
-import { RepairToast } from "./components/RepairToast";
 import { SetupWizard } from "./components/SetupWizard";
 import { StartupOverlay } from "./components/StartupOverlay";
 import { Modal } from "./components/ui/Modal";
 import { useConfig } from "./hooks/useConfig";
+import { FeedbackProvider, useFeedback } from "./hooks/useFeedback";
 import { useLogs } from "./hooks/useLogs";
 import { useService } from "./hooks/useService";
 import { useSetup } from "./hooks/useSetup";
@@ -62,15 +62,16 @@ function ReadyPageFallback() {
   );
 }
 
-function App() {
+function AppShell() {
+  const { pushFeedback } = useFeedback();
   const [running, setRunning] = useState(false);
-  const startingUpRef = useRef<(value: boolean) => void>(() => { });
-  const [feedbackModal, setFeedbackModal] = useState<{ title: string; msg: string; url?: string } | null>(null);
+  const startingUpRef = useRef<(value: boolean) => void>(() => {});
+  const [infoModalTitle, setInfoModalTitle] = useState("");
   const [appVersion, setAppVersion] = useState("0.0.0");
   const updateChecked = useRef(false);
 
   useEffect(() => {
-    getVersion().then((version) => setAppVersion(version)).catch(() => { });
+    getVersion().then((version) => setAppVersion(version)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -109,8 +110,8 @@ function App() {
     setShowReinstallModal,
     showModelSwitchModal,
     setShowModelSwitchModal,
-    infoModalTitle,
-    setInfoModalTitle,
+    infoModalTitle: legacyInfoModalTitle,
+    setInfoModalTitle: setLegacyInfoModalTitle,
     refreshCurrentConfig,
     checkApiKey,
     handleSaveConfig,
@@ -122,6 +123,10 @@ function App() {
     configVersion,
   } = useConfig({ addLog, running, setRunning, setStartingUp: (value) => startingUpRef.current(value) });
 
+  useEffect(() => {
+    setInfoModalTitle(legacyInfoModalTitle);
+  }, [legacyInfoModalTitle]);
+
   const {
     phase,
     setPhase,
@@ -132,7 +137,6 @@ function App() {
     setProgressMsg,
     workspacePath,
     setupError,
-    clearSetupError,
     retrySetup,
     handleSelectFolder,
     handleConfirmWorkspace,
@@ -144,7 +148,6 @@ function App() {
     setStartingUp,
     uptime,
     servicePort,
-    repairing,
     handleStart,
     handleStop,
     confirmReinstall,
@@ -177,17 +180,60 @@ function App() {
         const isSemver = /^v?\d+\.\d+\.\d+$/.test(rawTag);
         const latestVersion = rawTag.replace(/^v/, "");
         if (isSemver && latestVersion !== appVersion) {
-          setFeedbackModal({
+          pushFeedback({
+            tone: "info",
             title: "发现更新",
-            msg: `发现新版本 v${latestVersion}，\n当前版本 v${appVersion}`,
-            url: data.html_url || "https://github.com/shiyuan17/DragonClaw2/security/releases",
+            message: `发现新版本 v${latestVersion}，\n当前版本 v${appVersion}`,
+            actionLabel: "前往下载",
+            onAction: async () => {
+              await invoke("open_url", {
+                url: data.html_url || "https://github.com/shiyuan17/DragonClaw2/security/releases",
+              });
+            },
+            dedupeKey: "app-version-update",
           });
         }
       } catch {
         // Silently ignore network errors.
       }
     })();
-  }, [appVersion, phase]);
+  }, [appVersion, phase, pushFeedback]);
+
+  useEffect(() => {
+    if (!repairToast) {
+      return;
+    }
+
+    pushFeedback({
+      tone: "error",
+      title: "连接异常",
+      message: "检测到设备签名校验异常，你可以一键修复连接。",
+      actionLabel: "修复连接",
+      onAction: async () => {
+        await handleRepairConnection();
+      },
+      dedupeKey: "repair-connection",
+    });
+    setRepairToast(false);
+  }, [handleRepairConnection, pushFeedback, repairToast, setRepairToast]);
+
+  useEffect(() => {
+    if (!setupError) {
+      return;
+    }
+
+    const isLaunchingError = phase === "launching";
+    pushFeedback({
+      tone: "error",
+      title: isLaunchingError ? "启动失败" : "初始化失败",
+      message: setupError,
+      actionLabel: isLaunchingError ? "重试启动" : "重试",
+      onAction: async () => {
+        retrySetup();
+      },
+      dedupeKey: "setup-error",
+    });
+  }, [phase, pushFeedback, retrySetup, setupError]);
 
   useEffect(() => {
     const unlisten = listen("tray-restart-service", async () => {
@@ -216,197 +262,169 @@ function App() {
   const gatewayToken = currentConfig?.gateway_token?.trim() || null;
 
   return (
-    <div className={`app ${phase === "ready" ? "app--workspace-clone" : ""}`}>
-      <Header />
+    <>
+      <FeedbackCenterHost />
 
-      <div className="app-content">
-        {phase !== "ready" ? (
-          <SetupWizard
-            phase={phase}
-            progress={progress}
-            progressMsg={progressMsg}
-            workspacePath={workspacePath}
-            loading={loading}
-            appVersion={appVersion}
-            setupError={setupError}
-            onDismissError={clearSetupError}
-            onRetry={retrySetup}
-            onSelectFolder={handleSelectFolder}
-            onConfirmWorkspace={handleConfirmWorkspace}
-          />
-        ) : (
-          <Suspense fallback={<ReadyPageFallback />}>
-            <WorkspaceCloneReadyPage
-              running={running}
-              loading={loading}
-              servicePort={servicePort}
-              gatewayToken={gatewayToken}
-              uptime={uptime}
-              currentModelName={currentModelName}
-              currentProviderName={currentProviderName}
-              currentConfig={currentConfig}
-              configVersion={configVersion}
-              providers={providers}
+      <div className={`app ${phase === "ready" ? "app--workspace-clone" : ""}`}>
+        <Header />
+
+        <div className="app-content">
+          {phase !== "ready" ? (
+            <SetupWizard
+              phase={phase}
+              progress={progress}
+              progressMsg={progressMsg}
               workspacePath={workspacePath}
-              logs={logs}
-              handleStart={handleStart}
-              handleStop={handleStop}
-              refreshCurrentConfig={refreshCurrentConfig}
-              handleSetModel={handleSetModel}
-              handleUpsertSavedProviderConfig={handleUpsertSavedProviderConfig}
-              handleDeleteSavedProviderConfig={handleDeleteSavedProviderConfig}
+              loading={loading}
+              appVersion={appVersion}
+              onSelectFolder={handleSelectFolder}
+              onConfirmWorkspace={handleConfirmWorkspace}
             />
-          </Suspense>
-        )}
-      </div>
-
-      <Modal show={!!infoModalTitle} onClose={() => setInfoModalTitle("")} title={infoModalTitle} maxWidth={360}>
-        <div
-          className="modal-desc"
-          style={{
-            marginTop: 16,
-            marginBottom: 24,
-            padding: 24,
-            background: "var(--bg-card)",
-            borderRadius: "var(--radius)",
-            textAlign: "center",
-          }}
-        >
-          {infoModalTitle.includes("赞赏") ? (
-            <>
-              <img
-                src={qrAlipay}
-                alt="支付宝收钱码"
-                style={{ width: "100%", maxWidth: 220, maxHeight: 280, objectFit: "contain", borderRadius: 8 }}
-              />
-              <div style={{ fontSize: 13, marginTop: 12, color: "var(--text-secondary)" }}>
-                如果 OpenClaw 对你有帮助，可以请作者喝杯咖啡
-              </div>
-            </>
           ) : (
-            <>
-              <img
-                src={qrWechat}
-                alt="微信公众号"
-                style={{ width: "100%", maxWidth: 220, maxHeight: 280, objectFit: "contain", borderRadius: 8 }}
+            <Suspense fallback={<ReadyPageFallback />}>
+              <WorkspaceCloneReadyPage
+                running={running}
+                loading={loading}
+                servicePort={servicePort}
+                gatewayToken={gatewayToken}
+                uptime={uptime}
+                currentModelName={currentModelName}
+                currentProviderName={currentProviderName}
+                currentConfig={currentConfig}
+                configVersion={configVersion}
+                providers={providers}
+                workspacePath={workspacePath}
+                logs={logs}
+                handleStart={handleStart}
+                handleStop={handleStop}
+                refreshCurrentConfig={refreshCurrentConfig}
+                handleSetModel={handleSetModel}
+                handleUpsertSavedProviderConfig={handleUpsertSavedProviderConfig}
+                handleDeleteSavedProviderConfig={handleDeleteSavedProviderConfig}
               />
-              <div style={{ fontSize: 13, marginTop: 12, color: "var(--text-secondary)" }}>
-                扫码关注微信公众号，获取最新动态
-              </div>
-            </>
+            </Suspense>
           )}
         </div>
-        <button className="btn-secondary" style={{ width: "100%" }} onClick={() => setInfoModalTitle("")}>关闭</button>
-      </Modal>
 
-      <Modal show={!!feedbackModal} onClose={() => setFeedbackModal(null)} title={feedbackModal?.title || ""} maxWidth={360}>
-        <div
-          className="modal-desc"
-          style={{
-            marginTop: 16,
-            marginBottom: 24,
-            padding: 24,
-            background: "var(--bg-card)",
-            borderRadius: "var(--radius)",
-            textAlign: "center",
-          }}
-        >
-          <div style={{ fontSize: 14, whiteSpace: "pre-line", color: "var(--text-primary)" }}>{feedbackModal?.msg}</div>
-        </div>
-        {feedbackModal?.url ? (
-          <button
-            className="btn-primary btn-hero"
-            style={{ width: "100%" }}
-            onClick={() => {
-              invoke("open_url", { url: feedbackModal.url });
-              setFeedbackModal(null);
+        <Modal show={!!infoModalTitle} onClose={() => setLegacyInfoModalTitle("")} title={infoModalTitle} maxWidth={360}>
+          <div
+            className="modal-desc"
+            style={{
+              marginTop: 16,
+              marginBottom: 24,
+              padding: 24,
+              background: "var(--bg-card)",
+              borderRadius: "var(--radius)",
+              textAlign: "center",
             }}
           >
-            前往下载页面
-          </button>
-        ) : (
-          <button className="btn-secondary" style={{ width: "100%" }} onClick={() => setFeedbackModal(null)}>确定</button>
-        )}
-      </Modal>
+            {infoModalTitle.includes("赞赏") ? (
+              <>
+                <img
+                  src={qrAlipay}
+                  alt="支付宝收钱码"
+                  style={{ width: "100%", maxWidth: 220, maxHeight: 280, objectFit: "contain", borderRadius: 8 }}
+                />
+                <div style={{ fontSize: 13, marginTop: 12, color: "var(--text-secondary)" }}>
+                  如果 OpenClaw 对你有帮助，可以请作者喝杯咖啡
+                </div>
+              </>
+            ) : (
+              <>
+                <img
+                  src={qrWechat}
+                  alt="微信公众号"
+                  style={{ width: "100%", maxWidth: 220, maxHeight: 280, objectFit: "contain", borderRadius: 8 }}
+                />
+                <div style={{ fontSize: 13, marginTop: 12, color: "var(--text-secondary)" }}>
+                  扫码关注微信公众号，获取最新动态
+                </div>
+              </>
+            )}
+          </div>
+          <button className="btn-secondary" style={{ width: "100%" }} onClick={() => setLegacyInfoModalTitle("")}>关闭</button>
+        </Modal>
 
-      <ModelSwitchModal
-        show={showModelSwitchModal}
-        onClose={() => setShowModelSwitchModal(false)}
-        currentConfig={currentConfig}
-        handleSetModel={handleSetModel}
-        configVersion={configVersion}
-      />
+        <ModelSwitchModal
+          show={showModelSwitchModal}
+          onClose={() => setShowModelSwitchModal(false)}
+          currentConfig={currentConfig}
+          handleSetModel={handleSetModel}
+          configVersion={configVersion}
+        />
 
-      <ConfirmModal
-        show={showResetModal}
-        title="重置配置"
-        onCancel={() => setShowResetModal(false)}
-        onConfirm={confirmReset}
-        confirmLabel="确认重置"
-      >
-        <p style={{ marginBottom: 12 }}>仅重置 API Key 和模型配置（`openclaw.json` 中的 `models/agents` 部分）。</p>
-        <p style={{ color: "var(--text-secondary)", marginBottom: 4 }}>不会删除：</p>
-        <ul style={{ paddingLeft: 20, marginBottom: 12, color: "var(--text-secondary)" }}>
-          <li>对话历史和记忆</li>
-          <li>Agent 技能和书签</li>
-          <li>工作区文件</li>
-        </ul>
-        <p style={{ color: "var(--accent-red)", marginBottom: 4 }}>将清除：</p>
-        <ul style={{ paddingLeft: 20, color: "var(--text-secondary)" }}>
-          <li>API Key 配置</li>
-          <li>模型选择和默认模型</li>
-        </ul>
-      </ConfirmModal>
+        <ConfirmModal
+          show={showResetModal}
+          title="重置配置"
+          onCancel={() => setShowResetModal(false)}
+          onConfirm={confirmReset}
+          confirmLabel="确认重置"
+        >
+          <p style={{ marginBottom: 12 }}>仅重置 API Key 和模型配置（`openclaw.json` 中的 `models/agents` 部分）。</p>
+          <p style={{ color: "var(--text-secondary)", marginBottom: 4 }}>不会删除：</p>
+          <ul style={{ paddingLeft: 20, marginBottom: 12, color: "var(--text-secondary)" }}>
+            <li>对话历史和记忆</li>
+            <li>Agent 技能和书签</li>
+            <li>工作区文件</li>
+          </ul>
+          <p style={{ color: "var(--accent-red)", marginBottom: 4 }}>将清除：</p>
+          <ul style={{ paddingLeft: 20, color: "var(--text-secondary)" }}>
+            <li>API Key 配置</li>
+            <li>模型选择和默认模型</li>
+          </ul>
+        </ConfirmModal>
 
-      <ConfirmModal
-        show={showReinstallModal}
-        title="重新安装运行环境"
-        onCancel={() => setShowReinstallModal(false)}
-        onConfirm={confirmReinstall}
-        confirmLabel="确认重新安装"
-      >
-        <p style={{ marginBottom: 12 }}>这将删除 `node_modules` 并重新下载所有依赖，可能需要几分钟。</p>
-        <p style={{ color: "var(--text-secondary)", marginBottom: 4 }}>适用于：</p>
-        <ul style={{ paddingLeft: 20, marginBottom: 12, color: "var(--text-secondary)" }}>
-          <li>安装过程出错</li>
-          <li>环境损坏或依赖缺失</li>
-          <li>版本升级后不兼容</li>
-        </ul>
-        <p style={{ color: "var(--text-secondary)", fontSize: 12 }}>根据网络情况，可能需要 3-10 分钟</p>
-      </ConfirmModal>
+        <ConfirmModal
+          show={showReinstallModal}
+          title="重新安装运行环境"
+          onCancel={() => setShowReinstallModal(false)}
+          onConfirm={confirmReinstall}
+          confirmLabel="确认重新安装"
+        >
+          <p style={{ marginBottom: 12 }}>这将删除 `node_modules` 并重新下载所有依赖，可能需要几分钟。</p>
+          <p style={{ color: "var(--text-secondary)", marginBottom: 4 }}>适用于：</p>
+          <ul style={{ paddingLeft: 20, marginBottom: 12, color: "var(--text-secondary)" }}>
+            <li>安装过程出错</li>
+            <li>环境损坏或依赖缺失</li>
+            <li>版本升级后不兼容</li>
+          </ul>
+          <p style={{ color: "var(--text-secondary)", fontSize: 12 }}>根据网络情况，可能需要 3-10 分钟</p>
+        </ConfirmModal>
 
-      <StartupOverlay show={startingUp} />
+        <StartupOverlay show={startingUp} />
 
-      <RepairToast
-        show={repairToast}
-        repairing={repairing}
-        onRepair={handleRepairConnection}
-        onDismiss={() => setRepairToast(false)}
-      />
+        <ApiKeyModal
+          show={showKeyModal}
+          onClose={() => setShowKeyModal(false)}
+          providers={providers}
+          filteredProviders={filteredProviders}
+          currentConfig={currentConfig}
+          activeTab="dashboard"
+          selectedCategory={selectedCategory}
+          setSelectedCategory={setSelectedCategory}
+          selectedProvider={selectedProvider}
+          setSelectedProvider={setSelectedProvider}
+          apiKeyInput={apiKeyInput}
+          setApiKeyInput={setApiKeyInput}
+          baseUrlInput={baseUrlInput}
+          setBaseUrlInput={setBaseUrlInput}
+          selectedModel={selectedModel}
+          setSelectedModel={setSelectedModel}
+          configSaving={configSaving}
+          setConfigStatus={setConfigStatus}
+          onSaveConfig={handleSaveConfig}
+          onOpenRegister={handleOpenRegister}
+        />
+      </div>
+    </>
+  );
+}
 
-      <ApiKeyModal
-        show={showKeyModal}
-        onClose={() => setShowKeyModal(false)}
-        providers={providers}
-        filteredProviders={filteredProviders}
-        currentConfig={currentConfig}
-        activeTab="dashboard"
-        selectedCategory={selectedCategory}
-        setSelectedCategory={setSelectedCategory}
-        selectedProvider={selectedProvider}
-        setSelectedProvider={setSelectedProvider}
-        apiKeyInput={apiKeyInput}
-        setApiKeyInput={setApiKeyInput}
-        baseUrlInput={baseUrlInput}
-        setBaseUrlInput={setBaseUrlInput}
-        selectedModel={selectedModel}
-        setSelectedModel={setSelectedModel}
-        configSaving={configSaving}
-        setConfigStatus={setConfigStatus}
-        onSaveConfig={handleSaveConfig}
-        onOpenRegister={handleOpenRegister}
-      />
-    </div>
+function App() {
+  return (
+    <FeedbackProvider>
+      <AppShell />
+    </FeedbackProvider>
   );
 }
 

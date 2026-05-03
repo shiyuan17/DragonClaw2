@@ -14,6 +14,7 @@ import type {
   WorkspaceEntityType,
   WorkspaceMenuKey,
 } from "../../types";
+import { useFeedback } from "../../hooks/useFeedback";
 import { useWorkspaceGatewayChat } from "../../hooks/useWorkspaceGatewayChat";
 import { formatUptime } from "../../utils/log-humanizer";
 import {
@@ -194,7 +195,58 @@ function buildToolSummaryItems(options: WorkspaceToolOption[]): WorkspaceToolIte
   }));
 }
 
+/* function WorkspaceCloneSectionFallback({ label }: { label: string }) {
+  return (
+    <section className="workspace-clone__loading-shell" aria-busy="true" aria-label={`${label} 加载中`}>
+      <div className="workspace-clone__loading-panel">
+        <div className="workspace-clone__loading-kicker">{label}</div>
+        <div className="workspace-clone__loading-lines" aria-hidden="true">
+          <span className="workspace-clone__loading-line workspace-clone__loading-line--wide" />
+          <span className="workspace-clone__loading-line workspace-clone__loading-line--full" />
+          <span className="workspace-clone__loading-line workspace-clone__loading-line--full" />
+          <span className="workspace-clone__loading-line workspace-clone__loading-line--medium" />
+        </div>
+        <div className="workspace-clone__loading-footer" aria-hidden="true">
+          <span className="workspace-clone__loading-divider" />
+          <span className="workspace-clone__loading-chevron" />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+*/
+
+function WorkspaceCloneSectionFallback({ label }: { label: string }) {
+  return (
+    <section className="workspace-clone__loading-shell" aria-busy="true" aria-label={`${label} loading`}>
+      <div className="workspace-clone__loading-panel">
+        <div className="workspace-clone__loading-kicker">{label}</div>
+        <div className="workspace-clone__loading-lines" aria-hidden="true">
+          <span className="workspace-clone__loading-line workspace-clone__loading-line--wide" />
+          <span className="workspace-clone__loading-line workspace-clone__loading-line--full" />
+          <span className="workspace-clone__loading-line workspace-clone__loading-line--full" />
+          <span className="workspace-clone__loading-line workspace-clone__loading-line--medium" />
+        </div>
+        <div className="workspace-clone__loading-footer" aria-hidden="true">
+          <span className="workspace-clone__loading-divider" />
+          <span className="workspace-clone__loading-chevron" />
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function WorkspaceCloneLazyFallback({ label }: { label: string }) {
+  const isEmployeesLabel = label === "数字员工" || label.includes("鏁") || label.includes("数");
+  const isSkillsLabel = label === "技能市场" || label.includes("鎶") || label.includes("技");
+  const isModelConfigLabel = label === "模型配置" || label.includes("妯") || label.includes("模");
+  const normalizedLabel = isEmployeesLabel ? "数字员工" : isSkillsLabel ? "技能市场" : label;
+
+  if (!isModelConfigLabel) {
+    return <WorkspaceCloneSectionFallback label={normalizedLabel} />;
+  }
+
   return (
     <div className="workspace-clone__compact-panel">
       <div className="workspace-clone__compact-hero">
@@ -292,6 +344,7 @@ export function WorkspaceClonePage({
   handleUpsertSavedProviderConfig,
   handleDeleteSavedProviderConfig,
 }: WorkspaceClonePageProps) {
+  const { pushFeedback } = useFeedback();
   const [activeMenu, setActiveMenu] = useState<WorkspaceMenuKey>("chat");
   const [activeType, setActiveType] = useState<WorkspaceEntityType>("agents");
   const [selectedEntityId, setSelectedEntityId] = useState("main");
@@ -598,6 +651,144 @@ export function WorkspaceClonePage({
     setToolNotice("");
     setToolError("");
   }, []);
+
+  useEffect(() => {
+    const message = memoryNotice.trim();
+    if (!message) {
+      return;
+    }
+
+    pushFeedback({
+      tone: "success",
+      message,
+      dedupeKey: "workspace-memory-notice",
+      persistent: false,
+    });
+  }, [memoryNotice, pushFeedback]);
+
+  useEffect(() => {
+    const message = memoryError.trim();
+    if (!message) {
+      return;
+    }
+
+    pushFeedback({
+      tone: "error",
+      title: "璁板繂",
+      message,
+      dedupeKey: "workspace-memory-error",
+      persistent: false,
+      autoCloseMs: 3600,
+    });
+  }, [memoryError, pushFeedback]);
+
+  useEffect(() => {
+    const message = skillNotice.trim();
+    if (!message) {
+      return;
+    }
+
+    pushFeedback({
+      tone: "success",
+      message,
+      dedupeKey: "workspace-skills-notice",
+      persistent: false,
+    });
+  }, [pushFeedback, skillNotice]);
+
+  useEffect(() => {
+    const message = skillError.trim();
+    if (!message) {
+      return;
+    }
+
+    pushFeedback({
+      tone: "error",
+      title: "鎶€鑳藉簱",
+      message,
+      dedupeKey: "workspace-skills-error",
+      persistent: false,
+      autoCloseMs: 3600,
+    });
+  }, [pushFeedback, skillError]);
+
+  useEffect(() => {
+    const message = toolNotice.trim();
+    if (!message) {
+      return;
+    }
+
+    pushFeedback({
+      tone: "success",
+      message,
+      dedupeKey: "workspace-tools-notice",
+      persistent: false,
+    });
+  }, [pushFeedback, toolNotice]);
+
+  useEffect(() => {
+    const message = toolError.trim();
+    if (!message) {
+      return;
+    }
+
+    pushFeedback({
+      tone: "error",
+      title: "宸ュ叿鏉冮檺",
+      message,
+      dedupeKey: "workspace-tools-error",
+      persistent: false,
+      autoCloseMs: 3600,
+    });
+  }, [pushFeedback, toolError]);
+
+  useEffect(() => {
+    const message = workspaceChannels.modalNotice.trim();
+    if (!message) {
+      return;
+    }
+
+    const isWeixinProcessNotice = workspaceChannels.modal.channelId === "weixin" && (
+      workspaceChannels.weixinQrStarting
+      || workspaceChannels.weixinQrPolling
+      || workspaceChannels.weixinQrUrl.trim().length > 0
+      || workspaceChannels.hasActiveWeixinQrSession
+    );
+    if (isWeixinProcessNotice) {
+      return;
+    }
+
+    pushFeedback({
+      tone: "success",
+      message,
+      dedupeKey: "workspace-channel-notice",
+      persistent: false,
+    });
+  }, [
+    pushFeedback,
+    workspaceChannels.hasActiveWeixinQrSession,
+    workspaceChannels.modal.channelId,
+    workspaceChannels.modalNotice,
+    workspaceChannels.weixinQrPolling,
+    workspaceChannels.weixinQrStarting,
+    workspaceChannels.weixinQrUrl,
+  ]);
+
+  useEffect(() => {
+    const message = workspaceChannels.modalError.trim();
+    if (!message) {
+      return;
+    }
+
+    pushFeedback({
+      tone: "error",
+      title: "棰戦亾缁戝畾",
+      message,
+      dedupeKey: "workspace-channel-error",
+      persistent: false,
+      autoCloseMs: 3600,
+    });
+  }, [pushFeedback, workspaceChannels.modalError]);
 
   const refreshMemoryFiles = useCallback(async (options?: {
     showLoading?: boolean;

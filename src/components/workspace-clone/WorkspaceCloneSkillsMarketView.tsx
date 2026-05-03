@@ -2,6 +2,7 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEv
 import { invoke } from "@tauri-apps/api/core";
 import { Modal } from "../ui/Modal";
 import { MAIN_AGENT_DISPLAY_NAME, resolveWorkspaceAgentDisplayName } from "../../data/agencyRoster";
+import { useFeedback } from "../../hooks/useFeedback";
 import type { AgentInfo } from "../../types";
 import { installSkillMarketSkill, loadInstalledSkillMarketSlugs } from "../../api/skillMarket";
 import {
@@ -121,6 +122,7 @@ export function WorkspaceCloneSkillsMarketView({
   currentAgentId,
   onRefreshCurrentAgentSkills,
 }: WorkspaceCloneSkillsMarketViewProps) {
+  const { pushFeedback } = useFeedback();
   const [activeCategory, setActiveCategory] = useState<MarketCategoryId>("top");
   const [searchValue, setSearchValue] = useState("");
   const [skills, setSkills] = useState<SkillMarketSkill[]>([]);
@@ -174,6 +176,52 @@ export function WorkspaceCloneSkillsMarketView({
   useEffect(() => {
     void refreshInstalledSlugs();
   }, []);
+
+  useEffect(() => {
+    const message = notice.trim();
+    if (!message) {
+      return;
+    }
+
+    pushFeedback({
+      tone: "success",
+      message,
+      dedupeKey: "workspace-skills-market-notice",
+      persistent: false,
+    });
+  }, [notice, pushFeedback]);
+
+  useEffect(() => {
+    const message = error.trim();
+    if (!message) {
+      return;
+    }
+
+    pushFeedback({
+      tone: "error",
+      title: "鎶€鑳藉競鍦?",
+      message,
+      dedupeKey: "workspace-skills-market-error",
+      persistent: false,
+      autoCloseMs: 3600,
+    });
+  }, [error, pushFeedback]);
+
+  useEffect(() => {
+    const message = installError.trim();
+    if (!message) {
+      return;
+    }
+
+    pushFeedback({
+      tone: "error",
+      title: "鎶€鑳藉畨瑁?",
+      message,
+      dedupeKey: "workspace-skills-market-install-error",
+      persistent: false,
+      autoCloseMs: 3600,
+    });
+  }, [installError, pushFeedback]);
 
   useEffect(() => {
     setPage(1);
@@ -388,12 +436,6 @@ export function WorkspaceCloneSkillsMarketView({
 
   return (
     <div className="workspace-skill-market">
-      {(notice || error) && (
-        <div className={`workspace-model-modal__status ${error ? "is-error" : "is-success"}`}>
-          {error || notice}
-        </div>
-      )}
-
       <section className="workspace-employees__toolbar workspace-skill-market__toolbar">
         <div
           className="workspace-employees__filters workspace-skill-market__categories"
@@ -610,8 +652,6 @@ export function WorkspaceCloneSkillsMarketView({
           </div>
 
           <div className="workspace-skill-market__modal-body">
-            {installError ? <div className="workspace-model-modal__status is-error">{installError}</div> : null}
-
             {installTargetsLoading ? (
               <div className="workspace-skill-market__empty">
                 <strong>正在读取安装目标</strong>

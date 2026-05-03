@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useFeedback } from "../../hooks/useFeedback";
 import type {
   AgentInfo,
   OpenClawChannelAccountsSnapshotResponse,
@@ -162,6 +163,7 @@ export interface UseWorkspaceChannelsOptions {
 }
 
 export function useWorkspaceChannels({ configVersion, enabled = false }: UseWorkspaceChannelsOptions) {
+  const { pushFeedback } = useFeedback();
   const [snapshot, setSnapshot] = useState<OpenClawChannelAccountsSnapshotResponse | null>(null);
   const [agents, setAgents] = useState<WorkspaceChannelAgentOption[]>([]);
   const [loading, setLoading] = useState(false);
@@ -1030,6 +1032,12 @@ export function useWorkspaceChannels({ configVersion, enabled = false }: UseWork
       }
 
       await refreshChannels();
+      pushFeedback({
+        tone: "success",
+        message: "棰戦亾缁戝畾宸蹭繚瀛樸€?",
+        dedupeKey: "workspace-channel-save-success",
+        persistent: false,
+      });
       await closeBindingModal();
     } catch (error) {
       setModalError(toMessage(error, "保存频道绑定失败。"));
@@ -1068,6 +1076,12 @@ export function useWorkspaceChannels({ configVersion, enabled = false }: UseWork
       });
       await refreshChannels();
       setContextMenu(null);
+      pushFeedback({
+        tone: "success",
+        message: `${entity.name} 宸茬Щ闄ょ粦瀹氥€?`,
+        dedupeKey: "workspace-channel-remove-success",
+        persistent: false,
+      });
     } catch (error) {
       setModalError(toMessage(error, "删除频道配置失败。"));
     }

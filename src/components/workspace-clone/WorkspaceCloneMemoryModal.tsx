@@ -29,8 +29,6 @@ export function WorkspaceCloneMemoryModal({
   draftContent,
   loading,
   saving,
-  notice,
-  error,
   onClose,
   onRefresh,
   onSelectFile,
@@ -77,9 +75,6 @@ export function WorkspaceCloneMemoryModal({
         </div>
 
         <div className="workspace-memory-modal__body">
-          {notice && <div className="workspace-model-modal__status is-success">{notice}</div>}
-          {error && <div className="workspace-model-modal__status is-error">{error}</div>}
-
           <div className="workspace-memory-modal__layout">
             <aside className="workspace-memory-modal__sidebar">
               <div className="workspace-memory-modal__file-list">

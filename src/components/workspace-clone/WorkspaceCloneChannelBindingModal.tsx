@@ -75,8 +75,6 @@ export function WorkspaceCloneChannelBindingModal({
   selectedAgentId,
   modalLoading,
   modalSaving,
-  modalNotice,
-  modalError,
   weixinQrStarting,
   weixinQrPolling,
   weixinQrUrl,
@@ -247,8 +245,6 @@ export function WorkspaceCloneChannelBindingModal({
       ? availableAgents[0].name
       : "暂无可用数字员工";
 
-  const feedbackTone = modalError.trim() ? "error" : modalNotice.trim() ? "success" : "pending";
-  const showFeedback = !isWeixinModalTarget && (modalLoading || modalNotice.trim() || modalError.trim());
   const showWeixinPendingDiagnostics = isWeixinModalTarget
     && !weixinQrUrl.trim()
     && hasActiveWeixinQrSession
@@ -480,11 +476,6 @@ export function WorkspaceCloneChannelBindingModal({
             </div>
           )}
 
-          {showFeedback ? (
-            <div className={`workspace-channel-modal__feedback is-${feedbackTone}`}>
-              {modalLoading ? "正在读取频道配置..." : modalError.trim() || modalNotice.trim()}
-            </div>
-          ) : null}
 
           <section className="channel-pane-binding-form">
             <div className="channel-agent-inline">

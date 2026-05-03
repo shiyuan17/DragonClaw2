@@ -35,8 +35,6 @@ export function WorkspaceCloneToolPermissionsModal({
   profileLabel,
   loading,
   saving,
-  notice,
-  error,
   onClose,
   onRefresh,
   onChangeCategory,
@@ -87,9 +85,6 @@ export function WorkspaceCloneToolPermissionsModal({
         </div>
 
         <div className="workspace-resource-modal__body">
-          {notice && <div className="workspace-model-modal__status is-success">{notice}</div>}
-          {error && <div className="workspace-model-modal__status is-error">{error}</div>}
-
           <div className="workspace-resource-modal__meta">
             <span>权限档位：{profileLabel}</span>
             <span>已启用 {selectedCount} / {items.length}</span>

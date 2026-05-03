@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Modal } from "../ui/Modal";
 import type { AgencyRosterDivision, AgencyRosterRole } from "../../types";
+import { useFeedback } from "../../hooks/useFeedback";
 import { loadAgencyRoleDefinition, loadAgencyRoster } from "../../data/agencyRoster";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
 
@@ -43,6 +44,7 @@ function buildKeyboardHandler(onOpen: () => void) {
 }
 
 export function WorkspaceCloneEmployeesView() {
+  const { pushFeedback } = useFeedback();
   const [divisionFilter, setDivisionFilter] = useState(DIVISION_FILTER_ALL);
   const [searchValue, setSearchValue] = useState("");
   const [installedIds, setInstalledIds] = useState<string[]>([]);
@@ -84,6 +86,52 @@ export function WorkspaceCloneEmployeesView() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const message = notice.trim();
+    if (!message) {
+      return;
+    }
+
+    pushFeedback({
+      tone: "success",
+      message,
+      dedupeKey: "workspace-employees-notice",
+      persistent: false,
+    });
+  }, [notice, pushFeedback]);
+
+  useEffect(() => {
+    const message = error.trim();
+    if (!message) {
+      return;
+    }
+
+    pushFeedback({
+      tone: "error",
+      title: "鏁板瓧鍛樺伐",
+      message,
+      dedupeKey: "workspace-employees-error",
+      persistent: false,
+      autoCloseMs: 3600,
+    });
+  }, [error, pushFeedback]);
+
+  useEffect(() => {
+    const message = definitionError.trim();
+    if (!message) {
+      return;
+    }
+
+    pushFeedback({
+      tone: "error",
+      title: "鍒嗚韩瀹氫箟璇︽儏",
+      message,
+      dedupeKey: "workspace-employees-definition-error",
+      persistent: false,
+      autoCloseMs: 3600,
+    });
+  }, [definitionError, pushFeedback]);
 
   const normalizedQuery = deferredSearchValue.trim().toLowerCase();
 
@@ -267,12 +315,6 @@ export function WorkspaceCloneEmployeesView() {
           </label>
         </section>
 
-        {(notice || error) && (
-          <div className={`workspace-employees__feedback ${error ? "is-error" : "is-success"}`}>
-            <span>{error || notice}</span>
-          </div>
-        )}
-
         {filteredDivisions.length === 0 ? (
           <div className="workspace-employees__empty workspace-employees__empty--roles">
             <strong>没有匹配的角色</strong>
@@ -424,11 +466,11 @@ export function WorkspaceCloneEmployeesView() {
                 </section>
               )}
 
-              {(definitionLoading || definitionError) && (
-                <div className={`workspace-employees__feedback ${definitionError ? "is-error" : "is-success"}`}>
-                  <span>{definitionError || "正在加载完整分身定义..."}</span>
+              {definitionLoading ? (
+                <div className="workspace-employees__feedback is-success">
+                  <span>正在加载完整分身定义...</span>
                 </div>
-              )}
+              ) : null}
 
               <section className="workspace-employees-modal__content">
                 {selectedRole.definitionSections.map((section) => (

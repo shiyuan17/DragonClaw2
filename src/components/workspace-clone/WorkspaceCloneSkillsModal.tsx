@@ -38,8 +38,6 @@ export function WorkspaceCloneSkillsModal({
   activeCategory,
   loading,
   saving,
-  notice,
-  error,
   onClose,
   onRefresh,
   onSearchChange,
@@ -106,9 +104,6 @@ export function WorkspaceCloneSkillsModal({
         </div>
 
         <div className="workspace-resource-modal__body">
-          {notice && <div className="workspace-model-modal__status is-success">{notice}</div>}
-          {error && <div className="workspace-model-modal__status is-error">{error}</div>}
-
           <div className="workspace-resource-modal__toolbar">
             <div className="workspace-resource-modal__search">
               <input
