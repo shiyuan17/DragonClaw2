@@ -252,6 +252,38 @@ export interface AgencyAgentManifest {
     templates: Record<string, AgencyAgentTemplate>;
 }
 
+export interface AgencyAgentIndexRole {
+    id: string;
+    agentId: string;
+    divisionId: string;
+    divisionTitle: string;
+    source: string;
+    locale: string;
+    name: string;
+    description: string;
+    tags: string[];
+    definitionPreview: string;
+    searchText?: string;
+}
+
+export interface AgencyAgentIndexDivision {
+    id: string;
+    title: string;
+    count: number;
+    roles: AgencyAgentIndexRole[];
+}
+
+export interface AgencyAgentIndexManifest {
+    schemaVersion: number;
+    sourceRoot: string;
+    divisions: AgencyAgentIndexDivision[];
+}
+
+export interface AgencyAgentProfile {
+    agentId: string;
+    infos: AgencyAgentInfoRecord[];
+}
+
 export interface AgencyRosterDefinitionSection {
     id: string;
     label: string;
@@ -270,6 +302,7 @@ export interface AgencyRosterRole {
     tags: string[];
     definitionPreview: string;
     definitionSections: AgencyRosterDefinitionSection[];
+    searchText?: string;
 }
 
 export interface AgencyRosterDivision {
