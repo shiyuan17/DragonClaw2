@@ -1,5 +1,8 @@
 # DragonClaw - 开发任务总表 (AI 开发规范版)
 
+## Phase 5.33: OpenClaw 网关启动失败修复
+- [ ] 将数字员工托管元数据移出 `openclaw.json`，自动清理旧 `dragonclawManagedSource` 字段，并修复 OpenClaw 2026.4.27 网关启动失败
+
 ## Phase 5.32: 首页无响应崩溃的服务心跳与日志风暴修复
 - [ ] 修复 OpenClaw 服务心跳线程叠加、Windows PowerShell 进程探测和高频日志事件导致的首页无响应/AppHang 风险，保持既有 Tauri command 签名不变
 
