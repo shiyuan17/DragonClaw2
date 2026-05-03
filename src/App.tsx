@@ -82,6 +82,7 @@ function App() {
     repairToast,
     setRepairToast,
     addLog,
+    addLogs,
   } = useLogs();
 
   const {
@@ -135,7 +136,7 @@ function App() {
     retrySetup,
     handleSelectFolder,
     handleConfirmWorkspace,
-  } = useSetup({ addLog, checkApiKey, setRunning });
+  } = useSetup({ addLog, addLogs, checkApiKey, setRunning });
 
   const {
     loading: serviceLoading,

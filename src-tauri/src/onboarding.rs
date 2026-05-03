@@ -7,12 +7,16 @@ use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::Emitter;
 
 use crate::{agents, config, openclaw_cli, paths};
 
 const FIND_SKILLS_NAME: &str = "find-skills";
 const SKILLHUB_PREFERENCE_NAME: &str = "skillhub-preference";
+static ONBOARDING_BACKGROUND_INSTALL_RUNNING: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum OnboardingSkillSource {
@@ -420,6 +424,86 @@ fn run_bash_command(
     openclaw_cli::run_command_with_timeout(&mut command, timeout, context)
 }
 
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+fn create_pending_state() -> OnboardingSkillInstallState {
+    OnboardingSkillInstallState {
+        required: true,
+        completed: false,
+        skipped: false,
+        results: Vec::new(),
+        last_attempt_at: Some(now_ms()),
+    }
+}
+
+fn build_result_state(
+    results: Vec<OnboardingSkillInstallResultItem>,
+) -> OnboardingSkillInstallState {
+    let completed = !results.is_empty() && results.iter().all(|item| item.status == "installed");
+    OnboardingSkillInstallState {
+        required: !completed,
+        completed,
+        skipped: false,
+        results,
+        last_attempt_at: Some(now_ms()),
+    }
+}
+
+fn save_onboarding_state_value(
+    state: &OnboardingSkillInstallState,
+) -> Result<OnboardingSkillInstallState, String> {
+    let path = onboarding_state_path()?;
+    let serialized = serde_json::to_string_pretty(state)
+        .map_err(|error| format!("序列化引导技能安装状态失败: {error}"))?;
+
+    fs::write(&path, serialized).map_err(|error| format!("写入引导技能安装状态失败: {error}"))?;
+
+    Ok(state.clone())
+}
+
+fn emit_onboarding_log(app: &tauri::AppHandle, level: &str, message: impl AsRef<str>) {
+    let _ = app.emit(
+        "service-log",
+        serde_json::json!({
+            "level": level,
+            "message": message.as_ref(),
+        }),
+    );
+}
+
+fn installed_skill_names() -> Vec<String> {
+    agents::list_skills()
+        .map(|skills| skills.into_iter().map(|skill| skill.name).collect())
+        .unwrap_or_default()
+}
+
+fn target_skill_installed(installed_names: &[String], target: &TargetSkill) -> bool {
+    aliases_match_installed_names(installed_names, target.aliases)
+}
+
+fn summarize_command_result(result: &SkillHubCommandResult) -> String {
+    let parts = [result.stdout.trim(), result.stderr.trim()]
+        .into_iter()
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    if parts.is_empty() {
+        "安装完成".to_string()
+    } else {
+        parts.join("\n\n")
+    }
+}
+
+fn save_background_results(
+    results: &[OnboardingSkillInstallResultItem],
+) -> Result<OnboardingSkillInstallState, String> {
+    save_onboarding_state_value(&build_result_state(results.to_vec()))
+}
+
 fn bootstrap_skill_path(name: &str) -> Result<PathBuf, String> {
     Ok(paths::skillhub_workspace_skills_dir()?
         .join(name)
@@ -724,6 +808,245 @@ fn install_github_skill_from_url_blocking(
     Ok(result)
 }
 
+fn push_background_result(
+    app: &tauri::AppHandle,
+    results: &mut Vec<OnboardingSkillInstallResultItem>,
+    item: OnboardingSkillInstallResultItem,
+) {
+    results.push(item);
+    if let Err(error) = save_background_results(results) {
+        emit_onboarding_log(
+            app,
+            "warn",
+            format!("Onboarding skill install state save failed: {error}"),
+        );
+    }
+}
+
+fn fail_pending_background_targets(
+    app: &tauri::AppHandle,
+    results: &mut Vec<OnboardingSkillInstallResultItem>,
+    detail: String,
+) {
+    for name in
+        std::iter::once("SkillHub").chain(TARGET_SKILLS.iter().map(|target| target.display_name))
+    {
+        if !results.iter().any(|item| item.name == name) {
+            push_background_result(
+                app,
+                results,
+                OnboardingSkillInstallResultItem {
+                    name: name.to_string(),
+                    status: "failed".to_string(),
+                    detail: Some(detail.clone()),
+                },
+            );
+        }
+    }
+}
+
+fn run_onboarding_skill_install_background(app: tauri::AppHandle) {
+    let mut results: Vec<OnboardingSkillInstallResultItem> = Vec::new();
+    emit_onboarding_log(
+        &app,
+        "info",
+        "Onboarding recommended skill install is running in the background.",
+    );
+
+    if let Err(error) = save_onboarding_state_value(&create_pending_state()) {
+        emit_onboarding_log(
+            &app,
+            "error",
+            format!("Onboarding skill install state init failed: {error}"),
+        );
+        return;
+    }
+
+    match build_runtime_info() {
+        Ok(runtime_info) => {
+            let runtime_label = if runtime_info.bash_available {
+                format!(
+                    "bash {}{}",
+                    runtime_info
+                        .bash_version
+                        .clone()
+                        .unwrap_or_else(|| "available".to_string()),
+                    if runtime_info.is_wsl_bash {
+                        " (WSL)"
+                    } else {
+                        ""
+                    }
+                )
+            } else {
+                "bash unavailable".to_string()
+            };
+            emit_onboarding_log(
+                &app,
+                "info",
+                format!("SkillHub installer runtime: {runtime_label}"),
+            );
+        }
+        Err(error) => {
+            emit_onboarding_log(
+                &app,
+                "error",
+                format!("SkillHub runtime check failed: {error}"),
+            );
+            fail_pending_background_targets(&app, &mut results, error);
+            return;
+        }
+    }
+
+    emit_onboarding_log(&app, "info", "开始运行 SkillHub 官方安装器");
+    match install_official_skillhub_blocking() {
+        Ok(result) => {
+            push_background_result(
+                &app,
+                &mut results,
+                OnboardingSkillInstallResultItem {
+                    name: "SkillHub".to_string(),
+                    status: "installed".to_string(),
+                    detail: Some(summarize_command_result(&result)),
+                },
+            );
+            emit_onboarding_log(&app, "success", "SkillHub 官方安装完成");
+        }
+        Err(error) => {
+            emit_onboarding_log(&app, "error", format!("SkillHub 官方安装失败: {error}"));
+            push_background_result(
+                &app,
+                &mut results,
+                OnboardingSkillInstallResultItem {
+                    name: "SkillHub".to_string(),
+                    status: "failed".to_string(),
+                    detail: Some(error.clone()),
+                },
+            );
+
+            for target in TARGET_SKILLS {
+                push_background_result(
+                    &app,
+                    &mut results,
+                    OnboardingSkillInstallResultItem {
+                        name: target.display_name.to_string(),
+                        status: "failed".to_string(),
+                        detail: Some("SkillHub 官方安装未完成，后续技能未执行".to_string()),
+                    },
+                );
+            }
+            return;
+        }
+    }
+
+    if get_onboarding_skill_install_diagnostics()
+        .map(|diagnostics| !diagnostics.skill_hub_installed)
+        .unwrap_or(false)
+    {
+        emit_onboarding_log(
+            &app,
+            "warn",
+            "SkillHub 安装命令已返回成功，但诊断未确认官方安装产物。",
+        );
+    }
+
+    let mut installed_names = installed_skill_names();
+    for target in TARGET_SKILLS {
+        if target_skill_installed(&installed_names, target) {
+            push_background_result(
+                &app,
+                &mut results,
+                OnboardingSkillInstallResultItem {
+                    name: target.display_name.to_string(),
+                    status: "installed".to_string(),
+                    detail: Some("已在本地技能目录中检测到该技能".to_string()),
+                },
+            );
+            emit_onboarding_log(
+                &app,
+                "info",
+                format!("{} 已存在，跳过重复安装", target.display_name),
+            );
+            continue;
+        }
+
+        let installer_label = if target.source == OnboardingSkillSource::GitHub {
+            "GitHub"
+        } else {
+            "SkillHub"
+        };
+        emit_onboarding_log(
+            &app,
+            "info",
+            format!("开始通过 {installer_label} 安装 {}", target.display_name),
+        );
+
+        let install_result = match target.source {
+            OnboardingSkillSource::GitHub => {
+                let repo_url = target.github_repo_url.unwrap_or_default().to_string();
+                install_github_skill_from_url_blocking(
+                    repo_url,
+                    target.display_name.to_string(),
+                    target.github_skill_name.map(str::to_string),
+                )
+            }
+            OnboardingSkillSource::SkillHub => {
+                let slug = target
+                    .skillhub_slug_candidates
+                    .iter()
+                    .find(|candidate| !candidate.trim().is_empty())
+                    .copied()
+                    .unwrap_or_default()
+                    .to_string();
+                install_skillhub_recommended_skill_blocking(slug, target.display_name.to_string())
+            }
+        };
+
+        match install_result {
+            Ok(result) => {
+                push_background_result(
+                    &app,
+                    &mut results,
+                    OnboardingSkillInstallResultItem {
+                        name: target.display_name.to_string(),
+                        status: "installed".to_string(),
+                        detail: Some(summarize_command_result(&result)),
+                    },
+                );
+                emit_onboarding_log(&app, "success", format!("{} 安装完成", target.display_name));
+            }
+            Err(error) => {
+                push_background_result(
+                    &app,
+                    &mut results,
+                    OnboardingSkillInstallResultItem {
+                        name: target.display_name.to_string(),
+                        status: "failed".to_string(),
+                        detail: Some(error.clone()),
+                    },
+                );
+                emit_onboarding_log(
+                    &app,
+                    "error",
+                    format!("{} 安装失败: {error}", target.display_name),
+                );
+            }
+        }
+
+        installed_names = installed_skill_names();
+    }
+
+    let completed = results.iter().all(|item| item.status == "installed");
+    emit_onboarding_log(
+        &app,
+        if completed { "success" } else { "warn" },
+        if completed {
+            "推荐技能后台安装完成".to_string()
+        } else {
+            "推荐技能后台安装结束，部分技能安装失败".to_string()
+        },
+    );
+}
+
 #[tauri::command]
 pub async fn get_skillhub_install_runtime_info() -> Result<SkillHubInstallRuntimeInfo, String> {
     tokio::task::spawn_blocking(build_runtime_info)
@@ -764,6 +1087,42 @@ pub async fn install_github_skill_from_url(
 }
 
 #[tauri::command]
+pub fn start_onboarding_skill_install_background(
+    app: tauri::AppHandle,
+) -> Result<OnboardingSkillInstallState, String> {
+    let (_, state) = load_state_with_presence()?;
+    if !state.required || state.completed || state.skipped {
+        return Ok(state);
+    }
+
+    if ONBOARDING_BACKGROUND_INSTALL_RUNNING
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return Ok(state);
+    }
+
+    let pending_state = save_onboarding_state_value(&create_pending_state()).map_err(|error| {
+        ONBOARDING_BACKGROUND_INSTALL_RUNNING.store(false, Ordering::SeqCst);
+        error
+    })?;
+
+    tauri::async_runtime::spawn(async move {
+        let result = tokio::task::spawn_blocking(move || {
+            run_onboarding_skill_install_background(app);
+        })
+        .await;
+
+        if let Err(error) = result {
+            eprintln!("Onboarding skill install background task failed: {error}");
+        }
+        ONBOARDING_BACKGROUND_INSTALL_RUNNING.store(false, Ordering::SeqCst);
+    });
+
+    Ok(pending_state)
+}
+
+#[tauri::command]
 pub fn get_onboarding_skill_install_state() -> Result<OnboardingSkillInstallState, String> {
     let (_, state) = load_state_with_presence()?;
     Ok(state)
@@ -773,13 +1132,7 @@ pub fn get_onboarding_skill_install_state() -> Result<OnboardingSkillInstallStat
 pub fn save_onboarding_skill_install_state(
     state: OnboardingSkillInstallState,
 ) -> Result<OnboardingSkillInstallState, String> {
-    let path = onboarding_state_path()?;
-    let serialized = serde_json::to_string_pretty(&state)
-        .map_err(|error| format!("序列化引导技能安装状态失败: {error}"))?;
-
-    fs::write(&path, serialized).map_err(|error| format!("写入引导技能安装状态失败: {error}"))?;
-
-    Ok(state)
+    save_onboarding_state_value(&state)
 }
 
 #[tauri::command]

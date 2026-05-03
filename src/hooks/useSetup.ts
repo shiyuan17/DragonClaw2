@@ -17,20 +17,47 @@ import type { AppPhase, CurrentConfig } from "../types";
 import {
   getOnboardingSkillInstallDiagnostics,
   markOnboardingSkillInstallRequired,
-  runOnboardingSkillInstall,
   shouldRunOnboardingSkillInstall,
+  startOnboardingSkillInstallBackground,
 } from "../utils/onboardingSkillInstaller";
 
 const LAUNCH_POLL_INTERVAL_MS = 2000;
 const LAUNCH_POLL_TIMEOUT_MS = 60000;
+const ONBOARDING_BACKGROUND_DELAY_MS = 10000;
+
+type IdleWindow = Window & {
+  requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number;
+  cancelIdleCallback?: (handle: number) => void;
+};
+
+interface ServiceLogPayload {
+  level: string;
+  message: string;
+}
+
+interface ServiceLogBatchPayload {
+  logs: ServiceLogPayload[];
+}
+
+function isServiceReadyLogMessage(message?: string) {
+  const msg = message?.toLowerCase() || "";
+  return (
+    msg.includes("listening")
+    || msg.includes("started on")
+    || msg.includes("ready on")
+    || msg.includes("server is running")
+    || msg.includes("server started")
+  );
+}
 
 interface UseSetupOptions {
   addLog: (level: string, message: string) => void;
+  addLogs: (logs: ServiceLogPayload[]) => void;
   checkApiKey: () => Promise<void>;
   setRunning: (r: boolean) => void;
 }
 
-export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
+export function useSetup({ addLog, addLogs, checkApiKey, setRunning }: UseSetupOptions) {
   const [phase, setPhase] = useState<AppPhase>("checking");
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -42,8 +69,11 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
   const phaseRef = useRef<AppPhase>("checking");
   const launchStartedRef = useRef(false);
   const launchFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onboardingDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onboardingIdleRef = useRef<number | null>(null);
   const onboardingInstallRunningRef = useRef(false);
   const startupFinalizingRef = useRef(false);
+  const launchPollInFlightRef = useRef(false);
   const servicePortRef = useRef(18789);
   const finalizeStartupRef = useRef<(force?: boolean) => Promise<void>>(async () => {});
   const checkEnvironmentRef = useRef<() => Promise<void>>(async () => {});
@@ -65,6 +95,19 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
     if (launchFallbackRef.current) {
       clearTimeout(launchFallbackRef.current);
       launchFallbackRef.current = null;
+    }
+  }, []);
+
+  const clearOnboardingSchedule = useCallback(() => {
+    if (onboardingDelayRef.current) {
+      clearTimeout(onboardingDelayRef.current);
+      onboardingDelayRef.current = null;
+    }
+
+    if (onboardingIdleRef.current !== null) {
+      const idleWindow = window as IdleWindow;
+      idleWindow.cancelIdleCallback?.(onboardingIdleRef.current);
+      onboardingIdleRef.current = null;
     }
   }, []);
 
@@ -96,41 +139,59 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
     return await syncWorkspacePath(trimmedWorkspacePath || undefined);
   }, [syncWorkspacePath]);
 
-  const startBackgroundOnboardingSkillInstall = useCallback(async () => {
+  const startBackgroundOnboardingSkillInstall = useCallback(() => {
     if (onboardingInstallRunningRef.current) {
       return;
     }
 
-    let needsOnboardingSkills = false;
-    try {
-      needsOnboardingSkills = await shouldRunOnboardingSkillInstall();
-    } catch (error) {
-      addLog("warn", `Onboarding skill install state check failed; background install skipped: ${error}`);
-      return;
-    }
+    clearOnboardingSchedule();
 
-    if (!needsOnboardingSkills) {
-      return;
-    }
+    const triggerInstall = async () => {
+      if (onboardingInstallRunningRef.current) {
+        return;
+      }
 
-    onboardingInstallRunningRef.current = true;
-    addLog("info", "Onboarding recommended skill install will continue in the background.");
+      let needsOnboardingSkills = false;
+      try {
+        needsOnboardingSkills = await shouldRunOnboardingSkillInstall();
+      } catch (error) {
+        addLog("warn", `Onboarding skill install state check failed; background install skipped: ${error}`);
+        return;
+      }
 
-    try {
-      const installResult = await runOnboardingSkillInstall({
-        servicePort: servicePortRef.current,
-        addLog,
-        onProgress: (message) => {
-          addLog("info", message);
-        },
-      });
-      addLog("info", installResult.summaryMessage);
-    } catch (error) {
-      addLog("error", `Background onboarding skill install failed: ${error}`);
-    } finally {
-      onboardingInstallRunningRef.current = false;
-    }
-  }, [addLog]);
+      if (!needsOnboardingSkills) {
+        return;
+      }
+
+      onboardingInstallRunningRef.current = true;
+      addLog("info", "Onboarding recommended skill install was handed off to the backend background task.");
+
+      try {
+        await startOnboardingSkillInstallBackground();
+      } catch (error) {
+        addLog("error", `Background onboarding skill install failed to start: ${error}`);
+      } finally {
+        onboardingInstallRunningRef.current = false;
+      }
+    };
+
+    onboardingDelayRef.current = setTimeout(() => {
+      onboardingDelayRef.current = null;
+      const idleWindow = window as IdleWindow;
+      if (idleWindow.requestIdleCallback) {
+        onboardingIdleRef.current = idleWindow.requestIdleCallback(
+          () => {
+            onboardingIdleRef.current = null;
+            void triggerInstall();
+          },
+          { timeout: ONBOARDING_BACKGROUND_DELAY_MS },
+        );
+        return;
+      }
+
+      void triggerInstall();
+    }, ONBOARDING_BACKGROUND_DELAY_MS);
+  }, [addLog, clearOnboardingSchedule]);
 
   const finalizeStartup = useCallback(async (force = false) => {
     if ((!force && phaseRef.current !== "launching") || startupFinalizingRef.current) {
@@ -152,7 +213,7 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
       setSetupPhase("ready");
       addLog("success", "OpenClaw 服务已启动");
       await checkApiKey();
-      void startBackgroundOnboardingSkillInstall();
+      startBackgroundOnboardingSkillInstall();
     } finally {
       startupFinalizingRef.current = false;
       setLoading(false);
@@ -192,14 +253,19 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
           return;
         }
 
-        try {
-          const alive = await invoke<boolean>("is_service_running");
-          if (alive) {
-            await finalizeStartup(true);
-            return;
+        if (!launchPollInFlightRef.current) {
+          launchPollInFlightRef.current = true;
+          try {
+            const alive = await invoke<boolean>("is_service_running");
+            if (alive) {
+              await finalizeStartup(true);
+              return;
+            }
+          } catch (pollError) {
+            addLog("warn", `OpenClaw 启动状态检测失败: ${pollError}`);
+          } finally {
+            launchPollInFlightRef.current = false;
           }
-        } catch (pollError) {
-          addLog("warn", `OpenClaw 启动状态检测失败: ${pollError}`);
         }
 
         if (Date.now() - fallbackStartedAt >= LAUNCH_POLL_TIMEOUT_MS) {
@@ -311,17 +377,32 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
       "service-log",
       (event) => {
         addLog(event.payload.level, event.payload.message);
-        const msg = event.payload.message?.toLowerCase() || "";
         if (
           phaseRef.current === "launching"
           && !startupFinalizingRef.current
-          && (
-            msg.includes("listening")
-            || msg.includes("started on")
-            || msg.includes("ready on")
-            || msg.includes("server is running")
-            || msg.includes("server started")
-          )
+          && isServiceReadyLogMessage(event.payload.message)
+        ) {
+          void finalizeStartupRef.current();
+        }
+      },
+    );
+
+    const unlistenLogBatch = listen<ServiceLogBatchPayload>(
+      "service-log-batch",
+      (event) => {
+        let sawReadySignal = false;
+        const logs = Array.isArray(event.payload.logs) ? event.payload.logs : [];
+        if (logs.length > 0) {
+          addLogs(logs);
+        }
+        for (const log of logs) {
+          sawReadySignal ||= isServiceReadyLogMessage(log.message);
+        }
+
+        if (
+          sawReadySignal
+          && phaseRef.current === "launching"
+          && !startupFinalizingRef.current
         ) {
           void finalizeStartupRef.current();
         }
@@ -336,8 +417,10 @@ export function useSetup({ addLog, checkApiKey, setRunning }: UseSetupOptions) {
 
     return () => {
       clearLaunchFallback();
+      clearOnboardingSchedule();
       unlistenProgress.then((fn) => fn());
       unlistenLogs.then((fn) => fn());
+      unlistenLogBatch.then((fn) => fn());
       unlistenPort.then((fn) => fn());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

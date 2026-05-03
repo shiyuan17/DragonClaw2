@@ -7,15 +7,19 @@ use std::io::{BufRead, BufReader};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
-use std::sync::Mutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
+use crate::agency_agents;
 use crate::environment;
 use crate::openclaw_cli;
 use crate::paths;
@@ -23,6 +27,7 @@ use crate::paths;
 const DEFAULT_PORT: u16 = 18789;
 const MAX_PORT: u16 = 18899;
 const CONNECT_TIMEOUT_MS: u64 = 200;
+const SERVICE_READY_TIMEOUT_MS: u64 = 90_000;
 const WINDOWS_HIDDEN_WINDOW_FLAG: u32 = 0x0800_0000;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -40,11 +45,26 @@ struct TrackedServiceProcess {
     started_at: i64,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ServiceHeartbeatPayload {
+    running: bool,
+    port: u16,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ServiceLogEntry {
+    level: String,
+    message: String,
+}
+
 /// Global state to hold the running OpenClaw child process.
 pub struct ServiceState {
     pub(crate) child: Mutex<Option<Child>>,
     tracked_process: Mutex<Option<TrackedServiceProcess>>,
     pub(crate) port: Mutex<u16>,
+    heartbeat_started: AtomicBool,
 }
 
 impl Default for ServiceState {
@@ -53,6 +73,7 @@ impl Default for ServiceState {
             child: Mutex::new(None),
             tracked_process: Mutex::new(None),
             port: Mutex::new(DEFAULT_PORT),
+            heartbeat_started: AtomicBool::new(false),
         }
     }
 }
@@ -320,26 +341,32 @@ fn is_port_available(port: u16) -> bool {
 
 #[cfg(target_os = "windows")]
 fn is_process_running(pid: u32) -> bool {
-    let script =
-        "if (Get-Process -Id $args[0] -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }";
-    let mut command = std::process::Command::new("powershell");
-    command
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            script,
-        ])
-        .arg(pid.to_string())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .creation_flags(WINDOWS_HIDDEN_WINDOW_FLAG);
-    command
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+    use std::ffi::c_void;
+
+    type Handle = *mut c_void;
+
+    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    const STILL_ACTIVE: u32 = 259;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn OpenProcess(dw_desired_access: u32, b_inherit_handle: i32, dw_process_id: u32)
+            -> Handle;
+        fn GetExitCodeProcess(h_process: Handle, lp_exit_code: *mut u32) -> i32;
+        fn CloseHandle(h_object: Handle) -> i32;
+    }
+
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if handle.is_null() {
+            return false;
+        }
+
+        let mut exit_code = 0;
+        let ok = GetExitCodeProcess(handle, &mut exit_code);
+        let _ = CloseHandle(handle);
+        ok != 0 && exit_code == STILL_ACTIVE
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -355,15 +382,20 @@ fn is_process_running(pid: u32) -> bool {
 
 #[cfg(target_os = "windows")]
 fn terminate_process_by_pid(pid: u32) -> Result<(), String> {
-    let status = std::process::Command::new("taskkill")
+    let mut command = std::process::Command::new("taskkill");
+    command
         .args(["/PID", &pid.to_string(), "/T", "/F"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .creation_flags(WINDOWS_HIDDEN_WINDOW_FLAG)
-        .status()
-        .map_err(|error| format!("Failed to stop OpenClaw process {pid}: {error}"))?;
+        .creation_flags(WINDOWS_HIDDEN_WINDOW_FLAG);
 
-    if status.success() {
+    let output = openclaw_cli::run_command_with_timeout(
+        &mut command,
+        Duration::from_secs(5),
+        "Stop OpenClaw process",
+    )?;
+
+    if output.status.success() {
         Ok(())
     } else {
         Err(format!("Failed to stop OpenClaw process {pid}"))
@@ -372,25 +404,35 @@ fn terminate_process_by_pid(pid: u32) -> Result<(), String> {
 
 #[cfg(not(target_os = "windows"))]
 fn terminate_process_by_pid(pid: u32) -> Result<(), String> {
-    let term_status = std::process::Command::new("kill")
+    let mut term_command = std::process::Command::new("kill");
+    term_command
         .args(["-TERM", &pid.to_string()])
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map_err(|error| format!("Failed to stop OpenClaw process {pid}: {error}"))?;
+        .stderr(Stdio::null());
 
-    if term_status.success() {
+    let term_output = openclaw_cli::run_command_with_timeout(
+        &mut term_command,
+        Duration::from_secs(5),
+        "Stop OpenClaw process",
+    )?;
+
+    if term_output.status.success() {
         return Ok(());
     }
 
-    let kill_status = std::process::Command::new("kill")
+    let mut kill_command = std::process::Command::new("kill");
+    kill_command
         .args(["-KILL", &pid.to_string()])
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map_err(|error| format!("Failed to force-stop OpenClaw process {pid}: {error}"))?;
+        .stderr(Stdio::null());
 
-    if kill_status.success() {
+    let kill_output = openclaw_cli::run_command_with_timeout(
+        &mut kill_command,
+        Duration::from_secs(5),
+        "Force-stop OpenClaw process",
+    )?;
+
+    if kill_output.status.success() {
         Ok(())
     } else {
         Err(format!("Failed to stop OpenClaw process {pid}"))
@@ -468,6 +510,74 @@ fn emit_service_port(app: &tauri::AppHandle, port: u16) {
     let _ = app.emit("service-port", serde_json::json!({ "port": port }));
 }
 
+fn cleanup_failed_service_start(state: &ServiceState) {
+    if let Some(mut child) = state.child.lock().unwrap().take() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    set_tracked_process(state, None);
+    let _ = clear_persisted_runtime_state();
+}
+
+async fn wait_for_service_ready(
+    state: &ServiceState,
+    port: u16,
+    ready_signal: Arc<AtomicBool>,
+) -> Result<(), String> {
+    let started_at = Instant::now();
+
+    loop {
+        if ready_signal.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+
+        let port_accepting = connect_to_port(port);
+        let child_status = {
+            let mut child_guard = state.child.lock().unwrap();
+            if let Some(child) = child_guard.as_mut() {
+                match child.try_wait() {
+                    Ok(Some(status)) => Some(Err(format!(
+                        "OpenClaw 服务进程已退出，网关端口 {port} 未监听（退出状态: {status}）"
+                    ))),
+                    Ok(None) => None,
+                    Err(error) => Some(Err(format!("检查 OpenClaw 服务进程失败: {error}"))),
+                }
+            } else {
+                Some(Err(format!(
+                    "OpenClaw 服务进程不存在，网关端口 {port} 未监听"
+                )))
+            }
+        };
+
+        if let Some(result) = child_status {
+            return result;
+        }
+
+        if started_at.elapsed() >= Duration::from_millis(SERVICE_READY_TIMEOUT_MS) {
+            let detail = if port_accepting {
+                format!("端口 {port} 已监听，但未收到 OpenClaw gateway ready 信号")
+            } else {
+                format!("网关端口 {port} 未监听")
+            };
+            return Err(format!(
+                "OpenClaw 服务启动超时，{detail}（{} 秒）",
+                SERVICE_READY_TIMEOUT_MS / 1000
+            ));
+        }
+
+        tokio::time::sleep(Duration::from_millis(150)).await;
+    }
+}
+
+fn flush_service_log_batch(app: &tauri::AppHandle, pending: &mut Vec<ServiceLogEntry>) {
+    if pending.is_empty() {
+        return;
+    }
+
+    let logs = std::mem::take(pending);
+    let _ = app.emit("service-log-batch", serde_json::json!({ "logs": logs }));
+}
+
 pub fn resolve_known_service_port(state: &ServiceState) -> Result<u16, String> {
     if let Some(tracked) = resolve_known_process(state)? {
         return Ok(tracked.port);
@@ -476,10 +586,37 @@ pub fn resolve_known_service_port(state: &ServiceState) -> Result<u16, String> {
     Ok(*state.port.lock().unwrap())
 }
 
-fn spawn_heartbeat_monitor(app: tauri::AppHandle) {
-    std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::from_secs(3));
-        let _ = app.emit("service-heartbeat", serde_json::json!({}));
+fn spawn_heartbeat_monitor(app: tauri::AppHandle, state: &ServiceState) {
+    if state
+        .heartbeat_started
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return;
+    }
+
+    std::thread::spawn(move || {
+        let mut last_running: Option<bool> = None;
+        loop {
+            std::thread::sleep(Duration::from_secs(5));
+
+            let state = app.state::<ServiceState>();
+            let process = resolve_known_process(state.inner()).ok().flatten();
+            let running = process.is_some();
+            let port = process
+                .as_ref()
+                .map(|tracked| tracked.port)
+                .unwrap_or_else(|| *state.port.lock().unwrap());
+
+            if running || last_running != Some(false) {
+                let _ = app.emit(
+                    "service-heartbeat",
+                    ServiceHeartbeatPayload { running, port },
+                );
+            }
+
+            last_running = Some(running);
+        }
     });
 }
 
@@ -528,7 +665,19 @@ async fn start_service_impl(
     state: tauri::State<'_, ServiceState>,
     open_browser: bool,
 ) -> Result<String, String> {
+    if let Err(error) = agency_agents::migrate_legacy_agency_config() {
+        let _ = app.emit(
+            "service-log",
+            serde_json::json!({
+                "level": "warn",
+                "message": format!("清理数字员工旧配置失败: {error}")
+            }),
+        );
+        return Err(error);
+    }
+
     if let Some(existing) = resolve_known_process(state.inner())? {
+        spawn_heartbeat_monitor(app.clone(), state.inner());
         emit_service_port(&app, existing.port);
         let _ = app.emit(
             "service-log",
@@ -612,15 +761,10 @@ async fn start_service_impl(
         started_at: now_unix_timestamp(),
     };
 
-    if let Err(error) = persist_tracked_process(&tracked) {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(error);
-    }
-
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
     let app_clone = app.clone();
+    let ready_signal = Arc::new(AtomicBool::new(false));
 
     {
         let mut child_guard = state.child.lock().unwrap();
@@ -632,13 +776,20 @@ async fn start_service_impl(
         let app_out = app_clone.clone();
         let open_port = chosen_port;
         let open_token = token.clone();
+        let stdout_ready_signal = ready_signal.clone();
         std::thread::spawn(move || {
             let reader = BufReader::new(stdout);
             let mut browser_opened = false;
+            let mut pending_logs = Vec::<ServiceLogEntry>::new();
+            let mut last_flush = Instant::now();
             for line in reader.lines().map_while(Result::ok) {
                 let level = classify_log_level(&line);
+                let is_ready = is_service_ready_signal(&line);
+                if is_ready {
+                    stdout_ready_signal.store(true, Ordering::SeqCst);
+                }
 
-                if open_browser && !browser_opened && is_service_ready_signal(&line) {
+                if open_browser && !browser_opened && is_ready {
                     browser_opened = true;
                     let app_browser = app_out.clone();
                     let browser_token = open_token.clone();
@@ -658,14 +809,20 @@ async fn start_service_impl(
                     });
                 }
 
-                let _ = app_out.emit(
-                    "service-log",
-                    serde_json::json!({
-                        "level": level,
-                        "message": line
-                    }),
-                );
+                pending_logs.push(ServiceLogEntry {
+                    level: level.to_string(),
+                    message: line,
+                });
+
+                if is_ready
+                    || pending_logs.len() >= 50
+                    || last_flush.elapsed() >= Duration::from_millis(250)
+                {
+                    flush_service_log_batch(&app_out, &mut pending_logs);
+                    last_flush = Instant::now();
+                }
             }
+            flush_service_log_batch(&app_out, &mut pending_logs);
         });
     }
 
@@ -673,19 +830,48 @@ async fn start_service_impl(
         let app_err = app_clone;
         std::thread::spawn(move || {
             let reader = BufReader::new(stderr);
+            let mut pending_logs = Vec::<ServiceLogEntry>::new();
+            let mut last_flush = Instant::now();
             for line in reader.lines().map_while(Result::ok) {
-                let _ = app_err.emit(
-                    "service-log",
-                    serde_json::json!({
-                        "level": "error",
-                        "message": line
-                    }),
-                );
+                pending_logs.push(ServiceLogEntry {
+                    level: "error".to_string(),
+                    message: line,
+                });
+
+                if pending_logs.len() >= 50 || last_flush.elapsed() >= Duration::from_millis(250) {
+                    flush_service_log_batch(&app_err, &mut pending_logs);
+                    last_flush = Instant::now();
+                }
             }
+            flush_service_log_batch(&app_err, &mut pending_logs);
         });
     }
 
-    spawn_heartbeat_monitor(app.clone());
+    if let Err(error) = wait_for_service_ready(state.inner(), chosen_port, ready_signal).await {
+        cleanup_failed_service_start(state.inner());
+        let _ = app.emit(
+            "service-log",
+            serde_json::json!({
+                "level": "error",
+                "message": error.clone()
+            }),
+        );
+        return Err(error);
+    }
+
+    if let Err(error) = persist_tracked_process(&tracked) {
+        cleanup_failed_service_start(state.inner());
+        let _ = app.emit(
+            "service-log",
+            serde_json::json!({
+                "level": "error",
+                "message": error.clone()
+            }),
+        );
+        return Err(error);
+    }
+
+    spawn_heartbeat_monitor(app.clone(), state.inner());
 
     let _ = app.emit(
         "service-log",
@@ -760,7 +946,10 @@ fn classify_log_level(line: &str) -> &'static str {
 /// Detect if a log line indicates the service is ready to accept connections.
 fn is_service_ready_signal(line: &str) -> bool {
     let lower = line.to_lowercase();
-    lower.contains("listening")
+    lower.contains("[gateway] ready")
+        || lower.contains("gateway ready")
+        || lower.contains("listening on")
+        || lower.contains("listening at")
         || lower.contains("started on")
         || lower.contains("ready on")
         || lower.contains("server is running")
@@ -815,7 +1004,13 @@ mod tests {
             "Listening on http://localhost:3000"
         ));
         assert!(is_service_ready_signal("Gateway ready on 0.0.0.0:3000"));
+        assert!(is_service_ready_signal(
+            "2026-05-03T21:14:39.270+08:00 [gateway] ready"
+        ));
         assert!(is_service_ready_signal("server is running at port 3000"));
+        assert!(!is_service_ready_signal(
+            "2026-05-03T21:14:11.236+08:00 [gateway] http server listening"
+        ));
         assert!(!is_service_ready_signal("compiling TypeScript..."));
         assert!(!is_service_ready_signal("installing dependencies"));
     }

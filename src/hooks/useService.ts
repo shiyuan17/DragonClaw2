@@ -28,6 +28,32 @@ interface UseServiceOptions {
     setProgressMsg: (m: string) => void;
 }
 
+interface ServiceHeartbeatPayload {
+    running: boolean;
+    port?: number;
+}
+
+interface ServiceLogPayload {
+    level: string;
+    message: string;
+}
+
+interface ServiceLogBatchPayload {
+    logs: ServiceLogPayload[];
+}
+
+function isServiceReadyLogMessage(message?: string) {
+    const msg = message?.toLowerCase() || "";
+    return (
+        msg.includes("listening") ||
+        msg.includes("started on") ||
+        msg.includes("ready on") ||
+        msg.includes("server is running") ||
+        msg.includes("server started") ||
+        msg.includes("正在打开浏览器")
+    );
+}
+
 export function useService({
     addLog, checkApiKey, setRepairToast, setShowReinstallModal,
     running, setRunning,
@@ -40,6 +66,15 @@ export function useService({
     const [repairing, setRepairing] = useState(false);
     const [startingUp, setStartingUp] = useState(false);
     const uptimeRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const runningRef = useRef(running);
+    const reportedUnexpectedExitRef = useRef(false);
+
+    useEffect(() => {
+        runningRef.current = running;
+        if (running) {
+            reportedUnexpectedExitRef.current = false;
+        }
+    }, [running]);
 
     // Uptime counter
     useEffect(() => {
@@ -55,14 +90,26 @@ export function useService({
 
     // Runtime event listeners: heartbeat + port
     useEffect(() => {
-        const unlistenHeartbeat = listen("service-heartbeat", async () => {
-            try {
-                const alive = await invoke<boolean>("is_service_running");
-                if (!alive) {
-                    setRunning(false);
-                    addLog("error", "OpenClaw 服务进程已意外退出");
+        const unlistenHeartbeat = listen<ServiceHeartbeatPayload>("service-heartbeat", (event) => {
+            if (typeof event.payload.port === "number") {
+                setServicePort(event.payload.port);
+            }
+
+            if (event.payload.running) {
+                reportedUnexpectedExitRef.current = false;
+                if (!runningRef.current) {
+                    runningRef.current = true;
+                    setRunning(true);
                 }
-            } catch { /* ignore */ }
+                return;
+            }
+
+            if (runningRef.current && !reportedUnexpectedExitRef.current) {
+                reportedUnexpectedExitRef.current = true;
+                runningRef.current = false;
+                setRunning(false);
+                addLog("error", "OpenClaw 服务进程已意外退出");
+            }
         });
 
         const unlistenPort = listen<{ port: number }>(
@@ -74,15 +121,17 @@ export function useService({
         const unlistenLog = listen<{ level: string; message: string }>(
             "service-log",
             (event) => {
-                const msg = event.payload.message?.toLowerCase() || "";
-                if (
-                    msg.includes("listening") ||
-                    msg.includes("started on") ||
-                    msg.includes("ready on") ||
-                    msg.includes("server is running") ||
-                    msg.includes("server started") ||
-                    msg.includes("正在打开浏览器")
-                ) {
+                if (isServiceReadyLogMessage(event.payload.message)) {
+                    setStartingUp(false);
+                }
+            }
+        );
+
+        const unlistenLogBatch = listen<ServiceLogBatchPayload>(
+            "service-log-batch",
+            (event) => {
+                const logs = Array.isArray(event.payload.logs) ? event.payload.logs : [];
+                if (logs.some((log) => isServiceReadyLogMessage(log.message))) {
                     setStartingUp(false);
                 }
             }
@@ -92,6 +141,7 @@ export function useService({
             unlistenHeartbeat.then((fn) => fn());
             unlistenPort.then((fn) => fn());
             unlistenLog.then((fn) => fn());
+            unlistenLogBatch.then((fn) => fn());
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -101,6 +151,7 @@ export function useService({
         setStartingUp(true);
         try {
             await invoke("start_service_silent");
+            runningRef.current = true;
             setRunning(true);
         } catch (err) {
             addLog("error", `启动失败: ${err}`);
@@ -114,6 +165,8 @@ export function useService({
         setLoading(true);
         try {
             await invoke("stop_service");
+            runningRef.current = false;
+            reportedUnexpectedExitRef.current = false;
             setRunning(false);
         } catch (err) {
             addLog("error", `停止失败: ${err}`);
@@ -149,11 +202,13 @@ export function useService({
             if (running) {
                 addLog("info", "正在停止服务...");
                 await invoke("stop_service");
+                runningRef.current = false;
                 setRunning(false);
                 await new Promise(r => setTimeout(r, 1500));
             }
             addLog("info", "正在重新启动服务...");
             await invoke("start_service_silent");
+            runningRef.current = true;
             setRunning(true);
             addLog("success", "[OK] 连接修复完成，服务已重启");
         } catch (err) {

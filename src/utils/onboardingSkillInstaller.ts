@@ -180,6 +180,10 @@ export async function shouldRunOnboardingSkillInstall() {
   return state.required && !state.completed && !state.skipped;
 }
 
+export async function startOnboardingSkillInstallBackground() {
+  return invoke<OnboardingSkillInstallState>("start_onboarding_skill_install_background");
+}
+
 export async function runOnboardingSkillInstall({
   servicePort,
   addLog,
