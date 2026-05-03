@@ -282,6 +282,7 @@
 ## 2026-04-30 Pending Acceptance
 - [ ] Phase 5.18: 基于 `docs/design/DESIGN-elevenlabs.md` 建立全局 design token 底座，统一共享样式入口，并将后续 UI 开发约束为优先使用 `src/styles/tokens.css`
 - [ ] Phase 5.19: 将 `workspace-clone` 从独立浅蓝 clone 子主题全量迁移到 ElevenLabs 统一 token 与品牌体系，覆盖三栏壳层与相关 drawer / modal / popover / context menu
+- [ ] 2026-05-03: 优化 `workspace-clone` 主内容区切换加载骨架为更规整的图 3 风格卡片，且不影响模型配置弹层
 - [x] 2026-05-02: update onboarding recommended skill installs to support the `opencli-agent` alias chain and add GitHub-based `html-ppt-skill`.
 - [x] 2026-05-02: polish the workspace-clone skills modal so skill card hover/selection is fully visible, remove redundant Installed/Built-in row badges, and align built-in skill rows with the installed list styling.
 - [x] 2026-05-02: align the workspace-clone skill detail and install-target popups with the memory modal reference so both use a denser header, panel layout, and less empty space without changing install behavior.
