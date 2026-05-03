@@ -1,5 +1,11 @@
 # DragonClaw - 开发任务总表 (AI 开发规范版)
 
+## Phase 5.37: workspace-clone Slash Command 迁移
+- [ ] 在 `workspace-clone` 中迁移全局共享 Slash Command，支持系统默认/用户自定义两类模型，首版完整落地自定义命令的管理、`/` 联想、激活态展示与发送生效链路
+
+## Phase 5.35: workspace-clone 存量乱码文案清理
+- [ ] 清理 `workspace-clone` 中残留的错码中文文案与提示语，限定为前端渲染层字符串修复，不改动 `invoke()`、事件处理和后端接口
+
 ## Phase 5.33: OpenClaw 网关启动失败修复
 - [ ] 将数字员工托管元数据移出 `openclaw.json`，自动清理旧 `dragonclawManagedSource` 字段，并修复 OpenClaw 2026.4.27 网关启动失败
 
