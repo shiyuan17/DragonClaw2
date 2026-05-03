@@ -1,4 +1,5 @@
 import type { LogEntry, WorkspaceEntityType } from "../../types";
+import { MAIN_AGENT_DISPLAY_NAME } from "../../data/agencyRoster";
 import type {
   WorkspaceEntity,
   WorkspaceHistoryItem,
@@ -71,7 +72,8 @@ export function buildWorkspaceEntities(
       {
         id: "main",
         entityType: "agents",
-        name: "main",
+        name: MAIN_AGENT_DISPLAY_NAME,
+        searchText: `main ${MAIN_AGENT_DISPLAY_NAME}`,
         subtitle: running ? "工作中" : "待命中",
         status: running ? "busy" : "offline",
         avatarLabel: "M",
@@ -203,7 +205,7 @@ export const WORKSPACE_COMMAND_ITEMS: WorkspaceResourceItem[] = [
 ];
 
 export const WORKSPACE_CHANNEL_ITEMS: WorkspaceResourceItem[] = [
-  { id: "ch-1", title: "微信服务号 / 默认账号", subtitle: "已为 main Agent 预留绑定入口。", tag: "已绑定" },
+  { id: "ch-1", title: "微信服务号 / 默认账号", subtitle: `已为 ${MAIN_AGENT_DISPLAY_NAME} 预留绑定入口。`, tag: "已绑定" },
   { id: "ch-2", title: "飞书租户 / 华东区", subtitle: "等待二维码接入与成员映射。", tag: "待接入" },
 ];
 

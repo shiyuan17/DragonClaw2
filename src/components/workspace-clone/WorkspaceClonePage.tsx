@@ -4,6 +4,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { motion } from "framer-motion";
+import { resolveWorkspaceAgentDisplayName } from "../../data/agencyRoster";
 import type {
   CurrentConfig,
   LogEntry,
@@ -240,7 +241,13 @@ function buildGatewayAgentEntities(params: {
     return {
       id: agent.id,
       entityType: "agents",
-      name: agent.identity?.name?.trim() || agent.name?.trim() || agent.id,
+      name: resolveWorkspaceAgentDisplayName(
+        agent.id,
+        agent.identity?.name?.trim() || agent.name?.trim() || agent.id,
+      ),
+      searchText: [agent.id, agent.identity?.name?.trim(), agent.name?.trim()]
+        .filter(Boolean)
+        .join(" "),
       subtitle:
         !running
           ? "待命中"
@@ -425,7 +432,9 @@ export function WorkspaceClonePage({
     const source = entitiesByType[activeType];
     const query = searchQuery.trim().toLowerCase();
     if (!query) return source;
-    return source.filter((entity) => `${entity.name} ${entity.subtitle}`.toLowerCase().includes(query));
+    return source.filter((entity) =>
+      `${entity.name} ${entity.searchText || ""} ${entity.subtitle}`.toLowerCase().includes(query),
+    );
   }, [activeType, entitiesByType, searchQuery]);
 
   useEffect(() => {

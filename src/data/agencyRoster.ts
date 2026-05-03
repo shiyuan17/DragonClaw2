@@ -205,12 +205,42 @@ const agencyRoleMap = new Map<string, AgencyRosterRole>(
   agencyRoster.flatMap((division) => division.roles).map((role) => [role.agentId, role]),
 );
 
+export const MAIN_AGENT_DISPLAY_NAME = "主分身";
+
 export function loadAgencyRoster() {
   return agencyRoster;
 }
 
 export function loadAgencyRoleMap() {
   return agencyRoleMap;
+}
+
+export function resolveAgencyRosterRoleName(agentId: string) {
+  const normalizedAgentId = agentId.trim();
+  if (!normalizedAgentId) {
+    return "";
+  }
+
+  if (normalizedAgentId === "main") {
+    return MAIN_AGENT_DISPLAY_NAME;
+  }
+
+  return agencyRoleMap.get(normalizedAgentId)?.name?.trim() || "";
+}
+
+export function resolveWorkspaceAgentDisplayName(agentId: string, fallbackName?: string | null) {
+  const normalizedAgentId = agentId.trim();
+  const rosterName = resolveAgencyRosterRoleName(normalizedAgentId);
+  if (rosterName) {
+    return rosterName;
+  }
+
+  const normalizedFallbackName = fallbackName?.trim() || "";
+  if (normalizedFallbackName) {
+    return normalizedFallbackName;
+  }
+
+  return normalizedAgentId || MAIN_AGENT_DISPLAY_NAME;
 }
 
 export async function loadAgencyRoleDefinition(agentId: string) {

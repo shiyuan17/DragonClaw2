@@ -1,6 +1,7 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Modal } from "../ui/Modal";
+import { MAIN_AGENT_DISPLAY_NAME, resolveWorkspaceAgentDisplayName } from "../../data/agencyRoster";
 import type { AgentInfo } from "../../types";
 import { installSkillMarketSkill, loadInstalledSkillMarketSlugs } from "../../api/skillMarket";
 import {
@@ -82,7 +83,7 @@ function getCategoryLabel(category: string | null | undefined) {
 function buildInstallTargetOptions(agents: AgentInfo[], currentAgentId: string | null) {
   const options = agents.map<InstallTargetOption>((agent) => ({
     id: agent.name,
-    name: agent.name,
+    name: resolveWorkspaceAgentDisplayName(agent.name, agent.name),
     subtitle: agent.model?.trim() || (agent.is_default ? "默认 Agent" : `agentId: ${agent.name}`),
     isMain: agent.is_default || agent.name === "main",
   }));
@@ -90,7 +91,7 @@ function buildInstallTargetOptions(agents: AgentInfo[], currentAgentId: string |
   if (!options.some((item) => item.id === "main")) {
     options.unshift({
       id: "main",
-      name: "main",
+      name: MAIN_AGENT_DISPLAY_NAME,
       subtitle: "默认 Agent",
       isMain: true,
     });
@@ -261,7 +262,7 @@ export function WorkspaceCloneSkillsMarketView({
       setInstallTargets([
         {
           id: "main",
-          name: "main",
+          name: MAIN_AGENT_DISPLAY_NAME,
           subtitle: "默认 Agent",
           isMain: true,
         },
@@ -691,7 +692,7 @@ export function WorkspaceCloneSkillsMarketView({
                           <div className="workspace-skill-market__target-copy">
                             <div className="workspace-skill-market__target-head">
                               <strong>{target.name}</strong>
-                              {target.isMain ? <span className="workspace-clone__resource-tag">main</span> : null}
+                              {target.isMain ? <span className="workspace-clone__resource-tag">{MAIN_AGENT_DISPLAY_NAME}</span> : null}
                             </div>
                             <small>{target.subtitle}</small>
                           </div>

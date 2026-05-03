@@ -1,4 +1,5 @@
 import { Modal, ModalFooter } from "../ui/Modal";
+import { MAIN_AGENT_DISPLAY_NAME } from "../../data/agencyRoster";
 import { WorkspaceCloneMemoryModal } from "./WorkspaceCloneMemoryModal";
 import { WorkspaceCloneSkillsModal } from "./WorkspaceCloneSkillsModal";
 import { WorkspaceCloneToolPermissionsModal } from "./WorkspaceCloneToolPermissionsModal";
@@ -150,7 +151,7 @@ export function WorkspaceCloneOverlayStack({
       <Modal show={showAgentInfo} onClose={onCloseAgentInfo} title="Agent 信息" maxWidth={560}>
         <div className="workspace-clone__dialog-body">
           <div className="workspace-clone__dialog-copy">
-            <strong>{selectedEntity?.name || "main"}</strong>
+            <strong>{selectedEntity?.name || MAIN_AGENT_DISPLAY_NAME}</strong>
             <p>{selectedEntity?.subtitle || "当前只保留 Agent 信息弹层的视觉结构与字段布局。"}</p>
           </div>
           <div className="workspace-clone__info-grid">
@@ -167,7 +168,7 @@ export function WorkspaceCloneOverlayStack({
 
       <WorkspaceCloneMemoryModal
         show={showMemoryModal}
-        agentName={selectedEntity?.name || "main"}
+        agentName={selectedEntity?.name || MAIN_AGENT_DISPLAY_NAME}
         files={memoryFiles}
         selectedFileId={selectedMemoryFileId}
         draftContent={memoryDraftContent}
@@ -184,7 +185,7 @@ export function WorkspaceCloneOverlayStack({
 
       <WorkspaceCloneSkillsModal
         show={showSkillsModal}
-        agentName={selectedEntity?.name || "main"}
+        agentName={selectedEntity?.name || MAIN_AGENT_DISPLAY_NAME}
         items={skillOptions}
         search={skillSearch}
         activeCategory={skillCategory}
@@ -204,7 +205,7 @@ export function WorkspaceCloneOverlayStack({
 
       <WorkspaceCloneToolPermissionsModal
         show={showToolsModal}
-        agentName={selectedEntity?.name || "main"}
+        agentName={selectedEntity?.name || MAIN_AGENT_DISPLAY_NAME}
         items={toolOptions}
         activeCategory={toolCategory}
         profileLabel={toolProfileLabel}

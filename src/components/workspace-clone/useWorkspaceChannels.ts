@@ -19,6 +19,7 @@ import {
   startOpenClawChannelQrBinding,
 } from "../../api/channels";
 import { WORKSPACE_CHANNEL_CATALOG, resolveWorkspaceChannelName } from "./workspaceCloneChannels";
+import { resolveWorkspaceAgentDisplayName } from "../../data/agencyRoster";
 import type {
   ChannelBindingModalState,
   ChannelBindingView,
@@ -144,14 +145,14 @@ function resolveChannelAvatarLabel(name: string) {
 function resolveAgentOptions(items: AgentInfo[]) {
   const mapped = items.map<WorkspaceChannelAgentOption>((item) => ({
     id: item.name,
-    name: item.name,
+    name: resolveWorkspaceAgentDisplayName(item.name, item.name),
     model: item.model,
     isDefault: item.is_default,
   }));
   return mapped.sort((left, right) => {
     if (left.isDefault) return -1;
     if (right.isDefault) return 1;
-    return left.name.localeCompare(right.name);
+    return left.name.localeCompare(right.name, "zh-CN");
   });
 }
 

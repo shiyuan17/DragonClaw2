@@ -12,10 +12,9 @@
 
 import type { ReactNode } from "react";
 import { motion } from "framer-motion";
-import { AlertTriangle, FolderSearch } from "lucide-react";
+import { FolderSearch } from "lucide-react";
 import logo from "../assets/dragonclaw-logo.png";
 import type { AppPhase } from "../types";
-import { Modal } from "./ui/Modal";
 
 interface SetupWizardProps {
     phase: AppPhase;
@@ -24,9 +23,6 @@ interface SetupWizardProps {
     workspacePath: string;
     loading: boolean;
     appVersion: string;
-    setupError: string | null;
-    onDismissError: () => void;
-    onRetry: () => void;
     onSelectFolder: () => void;
     onConfirmWorkspace: () => void;
 }
@@ -92,37 +88,6 @@ function SetupStageLayout({
     );
 }
 
-function SetupErrorModal({
-    title,
-    retryLabel,
-    setupError,
-    onDismissError,
-    onRetry,
-}: {
-    title: string;
-    retryLabel: string;
-    setupError: string | null;
-    onDismissError: () => void;
-    onRetry: () => void;
-}) {
-    return (
-        <Modal show={!!setupError} onClose={onDismissError} title={title} maxWidth={420}>
-            <div className="startup-error-card">
-                <AlertTriangle size={18} strokeWidth={1.5} className="startup-error-icon" />
-                <div className="startup-error-text">{setupError}</div>
-            </div>
-            <div className="startup-modal-actions">
-                <button className="btn-secondary" style={{ flex: 1 }} onClick={onDismissError}>
-                    关闭
-                </button>
-                <button className="btn-primary btn-hero" style={{ flex: 1 }} onClick={onRetry}>
-                    {retryLabel}
-                </button>
-            </div>
-        </Modal>
-    );
-}
-
 export function SetupWizard({
     phase,
     progress,
@@ -130,65 +95,34 @@ export function SetupWizard({
     workspacePath,
     loading,
     appVersion,
-    setupError,
-    onDismissError,
-    onRetry,
     onSelectFolder,
     onConfirmWorkspace,
 }: SetupWizardProps) {
     if (phase === "checking" || phase === "initializing") {
-        const title = phase === "checking" ? "DragonClaw 正在检查环境" : "DragonClaw 正在初始化";
+        const title = phase === "checking" ? "DragonClaw 姝ｅ湪妫€鏌ョ幆澧? : "DragonClaw 姝ｅ湪鍒濆鍖?";
         const description = progressMsg || (phase === "checking"
-            ? "正在确认运行环境与关键依赖，请稍候。"
-            : "正在准备必要组件与默认配置，请稍候。");
+            ? "姝ｅ湪纭杩愯鐜涓庡叧閿緷璧栵紝璇风◢鍊欍€?"
+            : "姝ｅ湪鍑嗗蹇呰缁勪欢涓庨粯璁ら厤缃紝璇风◢鍊欍€?");
 
         return (
-            <>
-                <SetupStageLayout
-                    appVersion={appVersion}
-                    title={title}
-                    description={description}
-                    progress={progress}
-                    showPercent
-                />
-                <SetupErrorModal
-                    title="初始化失败"
-                    retryLabel="重试"
-                    setupError={setupError}
-                    onDismissError={onDismissError}
-                    onRetry={onRetry}
-                />
-            </>
+            <SetupStageLayout
+                appVersion={appVersion}
+                title={title}
+                description={description}
+                progress={progress}
+                showPercent
+            />
         );
     }
 
     if (phase === "launching") {
         return (
-            <>
-                <SetupStageLayout
-                    appVersion={appVersion}
-                    title="即将就绪"
-                    description={progressMsg || "正在准备你的工作台，请稍候。"}
-                    progress={Math.max(progress, 12)}
-                    actions={setupError ? (
-                        <button
-                            className="startup-inline-action"
-                            onClick={onRetry}
-                            disabled={loading}
-                            type="button"
-                        >
-                            重试启动
-                        </button>
-                    ) : undefined}
-                />
-                <SetupErrorModal
-                    title="启动失败"
-                    retryLabel="重试启动"
-                    setupError={setupError}
-                    onDismissError={onDismissError}
-                    onRetry={onRetry}
-                />
-            </>
+            <SetupStageLayout
+                appVersion={appVersion}
+                title="鍗冲皢灏辩华"
+                description={progressMsg || "姝ｅ湪鍑嗗浣犵殑宸ヤ綔鍙帮紝璇风◢鍊欍€?"}
+                progress={Math.max(progress, 12)}
+            />
         );
     }
 
@@ -196,20 +130,20 @@ export function SetupWizard({
         return (
             <SetupStageLayout
                 appVersion={appVersion}
-                title="选择工作区"
-                description="DragonClaw 会在这个目录中创建和管理工作项目。你可以选择任意文件夹，或直接沿用默认目录。"
+                title="閫夋嫨宸ヤ綔鍖?"
+                description="DragonClaw 浼氬湪杩欎釜鐩綍涓垱寤哄拰绠＄悊宸ヤ綔椤圭洰銆備綘鍙互閫夋嫨浠绘剰鏂囦欢澶癸紝鎴栫洿鎺ユ部鐢ㄩ粯璁ょ洰褰曘€?"
             >
                 <div className="startup-workspace-panel">
-                    <div className="startup-workspace-label">当前工作区目录</div>
+                    <div className="startup-workspace-label">褰撳墠宸ヤ綔鍖虹洰褰?/div>
                     <code className="workspace-path">
-                        {workspacePath || "~/Documents/OpenClaw-Projects (默认)"}
+                        {workspacePath || "~/Documents/OpenClaw-Projects (榛樿)"}
                     </code>
                 </div>
 
                 <div className="startup-actions">
                     <button className="startup-btn startup-btn--secondary" onClick={onSelectFolder} type="button">
                         <FolderSearch size={14} strokeWidth={1.6} />
-                        浏览目录
+                        娴忚鐩綍
                     </button>
                     <button
                         className="startup-btn startup-btn--primary"
@@ -217,7 +151,7 @@ export function SetupWizard({
                         disabled={loading}
                         type="button"
                     >
-                        确认并继续
+                        纭骞剁户缁?
                     </button>
                 </div>
             </SetupStageLayout>

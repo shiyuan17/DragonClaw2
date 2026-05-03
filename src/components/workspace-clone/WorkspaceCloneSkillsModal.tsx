@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Modal } from "../ui/Modal";
+import { MAIN_AGENT_DISPLAY_NAME } from "../../data/agencyRoster";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
 import type { WorkspaceSkillCategory, WorkspaceSkillOption } from "./workspaceCloneTypes";
 
@@ -81,7 +82,7 @@ export function WorkspaceCloneSkillsModal({
       <div className="workspace-resource-modal">
         <div className="workspace-resource-modal__header">
           <div>
-            <h3>{agentName || "main"} · 技能库</h3>
+            <h3>{agentName || MAIN_AGENT_DISPLAY_NAME} · 技能库</h3>
             <p>保存后会清理当前主会话的技能快照，下一条消息按新配置生效。</p>
           </div>
           <div className="workspace-resource-modal__header-actions">

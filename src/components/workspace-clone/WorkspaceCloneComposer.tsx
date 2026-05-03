@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { MAIN_AGENT_DISPLAY_NAME } from "../../data/agencyRoster";
 import type {
   WorkspaceComposerModal,
   WorkspaceGatewayStatus,
@@ -268,7 +269,7 @@ export function WorkspaceCloneComposer({
             )}
             {state.suggestion === "mention" && (
               <>
-                <button type="button">@{selectedEntityName || "main"}</button>
+                <button type="button">@{selectedEntityName || MAIN_AGENT_DISPLAY_NAME}</button>
                 <button type="button">@运营协作 Agent</button>
                 <button type="button">@增长工作室</button>
               </>

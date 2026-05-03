@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Modal } from "../ui/Modal";
+import { MAIN_AGENT_DISPLAY_NAME } from "../../data/agencyRoster";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
 import type { WorkspaceMemoryFile } from "./workspaceCloneTypes";
 
@@ -52,7 +53,7 @@ export function WorkspaceCloneMemoryModal({
       <div className="workspace-memory-modal">
         <div className="workspace-memory-modal__header">
           <div>
-            <h3>{agentName || "main"} · 记忆</h3>
+            <h3>{agentName || MAIN_AGENT_DISPLAY_NAME} · 记忆</h3>
             <p>查看并编辑当前 Agent 的固定记忆文件，保存时会同步到对应 workspace。</p>
           </div>
           <div className="workspace-memory-modal__header-actions">

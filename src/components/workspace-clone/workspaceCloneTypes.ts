@@ -39,6 +39,7 @@ export interface WorkspaceEntity {
   id: string;
   entityType: WorkspaceEntityType;
   name: string;
+  searchText?: string;
   subtitle: string;
   status: "online" | "busy" | "offline";
   avatarLabel: string;

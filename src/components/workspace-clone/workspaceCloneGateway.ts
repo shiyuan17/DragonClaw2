@@ -1,3 +1,4 @@
+import { resolveWorkspaceAgentDisplayName } from "../../data/agencyRoster";
 import type {
   WorkspaceGatewayAgentRow,
   WorkspaceGatewayAgentsListResult,
@@ -313,7 +314,10 @@ export function createAgentSessionKey(agentId: string) {
 }
 
 export function formatAgentName(agent: WorkspaceGatewayAgentRow) {
-  return agent.identity?.name?.trim() || agent.name?.trim() || agent.id;
+  return resolveWorkspaceAgentDisplayName(
+    agent.id,
+    agent.identity?.name?.trim() || agent.name?.trim() || agent.id,
+  );
 }
 
 export function formatAgentAvatar(agent: WorkspaceGatewayAgentRow) {

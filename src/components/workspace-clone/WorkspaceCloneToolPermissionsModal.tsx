@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Modal } from "../ui/Modal";
+import { MAIN_AGENT_DISPLAY_NAME } from "../../data/agencyRoster";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
 import {
   buildToolCategoryCounts,
@@ -62,7 +63,7 @@ export function WorkspaceCloneToolPermissionsModal({
       <div className="workspace-resource-modal">
         <div className="workspace-resource-modal__header">
           <div>
-            <h3>{agentName || "main"} · 工具权限</h3>
+            <h3>{agentName || MAIN_AGENT_DISPLAY_NAME} · 工具权限</h3>
             <p>保存后下一条消息会立即按新的工具权限执行。</p>
           </div>
           <div className="workspace-resource-modal__header-actions">
