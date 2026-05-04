@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 
 import {
   createUniqueWorkspaceSlashCommandValue,
@@ -31,6 +32,7 @@ export function useWorkspaceCommandsAdmin() {
   const [commandSaving, setCommandSaving] = useState(false);
   const [commandNotice, setCommandNotice] = useState("");
   const [commandError, setCommandError] = useState("");
+  const commandLoadSeqRef = useRef(0);
 
   const slashCommands = useMemo(
     () => [...WORKSPACE_BUILTIN_SLASH_COMMANDS, ...customSlashCommands],
@@ -47,14 +49,41 @@ export function useWorkspaceCommandsAdmin() {
   }, []);
 
   const refreshSlashCommands = useCallback(async (_options?: { showLoading?: boolean }) => {
-    return;
+    const showLoading = _options?.showLoading ?? false;
+    const requestId = commandLoadSeqRef.current + 1;
+    commandLoadSeqRef.current = requestId;
+
+    if (showLoading) {
+      setCommandLoading(true);
+    }
+
+    try {
+      const records = await invoke<WorkspaceSlashCommandRecord[]>("load_custom_slash_commands");
+      if (commandLoadSeqRef.current !== requestId) {
+        return;
+      }
+
+      setCustomSlashCommands(records.map((item) => mapWorkspaceSlashCommandRecord(item)));
+      setCommandError("");
+    } catch (commandLoadError) {
+      if (commandLoadSeqRef.current !== requestId) {
+        return;
+      }
+      setCommandError(commandLoadError instanceof Error ? commandLoadError.message : "读取 Slash Commands 失败");
+    } finally {
+      if (showLoading && commandLoadSeqRef.current === requestId) {
+        setCommandLoading(false);
+      }
+    }
   }, []);
 
   const openCommandsModal = useCallback(() => {
     clearCommandStatus();
-  }, [clearCommandStatus]);
+    void refreshSlashCommands({ showLoading: true });
+  }, [clearCommandStatus, refreshSlashCommands]);
 
   const closeCommandsModal = useCallback(() => {
+    commandLoadSeqRef.current += 1;
     setCommandSearch("");
     setEditingCommandId(null);
     setCommandDraft(EMPTY_WORKSPACE_SLASH_COMMAND_DRAFT);
@@ -69,20 +98,34 @@ export function useWorkspaceCommandsAdmin() {
       nextCommands: WorkspaceSlashCommandDefinition[],
       successMessage: string,
     ) => {
-      const records = nextCommands
-        .filter((item) => item.source === "custom")
-        .map<WorkspaceSlashCommandRecord>(({ id, command, name, description, instruction }) => ({
-          id,
-          command,
-          name,
-          description,
-          instruction,
-        }));
-      setCustomSlashCommands(records.map((item) => mapWorkspaceSlashCommandRecord(item)));
-      setCommandNotice(successMessage);
-      return records.map((item) => mapWorkspaceSlashCommandRecord(item));
+      clearCommandStatus();
+      setCommandSaving(true);
+
+      try {
+        const records = nextCommands
+          .filter((item) => item.source === "custom")
+          .map<WorkspaceSlashCommandRecord>(({ id, command, name, description, instruction }) => ({
+            id,
+            command,
+            name,
+            description,
+            instruction,
+          }));
+        const savedRecords = await invoke<WorkspaceSlashCommandRecord[]>("save_custom_slash_commands", {
+          commands: records,
+        });
+        const savedCommands = savedRecords.map((item) => mapWorkspaceSlashCommandRecord(item));
+        setCustomSlashCommands(savedCommands);
+        setCommandNotice(successMessage);
+        return savedCommands;
+      } catch (commandSaveError) {
+        setCommandError(commandSaveError instanceof Error ? commandSaveError.message : "保存 Slash Commands 失败");
+        return null;
+      } finally {
+        setCommandSaving(false);
+      }
     },
-    [],
+    [clearCommandStatus],
   );
 
   const handleActivateSlashCommand = useCallback((commandId: string) => {
@@ -184,6 +227,20 @@ export function useWorkspaceCommandsAdmin() {
     setCommandDraft(EMPTY_WORKSPACE_SLASH_COMMAND_DRAFT);
     setCommandEditorOpen(false);
   }, [commandDraft, customSlashCommands, editingCommandId, persistSlashCommands, slashCommands]);
+
+  useEffect(() => {
+    if (!activeSlashCommandId) {
+      return;
+    }
+
+    if (!slashCommands.some((item) => item.id === activeSlashCommandId)) {
+      setActiveSlashCommandId("");
+    }
+  }, [activeSlashCommandId, slashCommands]);
+
+  useEffect(() => {
+    void refreshSlashCommands({ showLoading: true });
+  }, [refreshSlashCommands]);
 
   return {
     customSlashCommands,
