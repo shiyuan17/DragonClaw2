@@ -12,8 +12,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "check:encoding": "node scripts/check-mojibake.mjs",
     "check:file-size": "node scripts/check-file-size.mjs",
-    "build": "npm run check:file-size && tsc && vite build",
+    "build": "npm run check:encoding && npm run check:file-size && tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri"
   },

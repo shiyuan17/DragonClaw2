@@ -70,9 +70,11 @@ style(css): adjust dashboard card spacing
 ## 🧪 验证规则
 
 每次提交前**必须**通过：
-1. `npm run tauri dev` — 能正常启动
-2. 手动测试：启动服务 → 打开网关 → 聊天正常
-3. 如果改了安装流程：删除 `AppData/Local/OpenClawLauncher/` 后全新安装测试
+1. `npm run check:encoding` — 文本源码/配置文件中不能包含错码、乱码字符串或编码损坏字符
+2. `npm run check:file-size` — 大文件约束检查通过
+3. `npm run tauri dev` — 能正常启动
+4. 手动测试：启动服务 → 打开网关 → 聊天正常
+5. 如果改了安装流程：删除 `AppData/Local/OpenClawLauncher/` 后全新安装测试
 
 ---
 
@@ -83,6 +85,8 @@ style(css): adjust dashboard card spacing
 3. **渐进式重构**。不要把所有东西推倒重来。提取一个组件 → 验证 → 下一个。
 4. **保持接口**。重构过程中，所有 `invoke('xxx')` 调用和返回值类型保持不变。
 5. **切分支后清缓存**。`Remove-Item -Recurse -Force node_modules/.vite, dist`
+6. **文本文件必须是 UTF-8**。`.rs` / `.ts` / `.tsx` / `.js` / `.json` / `.md` / `.toml` / `.yml` / `.yaml` / `.css` 等文本源码和配置文件必须以 UTF-8 保存，不允许提交错码中文、乱码字符串、替换字符 `U+FFFD` 或私有区异常字符。
+7. **编码检查必须执行**。提交前必须运行 `npm run check:encoding`，发现乱码后先修复再继续开发。
 
 ## 📏 大文件限制
 
