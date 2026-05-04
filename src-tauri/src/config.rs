@@ -4,14 +4,14 @@
 use std::fs;
 use std::path::PathBuf;
 
-use rand::{rngs::OsRng, RngCore};
 use serde_json::{json, Value};
 use tauri::Emitter;
 
+use crate::config_store::ConfigRepository;
 use crate::paths;
 use crate::providers::{get_providers, CurrentConfig};
 
-pub const DEFAULT_GATEWAY_TOKEN: &str = "openclaw-launcher-local";
+pub use crate::config_store::DEFAULT_GATEWAY_TOKEN;
 
 /// Backwards-compatible helper. Prefer `paths::user_config_dir()` for new code.
 pub fn get_user_openclaw_dir() -> Result<PathBuf, String> {
@@ -19,185 +19,47 @@ pub fn get_user_openclaw_dir() -> Result<PathBuf, String> {
 }
 
 pub(crate) fn openclaw_config_path() -> Result<PathBuf, String> {
-    paths::openclaw_config_path()
+    ConfigRepository::path()
 }
 
 pub(crate) fn read_openclaw_config() -> Result<Value, String> {
-    let config_path = openclaw_config_path()?;
-    if !config_path.exists() {
-        return Ok(json!({}));
-    }
-
-    let content = fs::read_to_string(&config_path)
-        .map_err(|error| format!("读取 openclaw.json 失败: {error}"))?;
-    serde_json::from_str(&content).map_err(|error| format!("解析 openclaw.json 失败: {error}"))
+    ConfigRepository::load_raw()
 }
 
 pub(crate) fn write_openclaw_config(config: &Value) -> Result<(), String> {
-    let config_path = openclaw_config_path()?;
-    let content = serde_json::to_string_pretty(config)
-        .map_err(|error| format!("序列化 openclaw.json 失败: {error}"))?;
-    fs::write(&config_path, content).map_err(|error| format!("写入 openclaw.json 失败: {error}"))
-}
-
-fn generate_gateway_token() -> String {
-    let mut bytes = [0_u8; 24];
-    OsRng.fill_bytes(&mut bytes);
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    ConfigRepository::replace(config)
 }
 
 pub(crate) fn ensure_config_roots(config: &mut Value) {
-    if !config.is_object() {
-        *config = json!({});
-    }
-    if config.get("models").is_none() {
-        config["models"] = json!({});
-    }
-    if config["models"].get("providers").is_none() {
-        config["models"]["providers"] = json!({});
-    }
-    if config.get("agents").is_none() {
-        config["agents"] = json!({});
-    }
-    if config["agents"].get("defaults").is_none() {
-        config["agents"]["defaults"] = json!({});
-    }
-    if config["agents"]["defaults"].get("models").is_none() {
-        config["agents"]["defaults"]["models"] = json!({});
-    }
-}
-
-fn normalize_workspace_path(workspace_path: Option<&str>) -> Result<PathBuf, String> {
-    let candidate = workspace_path
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or(paths::default_workspace_dir()?);
-
-    if candidate.is_relative() {
-        return Err("工作区路径必须是绝对路径".to_string());
-    }
-
-    fs::create_dir_all(&candidate).map_err(|error| format!("创建工作区目录失败: {error}"))?;
-    candidate
-        .canonicalize()
-        .map_err(|error| format!("解析工作区目录失败: {error}"))
+    ConfigRepository::ensure_config_roots(config);
 }
 
 pub(crate) fn set_main_workspace(
     config: &mut Value,
     workspace_path: Option<&str>,
 ) -> Result<PathBuf, String> {
-    ensure_config_roots(config);
-    let workspace = normalize_workspace_path(workspace_path)?;
-
-    config["agents"]["defaults"]["workspace"] =
-        Value::String(workspace.to_string_lossy().to_string());
-
-    if config.get("sandbox").is_none() {
-        config["sandbox"] = json!({});
-    }
-    config["sandbox"]["paths"] = json!([workspace.to_string_lossy().to_string()]);
-
-    Ok(workspace)
-}
-
-fn default_gateway_config() -> Value {
-    json!({
-        "mode": "local",
-        "auth": {
-            "mode": "token",
-            "token": generate_gateway_token()
-        },
-        "controlUi": {
-            "allowInsecureAuth": true,
-            "dangerouslyDisableDeviceAuth": true
-        }
-    })
+    ConfigRepository::set_main_workspace(config, workspace_path)
 }
 
 pub(crate) fn ensure_gateway_config(config: &mut Value) {
-    if !config
-        .get("gateway")
-        .map(|value| value.is_object())
-        .unwrap_or(false)
-    {
-        config["gateway"] = default_gateway_config();
-        return;
-    }
-
-    let gateway = config
-        .get_mut("gateway")
-        .and_then(Value::as_object_mut)
-        .expect("gateway should be an object after initialization");
-
-    gateway
-        .entry("mode".to_string())
-        .or_insert_with(|| json!("local"));
-
-    let auth = gateway
-        .entry("auth".to_string())
-        .or_insert_with(|| json!({}));
-    if !auth.is_object() {
-        *auth = json!({});
-    }
-    if let Some(auth_obj) = auth.as_object_mut() {
-        auth_obj
-            .entry("mode".to_string())
-            .or_insert_with(|| json!("token"));
-
-        let should_rotate_token = auth_obj
-            .get("token")
-            .and_then(Value::as_str)
-            .map(|token| token.trim().is_empty() || token == DEFAULT_GATEWAY_TOKEN)
-            .unwrap_or(true);
-        if should_rotate_token {
-            auth_obj.insert("token".to_string(), json!(generate_gateway_token()));
-        }
-    }
-
-    let control_ui = gateway
-        .entry("controlUi".to_string())
-        .or_insert_with(|| json!({}));
-    if !control_ui.is_object() {
-        *control_ui = json!({});
-    }
-    if let Some(control_ui_obj) = control_ui.as_object_mut() {
-        control_ui_obj
-            .entry("allowInsecureAuth".to_string())
-            .or_insert_with(|| json!(true));
-        control_ui_obj
-            .entry("dangerouslyDisableDeviceAuth".to_string())
-            .or_insert_with(|| json!(true));
-    }
+    ConfigRepository::ensure_gateway_config(config);
 }
 
 pub(crate) fn ensure_default_workspace(config: &mut Value) {
-    if config
-        .get("agents")
-        .and_then(|agents| agents.get("defaults"))
-        .and_then(|defaults| defaults.get("workspace"))
-        .and_then(Value::as_str)
-        .map(|value| !value.trim().is_empty())
-        .unwrap_or(false)
-    {
-        return;
-    }
-
-    let _ = set_main_workspace(config, None);
+    ConfigRepository::ensure_default_workspace(config);
 }
 
 #[tauri::command]
 pub fn migrate_gateway_config() -> Result<String, String> {
-    let mut config = read_openclaw_config()?;
-    let original = config.clone();
+    let original = read_openclaw_config()?;
+    let next_config = ConfigRepository::update(|config| {
+        ensure_gateway_config(config);
+        ensure_default_workspace(config);
+        Ok(())
+    })?;
 
-    ensure_gateway_config(&mut config);
-    ensure_default_workspace(&mut config);
-
-    if config != original {
-        write_openclaw_config(&config)?;
-        return Ok("Gateway 配置已更新".to_string());
+    if next_config != original {
+        return Ok("Gateway 配置已迁移".to_string());
     }
 
     Ok("Config unchanged".to_string())
@@ -315,22 +177,23 @@ pub fn save_api_config(
         "models": model_defs,
     });
 
-    let mut config = read_openclaw_config()?;
-    ensure_config_roots(&mut config);
+    ConfigRepository::update(|config| {
+        ensure_config_roots(config);
 
-    config["models"]["providers"][&provider] = new_provider_entry;
-    config["agents"]["defaults"]["model"] = json!({ "primary": full_model_id });
+        config["models"]["providers"][&provider] = new_provider_entry.clone();
+        config["agents"]["defaults"]["model"] = json!({ "primary": full_model_id.clone() });
 
-    if let Some(provider_meta) = provider_info {
-        for model in &provider_meta.models {
-            let key = format!("{provider}/{}", model.id);
-            config["agents"]["defaults"]["models"][&key] = json!({});
+        if let Some(provider_meta) = provider_info {
+            for model in &provider_meta.models {
+                let key = format!("{provider}/{}", model.id);
+                config["agents"]["defaults"]["models"][&key] = json!({});
+            }
         }
-    }
 
-    ensure_gateway_config(&mut config);
-    ensure_default_workspace(&mut config);
-    write_openclaw_config(&config)?;
+        ensure_gateway_config(config);
+        ensure_default_workspace(config);
+        Ok(())
+    })?;
 
     let agent_dir = get_user_openclaw_dir()?
         .join("agents")
@@ -378,7 +241,7 @@ pub fn save_api_config(
 
 #[tauri::command]
 pub fn set_default_model(app: tauri::AppHandle, model_id: String) -> Result<String, String> {
-    let mut config = read_openclaw_config()?;
+    let config = read_openclaw_config()?;
     if config == json!({}) {
         return Err("尚未找到 openclaw.json，请先完成 API Key 配置".to_string());
     }
@@ -406,36 +269,39 @@ pub fn set_default_model(app: tauri::AppHandle, model_id: String) -> Result<Stri
         ("", full_model_id.as_str())
     };
 
-    ensure_config_roots(&mut config);
-    config["agents"]["defaults"]["model"] = json!({ "primary": full_model_id });
+    ConfigRepository::update(|config| {
+        ensure_config_roots(config);
+        config["agents"]["defaults"]["model"] = json!({ "primary": full_model_id.clone() });
 
-    if !provider_name.is_empty() {
-        if let Some(provider_obj) = config
-            .get_mut("models")
-            .and_then(|models| models.get_mut("providers"))
-            .and_then(|providers| providers.get_mut(provider_name))
-        {
-            if let Some(models) = provider_obj.get_mut("models").and_then(Value::as_array_mut) {
-                let exists = models
-                    .iter()
-                    .any(|model| model.get("id").and_then(Value::as_str) == Some(bare_model_id));
-                if !exists {
-                    models.push(json!({
-                        "id": bare_model_id,
-                        "name": bare_model_id,
-                        "reasoning": false,
-                        "input": ["text"],
-                        "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
-                        "contextWindow": 128000,
-                        "maxTokens": 8192
-                    }));
+        if !provider_name.is_empty() {
+            if let Some(provider_obj) = config
+                .get_mut("models")
+                .and_then(|models| models.get_mut("providers"))
+                .and_then(|providers| providers.get_mut(provider_name))
+            {
+                if let Some(models) = provider_obj.get_mut("models").and_then(Value::as_array_mut)
+                {
+                    let exists = models
+                        .iter()
+                        .any(|model| model.get("id").and_then(Value::as_str) == Some(bare_model_id));
+                    if !exists {
+                        models.push(json!({
+                            "id": bare_model_id,
+                            "name": bare_model_id,
+                            "reasoning": false,
+                            "input": ["text"],
+                            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+                            "contextWindow": 128000,
+                            "maxTokens": 8192
+                        }));
+                    }
                 }
             }
         }
-    }
 
-    config["agents"]["defaults"]["models"][&full_model_id] = json!({});
-    write_openclaw_config(&config)?;
+        config["agents"]["defaults"]["models"][&full_model_id] = json!({});
+        Ok(())
+    })?;
 
     let agent_dir = get_user_openclaw_dir()?
         .join("agents")

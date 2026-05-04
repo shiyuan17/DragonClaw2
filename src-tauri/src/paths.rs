@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
+use crate::config_store::ConfigRepository;
 use crate::environment;
 
 const OPENCLAW_DIR_NAME: &str = "openclaw-engine";
@@ -172,13 +173,7 @@ fn env_override_path(key: &str) -> Option<PathBuf> {
 }
 
 fn read_openclaw_config() -> Option<Value> {
-    let config_path = openclaw_config_path().ok()?;
-    if !config_path.is_file() {
-        return None;
-    }
-
-    let content = fs::read_to_string(config_path).ok()?;
-    serde_json::from_str(&content).ok()
+    ConfigRepository::load_raw().ok()
 }
 
 fn configured_main_workspace_path() -> Option<PathBuf> {
