@@ -136,7 +136,7 @@ fn channel_payload_has_content(payload: &Map<String, Value>) -> bool {
 
 fn parse_allow_from_list_from_text(raw: &str) -> Vec<String> {
     let mut deduped = std::collections::BTreeSet::<String>::new();
-    for segment in raw.split(|ch| ch == '\n' || ch == ',' || ch == '锛?) {
+    for segment in raw.split(|ch| ch == '\n' || ch == ',' || ch == '，') {
         let trimmed = segment.trim();
         if trimmed.is_empty() {
             continue;
@@ -252,7 +252,7 @@ fn ensure_root_object(config_value: &mut Value) -> Result<&mut Map<String, Value
     }
     config_value
         .as_object_mut()
-        .ok_or_else(|| channel_error("openclaw.json 鏍硅妭鐐规牸寮忛敊璇?))
+        .ok_or_else(|| channel_error("openclaw.json 根节点格式错误"))
 }
 
 fn ensure_channels_object<'a>(
@@ -263,7 +263,7 @@ fn ensure_channels_object<'a>(
     }
     root.get_mut("channels")
         .and_then(Value::as_object_mut)
-        .ok_or_else(|| channel_error("channels 閰嶇疆鏍煎紡閿欒"))
+        .ok_or_else(|| channel_error("channels 配置格式错误"))
 }
 
 fn ensure_channel_section<'a>(
@@ -280,7 +280,7 @@ fn ensure_channel_section<'a>(
     let section_obj = channels_obj
         .get_mut(&section_key)
         .and_then(Value::as_object_mut)
-        .ok_or_else(|| channel_error("棰戦亾閰嶇疆鏍煎紡閿欒"))?;
+        .ok_or_else(|| channel_error("频道配置格式错误"))?;
     migrate_legacy_channel_section_to_accounts(section_obj);
     if !matches!(section_obj.get("accounts"), Some(Value::Object(_))) {
         section_obj.insert("accounts".to_string(), Value::Object(Map::new()));
@@ -298,10 +298,12 @@ fn ensure_accounts_object<'a>(
     section_obj
         .get_mut("accounts")
         .and_then(Value::as_object_mut)
-        .ok_or_else(|| channel_error("棰戦亾 accounts 閰嶇疆鏍煎紡閿欒"))
+        .ok_or_else(|| channel_error("频道 accounts 配置格式错误"))
 }
 
 fn current_config_path_string() -> Result<String, String> {
+    Ok(paths::openclaw_config_path()?.display().to_string())
+}
 
 fn normalize_dm_scope(raw: &str) -> Option<String> {
     match raw.trim().to_ascii_lowercase().as_str() {
@@ -413,7 +415,7 @@ pub fn load_openclaw_channel_accounts_snapshot(
                         .map(str::to_string)
                         .unwrap_or_else(|| {
                             if account_id == "default" {
-                                "涓昏处鍙?.to_string()
+                                "主账号".to_string()
                             } else {
                                 account_id.clone()
                             }
@@ -467,7 +469,7 @@ pub fn load_openclaw_channel_accounts_snapshot(
 
     Ok(OpenClawChannelAccountsSnapshotResponse {
         source_path,
-        detail: format!("宸茶鍙?{} 涓凡閰嶇疆棰戦亾銆?, channels.len()),
+        detail: format!("已读取 {} 个已配置频道。", channels.len()),
         channels,
     })
 }
@@ -552,7 +554,7 @@ pub fn load_openclaw_channel_form_values(
 pub fn save_openclaw_channel_config(payload: OpenClawChannelConfigPayload) -> Result<(), String> {
     let normalized_channel = normalize_channel_identifier(&payload.channel_type);
     if normalized_channel.is_empty() {
-        return Err(channel_error("channelType 涓嶈兘涓虹┖"));
+        return Err(channel_error("channelType 不能为空"));
     }
     let normalized_account_id = payload
         .account_id
@@ -605,9 +607,9 @@ pub fn save_openclaw_channel_config(payload: OpenClawChannelConfigPayload) -> Re
     if !account_obj.contains_key("name") {
         let display_name = if normalized_account_id == "default" {
             match normalized_channel.as_str() {
-                "weixin" => "寰俊涓昏处鍙?,
-                "feishu" => "椋炰功涓昏处鍙?,
-                _ => "涓昏处鍙?,
+                "weixin" => "微信主账号",
+                "feishu" => "飞书主账号",
+                _ => "主账号",
             }
         } else {
             normalized_account_id.as_str()
@@ -643,7 +645,7 @@ pub fn save_openclaw_channel_config(payload: OpenClawChannelConfigPayload) -> Re
 pub fn save_openclaw_channel_binding(payload: OpenClawChannelBindingPayload) -> Result<(), String> {
     let normalized_channel = normalize_channel_identifier(&payload.channel_type);
     if normalized_channel.is_empty() {
-        return Err(channel_error("channelType 涓嶈兘涓虹┖"));
+        return Err(channel_error("channelType 不能为空"));
     }
     let normalized_account_id = normalize_account_identifier(&payload.account_id);
 
@@ -656,7 +658,7 @@ pub fn save_openclaw_channel_binding(payload: OpenClawChannelBindingPayload) -> 
     let bindings = root
         .get_mut("bindings")
         .and_then(Value::as_array_mut)
-        .ok_or_else(|| channel_error("bindings 閰嶇疆鏍煎紡閿欒"))?;
+        .ok_or_else(|| channel_error("bindings 配置格式错误"))?;
 
     upsert_binding_entry(
         bindings,
@@ -673,7 +675,7 @@ pub fn save_openclaw_channel_binding(payload: OpenClawChannelBindingPayload) -> 
 pub fn remove_openclaw_channel_config(payload: OpenClawChannelRemovePayload) -> Result<(), String> {
     let normalized_channel = normalize_channel_identifier(&payload.channel_type);
     if normalized_channel.is_empty() {
-        return Err(channel_error("channelType 涓嶈兘涓虹┖"));
+        return Err(channel_error("channelType 不能为空"));
     }
 
     let mut config_value = config::read_openclaw_config()?;
@@ -757,4 +759,4 @@ pub fn remove_openclaw_channel_config(payload: OpenClawChannelRemovePayload) -> 
     }
 
     config::write_openclaw_config(&config_value)
-
+}

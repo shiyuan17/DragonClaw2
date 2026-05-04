@@ -70,11 +70,11 @@ fn read_weixin_account_index() -> Vec<String> {
 fn write_json_atomically(path: &Path, value: &Value) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
-            .map_err(|error| channel_error(format!("鍒涘缓鐩綍澶辫触: {error}")))?;
+            .map_err(|error| channel_error(format!("创建目录失败: {error}")))?;
     }
 
     let serialized = serde_json::to_string_pretty(value)
-        .map_err(|error| channel_error(format!("搴忓垪鍖?JSON 澶辫触: {error}")))?;
+        .map_err(|error| channel_error(format!("序列化 JSON 失败: {error}")))?;
     let file_name = path
         .file_name()
         .and_then(|value| value.to_str())
@@ -89,10 +89,10 @@ fn write_json_atomically(path: &Path, value: &Value) -> Result<(), String> {
         ));
 
     std::fs::write(&temp_path, serialized)
-        .map_err(|error| channel_error(format!("鍐欏叆涓存椂鏂囦欢澶辫触: {error}")))?;
+        .map_err(|error| channel_error(format!("写入临时文件失败: {error}")))?;
     std::fs::rename(&temp_path, path).map_err(|error| {
         let _ = std::fs::remove_file(&temp_path);
-        channel_error(format!("鏇挎崲鏂囦欢澶辫触: {error}"))
+        channel_error(format!("替换文件失败: {error}"))
     })
 }
 
@@ -104,7 +104,7 @@ fn save_weixin_account_state(
 ) -> Result<(), String> {
     let accounts_dir = resolve_weixin_accounts_dir()?;
     std::fs::create_dir_all(&accounts_dir)
-        .map_err(|error| channel_error(format!("鍒涘缓寰俊鐘舵€佺洰褰曞け璐? {error}")))?;
+        .map_err(|error| channel_error(format!("创建微信状态目录失败: {error}")))?;
 
     let mut payload = Map::<String, Value>::new();
     payload.insert(
@@ -230,6 +230,4 @@ pub(super) fn persist_weixin_qr_binding_result(
 
     Ok(normalized_account_id)
 }
-
-fn is_weixin_plugin_enabled_in_config() -> bool {
 

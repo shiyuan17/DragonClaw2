@@ -17,7 +17,6 @@ use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 
 use crate::agency_agents;
-use crate::environment;
 use crate::launcher_state;
 use crate::openclaw_cli;
 use crate::paths;

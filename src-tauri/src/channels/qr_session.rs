@@ -80,14 +80,14 @@ fn extract_http_url_from_text(raw: &str) -> Option<String> {
                     | '.'
                     | ';'
                     | ':'
-                    | '銆?
-                    | '锛?
-                    | '锛?
-                    | '锛?
-                    | '銆?
-                    | '锛?
-                    | '銆?
-                    | '銆?
+                    | '。'
+                    | '，'
+                    | '；'
+                    | '：'
+                    | '、'
+                    | '）'
+                    | '】'
+                    | '》'
             )
         });
     if candidate.is_empty() {
@@ -130,32 +130,32 @@ pub(super) fn update_qr_session_from_cli_line(session_state: &SharedQrState, raw
                         .detail
                         .as_deref()
                         .unwrap_or_default()
-                        .contains("宸插惎鍔ㄥ井淇＄粦瀹氭祦绋?)
+                        .contains("已启动微信绑定流程")
                 {
-                    state.detail = Some("浜岀淮鐮佸凡鐢熸垚锛岃浣跨敤鎵嬫満寰俊鎵爜瀹屾垚缁戝畾銆?.to_string());
+                    state.detail = Some("二维码已生成，请使用手机微信扫码完成绑定。".to_string());
                 }
             }
         }
 
         let cleaned_lower = cleaned.to_ascii_lowercase();
-        if (cleaned.contains("绛夊緟鎵爜")
-            || cleaned.contains("璇蜂娇鐢ㄥ井淇℃壂鐮?)
+        if (cleaned.contains("等待扫码")
+            || cleaned.contains("请使用微信扫码")
             || cleaned_lower.contains("scan the qr")
             || cleaned_lower.contains("waiting for scan")
             || cleaned_lower.contains("waiting for qr"))
             && state.status.trim().eq_ignore_ascii_case("running")
         {
             state.status = "waiting_scan".to_string();
-            state.detail = Some("浜岀淮鐮佸凡鐢熸垚锛岃浣跨敤鎵嬫満寰俊鎵爜瀹屾垚缁戝畾銆?.to_string());
+            state.detail = Some("二维码已生成，请使用手机微信扫码完成绑定。".to_string());
         }
 
-        if cleaned.contains("鎵爜鎴愬姛")
-            || cleaned.contains("杩炴帴鎴愬姛")
+        if cleaned.contains("扫码成功")
+            || cleaned.contains("连接成功")
             || cleaned_lower.contains("login successful")
             || cleaned_lower.contains("logged in")
         {
             state.status = "success".to_string();
-            state.detail = Some("寰俊浜岀淮鐮佺粦瀹氭垚鍔燂紝璇烽€夋嫨鎺ュ緟 Agent 骞朵繚瀛樸€?.to_string());
+            state.detail = Some("微信二维码绑定成功，请选择接待 Agent 并保存。".to_string());
             state.updated_at_ms = current_timestamp_millis();
             return;
         }
@@ -165,12 +165,12 @@ pub(super) fn update_qr_session_from_cli_line(session_state: &SharedQrState, raw
         {
             state.status = "error".to_string();
             state.detail =
-                Some("鏈娴嬪埌寰俊鎻掍欢 openclaw-weixin锛岃鍏堝畨瑁呭苟鍚敤鎻掍欢鍚庡啀閲嶈瘯銆?.to_string());
+                Some("未检测到微信插件 openclaw-weixin，请先安装并启用插件后再重试。".to_string());
             state.updated_at_ms = current_timestamp_millis();
             return;
         }
 
-        if cleaned.contains("澶辫触")
+        if cleaned.contains("失败")
             || cleaned_lower.contains("error")
             || cleaned_lower.contains("failed")
         {
@@ -204,11 +204,11 @@ fn register_qr_session(
 ) -> Result<(), String> {
     qr_sessions()
         .lock()
-        .map_err(|_| channel_error("鏃犳硶鍐欏叆浜岀淮鐮佷細璇濈姸鎬?))?
+        .map_err(|_| channel_error("无法写入二维码会话状态"))?
         .insert(session_id.to_string(), session_state);
     qr_cancel_flags()
         .lock()
-        .map_err(|_| channel_error("鏃犳硶鍐欏叆浜岀淮鐮佸彇娑堢姸鎬?))?
+        .map_err(|_| channel_error("无法写入二维码取消状态"))?
         .insert(session_id.to_string(), cancel_flag);
     Ok(())
 }
@@ -259,14 +259,13 @@ fn clear_qr_session_internal(session_id: &str) {
     }
 }
 
-fn read_weixin_account_index() -> Vec<String> {
-
+#[tauri::command]
 pub fn start_openclaw_channel_qr_binding(
     channel_type: String,
 ) -> Result<OpenClawChannelQrBindingSessionSnapshot, String> {
     let normalized_channel = normalize_channel_identifier(&channel_type);
     if normalized_channel != "weixin" {
-        return Err(channel_error("褰撳墠浠呮敮鎸佸井淇?(weixin) 浜岀淮鐮佺粦瀹?));
+        return Err(channel_error("当前仅支持微信 (weixin) 二维码绑定"));
     }
 
     prune_qr_sessions();
@@ -280,8 +279,8 @@ pub fn start_openclaw_channel_qr_binding(
         status: "running".to_string(),
         qr_url: None,
         qr_ascii: None,
-        detail: Some("宸插惎鍔ㄥ井淇＄粦瀹氭祦绋嬶紝姝ｅ湪鑾峰彇浜岀淮鐮?..".to_string()),
-        logs: vec!["鍚姩寰俊缁戝畾娴佺▼銆?.to_string()],
+        detail: Some("已启动微信绑定流程，正在获取二维码...".to_string()),
+        logs: vec!["启动微信绑定流程。".to_string()],
         started_at_ms: now,
         updated_at_ms: now,
     }));
@@ -322,10 +321,10 @@ pub fn start_openclaw_channel_qr_binding(
                 } else if let Some(message) = payload.downcast_ref::<&'static str>() {
                     (*message).to_string()
                 } else {
-                    "鏈煡 panic".to_string()
+                    "未知 panic".to_string()
                 };
                 let detail = format!(
-                    "寰俊浜岀淮鐮佺粦瀹氭祦绋嬪彂鐢熸剰澶栭敊璇紝璇风◢鍚庨噸璇?(panic: {})",
+                    "微信二维码绑定流程发生意外错误，请稍后重试 (panic: {})",
                     panic_message
                 );
                 eprintln!(
@@ -347,7 +346,7 @@ pub fn start_openclaw_channel_qr_binding(
         {
             let state = session_state
                 .lock()
-                .map_err(|_| channel_error("鏃犳硶璇诲彇浜岀淮鐮佷細璇濈姸鎬?))?;
+                .map_err(|_| channel_error("无法读取二维码会话状态"))?;
             let has_qr_url = state
                 .qr_url
                 .as_ref()
@@ -368,7 +367,7 @@ pub fn start_openclaw_channel_qr_binding(
 
     let state = session_state
         .lock()
-        .map_err(|_| channel_error("鏃犳硶璇诲彇浜岀淮鐮佷細璇濈姸鎬?))?;
+        .map_err(|_| channel_error("无法读取二维码会话状态"))?;
     Ok(build_qr_binding_snapshot(&state))
 }
 
@@ -378,27 +377,35 @@ pub fn poll_openclaw_channel_qr_binding(
 ) -> Result<OpenClawChannelQrBindingSessionSnapshot, String> {
     let normalized = session_id.trim();
     if normalized.is_empty() {
-        return Err(channel_error("sessionId 涓嶈兘涓虹┖"));
+        return Err(channel_error("sessionId 不能为空"));
     }
     let parsed = uuid::Uuid::parse_str(normalized)
-        .map_err(|_| channel_error("sessionId 鏍煎紡鏃犳晥锛屽簲涓?UUID"))?;
+        .map_err(|_| channel_error("sessionId 格式无效，应为 UUID"))?;
     let normalized_id = parsed.to_string();
 
     let sessions = qr_sessions()
         .lock()
-        .map_err(|_| channel_error("鏃犳硶璇诲彇浜岀淮鐮佷細璇濆垪琛?))?;
+        .map_err(|_| channel_error("无法读取二维码会话列表"))?;
     let session_state = sessions
         .get(&normalized_id)
         .cloned()
-        .ok_or_else(|| channel_error("鏈壘鍒颁簩缁寸爜浼氳瘽"))?;
+        .ok_or_else(|| channel_error("未找到二维码会话"))?;
     drop(sessions);
 
     let state = session_state
         .lock()
-        .map_err(|_| channel_error("鏃犳硶璇诲彇浜岀淮鐮佷細璇濈姸鎬?))?;
+        .map_err(|_| channel_error("无法读取二维码会话状态"))?;
     Ok(build_qr_binding_snapshot(&state))
 }
 
 #[tauri::command]
 pub fn clear_openclaw_channel_qr_binding_session(session_id: String) -> Result<(), String> {
-
+    let normalized = session_id.trim();
+    if normalized.is_empty() {
+        return Ok(());
+    }
+    let parsed = uuid::Uuid::parse_str(normalized)
+        .map_err(|_| channel_error("sessionId 格式无效，应为 UUID"))?;
+    clear_qr_session_internal(&parsed.to_string());
+    Ok(())
+}

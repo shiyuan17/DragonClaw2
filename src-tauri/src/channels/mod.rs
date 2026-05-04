@@ -263,14 +263,6 @@ fn normalize_channel_identifier(raw: &str) -> String {
     normalized
 }
 
-fn canonical_channel_key_for_config(normalized_channel: &str) -> String {
-    match normalized_channel {
-        "weixin" => WEIXIN_OFFICIAL_CHANNEL_ID.to_string(),
-        "feishu" => "feishu".to_string(),
-        _ => normalized_channel.to_string(),
-    }
-}
-
 fn channel_aliases_for_config(normalized_channel: &str) -> Vec<String> {
     match normalized_channel {
         "weixin" => vec![
@@ -302,250 +294,6 @@ fn resolve_existing_channel_key(
         .cloned()
 }
 
-fn normalize_account_identifier(raw: &str) -> String {
-    let normalized = raw.trim().to_ascii_lowercase();
-    if normalized.is_empty() {
-        "default".to_string()
-    } else {
-        normalized
-    }
-}
-
-fn is_channel_section_reserved_key(key: &str) -> bool {
-    matches!(key, "accounts" | "defaultAccount" | "enabled")
-}
-
-fn migrate_legacy_channel_section_to_accounts(section_obj: &mut Map<String, Value>) {
-    if matches!(section_obj.get("accounts"), Some(Value::Object(_))) {
-        return;
-    }
-
-    let mut legacy_account_payload = Map::<String, Value>::new();
-    let mut legacy_keys = Vec::<String>::new();
-
-    for (key, value) in section_obj.iter() {
-        if is_channel_section_reserved_key(key) {
-            continue;
-        }
-        legacy_keys.push(key.to_string());
-        legacy_account_payload.insert(key.to_string(), value.clone());
-    }
-
-    if legacy_account_payload.is_empty() {
-        section_obj.insert("accounts".to_string(), Value::Object(Map::new()));
-        return;
-    }
-
-    for key in legacy_keys {
-        section_obj.remove(&key);
-    }
-
-    let mut accounts = Map::new();
-    accounts.insert("default".to_string(), Value::Object(legacy_account_payload));
-    section_obj.insert("accounts".to_string(), Value::Object(accounts));
-    if section_obj
-        .get("defaultAccount")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .is_none()
-    {
-        section_obj.insert(
-            "defaultAccount".to_string(),
-            Value::String("default".to_string()),
-        );
-    }
-}
-
-fn channel_payload_has_content(payload: &Map<String, Value>) -> bool {
-    payload.iter().any(|(key, value)| {
-        if matches!(
-            key.as_str(),
-            "enabled" | "name" | "linkedAt" | "channelConfigUpdatedAt"
-        ) {
-            return false;
-        }
-        match value {
-            Value::Null => false,
-            Value::String(text) => !text.trim().is_empty(),
-            Value::Array(items) => !items.is_empty(),
-            Value::Object(obj) => !obj.is_empty(),
-            _ => true,
-        }
-    })
-}
-
-fn parse_allow_from_list_from_text(raw: &str) -> Vec<String> {
-    let mut deduped = std::collections::BTreeSet::<String>::new();
-    for segment in raw.split(|ch| ch == '\n' || ch == ',' || ch == '锛?) {
-        let trimmed = segment.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        deduped.insert(trimmed.to_string());
-    }
-    deduped.into_iter().collect()
-}
-
-fn parse_allow_from_list_from_value(value: Option<&Value>) -> Vec<String> {
-    let Some(raw) = value else {
-        return Vec::new();
-    };
-
-    match raw {
-        Value::Array(items) => {
-            let mut deduped = std::collections::BTreeSet::<String>::new();
-            for item in items {
-                let normalized = match item {
-                    Value::String(text) => text.trim().to_string(),
-                    Value::Number(number) => number.to_string(),
-                    Value::Bool(flag) => flag.to_string(),
-                    _ => String::new(),
-                };
-                if normalized.is_empty() {
-                    continue;
-                }
-                deduped.insert(normalized);
-            }
-            deduped.into_iter().collect()
-        }
-        Value::String(text) => parse_allow_from_list_from_text(text),
-        _ => Vec::new(),
-    }
-}
-
-fn sanitize_channel_form_values_for_ui(
-    normalized_channel: &str,
-    mut values: HashMap<String, String>,
-) -> HashMap<String, String> {
-    if normalized_channel != "feishu" {
-        return values;
-    }
-
-    let has_secret = values
-        .get("appSecret")
-        .map(|value| !value.trim().is_empty())
-        .unwrap_or(false);
-    values.remove("appSecret");
-    if has_secret {
-        values.insert("appSecretConfigured".to_string(), "true".to_string());
-    }
-    values
-}
-
-fn resolve_channel_binding_maps(
-    root: &Map<String, Value>,
-) -> (HashMap<String, String>, HashMap<String, String>) {
-    let mut channel_to_agent = HashMap::new();
-    let mut account_to_agent = HashMap::new();
-    let Some(bindings) = root.get("bindings").and_then(Value::as_array) else {
-        return (channel_to_agent, account_to_agent);
-    };
-
-    for item in bindings {
-        let Some(binding_obj) = item.as_object() else {
-            continue;
-        };
-        let Some(agent_id) = binding_obj
-            .get("agentId")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        else {
-            continue;
-        };
-        let Some(channel_type) = binding_obj
-            .get("match")
-            .and_then(Value::as_object)
-            .and_then(|match_obj| match_obj.get("channel"))
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        else {
-            continue;
-        };
-
-        let normalized_channel = normalize_channel_identifier(channel_type);
-        let account_id = binding_obj
-            .get("match")
-            .and_then(Value::as_object)
-            .and_then(|match_obj| match_obj.get("accountId"))
-            .and_then(Value::as_str)
-            .map(normalize_account_identifier)
-            .unwrap_or_else(|| "default".to_string());
-
-        if account_id == "default" {
-            channel_to_agent.insert(normalized_channel, agent_id.to_string());
-        } else {
-            account_to_agent.insert(
-                format!("{normalized_channel}:{account_id}"),
-                agent_id.to_string(),
-            );
-        }
-    }
-
-    (channel_to_agent, account_to_agent)
-}
-
-fn ensure_root_object(config_value: &mut Value) -> Result<&mut Map<String, Value>, String> {
-    if !config_value.is_object() {
-        *config_value = json!({});
-    }
-    config_value
-        .as_object_mut()
-        .ok_or_else(|| channel_error("openclaw.json 鏍硅妭鐐规牸寮忛敊璇?))
-}
-
-fn ensure_channels_object<'a>(
-    root: &'a mut Map<String, Value>,
-) -> Result<&'a mut Map<String, Value>, String> {
-    if !matches!(root.get("channels"), Some(Value::Object(_))) {
-        root.insert("channels".to_string(), Value::Object(Map::new()));
-    }
-    root.get_mut("channels")
-        .and_then(Value::as_object_mut)
-        .ok_or_else(|| channel_error("channels 閰嶇疆鏍煎紡閿欒"))
-}
-
-fn ensure_channel_section<'a>(
-    channels_obj: &'a mut Map<String, Value>,
-    normalized_channel: &str,
-) -> Result<(&'a mut Map<String, Value>, String), String> {
-    let section_key = resolve_existing_channel_key(channels_obj, normalized_channel)
-        .unwrap_or_else(|| canonical_channel_key_for_config(normalized_channel));
-
-    if !matches!(channels_obj.get(&section_key), Some(Value::Object(_))) {
-        channels_obj.insert(section_key.clone(), Value::Object(Map::new()));
-    }
-
-    let section_obj = channels_obj
-        .get_mut(&section_key)
-        .and_then(Value::as_object_mut)
-        .ok_or_else(|| channel_error("棰戦亾閰嶇疆鏍煎紡閿欒"))?;
-    migrate_legacy_channel_section_to_accounts(section_obj);
-    if !matches!(section_obj.get("accounts"), Some(Value::Object(_))) {
-        section_obj.insert("accounts".to_string(), Value::Object(Map::new()));
-    }
-
-    Ok((section_obj, section_key))
-}
-
-fn ensure_accounts_object<'a>(
-    section_obj: &'a mut Map<String, Value>,
-) -> Result<&'a mut Map<String, Value>, String> {
-    if !matches!(section_obj.get("accounts"), Some(Value::Object(_))) {
-        section_obj.insert("accounts".to_string(), Value::Object(Map::new()));
-    }
-    section_obj
-        .get_mut("accounts")
-        .and_then(Value::as_object_mut)
-        .ok_or_else(|| channel_error("棰戦亾 accounts 閰嶇疆鏍煎紡閿欒"))
-}
-
-fn current_config_path_string() -> Result<String, String> {
-    Ok(paths::openclaw_config_path()?.display().to_string())
-}
-
 fn resolve_state_dir() -> Result<PathBuf, String> {
     paths::user_config_dir()
 }
@@ -574,12 +322,12 @@ fn resolve_weixin_plugin_dir() -> Result<PathBuf, String> {
     weixin_plugin_package_path()?
         .parent()
         .map(PathBuf::from)
-        .ok_or_else(|| channel_error("鏃犳硶瑙ｆ瀽寰俊鎻掍欢鐩綍"))
+        .ok_or_else(|| channel_error("无法解析微信插件目录"))
 }
 
 fn openclaw_engine_command(args: &[&str]) -> Result<Output, String> {
     let mut command = openclaw_cli::create_openclaw_cli_command()
-        .map_err(|error| channel_error(format!("鏋勫缓 OpenClaw 鍛戒护澶辫触: {error}")))?;
+        .map_err(|error| channel_error(format!("构建 OpenClaw 命令失败: {error}")))?;
     command
         .args(args)
         .stdin(Stdio::null())
@@ -588,12 +336,12 @@ fn openclaw_engine_command(args: &[&str]) -> Result<Output, String> {
 
     command
         .output()
-        .map_err(|error| channel_error(format!("鎵ц OpenClaw 鍛戒护澶辫触: {error}")))
+        .map_err(|error| channel_error(format!("执行 OpenClaw 命令失败: {error}")))
 }
 
 fn run_bundled_npm_cli_command(args: &[&str], current_dir: &Path) -> Result<Output, String> {
     let mut command = openclaw_cli::create_bundled_npm_cli_command()
-        .map_err(|error| channel_error(format!("鏋勫缓 npm 鍛戒护澶辫触: {error}")))?;
+        .map_err(|error| channel_error(format!("构建 npm 命令失败: {error}")))?;
     command
         .args(args)
         .current_dir(current_dir)
@@ -603,7 +351,7 @@ fn run_bundled_npm_cli_command(args: &[&str], current_dir: &Path) -> Result<Outp
 
     command
         .output()
-        .map_err(|error| channel_error(format!("鎵ц npm 鍛戒护澶辫触: {error}")))
+        .map_err(|error| channel_error(format!("执行 npm 命令失败: {error}")))
 }
 
 fn summarize_command_output(output: &Output) -> String {
@@ -616,7 +364,7 @@ fn summarize_command_output(output: &Output) -> String {
             return trimmed.to_string();
         }
     }
-    format!("閫€鍑虹爜: {:?}", output.status.code())
+    format!("退出码: {:?}", output.status.code())
 }
 
 fn collect_command_output_lines(output: &Output) -> Vec<String> {
@@ -642,7 +390,7 @@ fn append_command_output_to_session_logs(
     if lines.is_empty() {
         qr_session::update_session_log(
             session_state,
-            &format!("鍛戒护宸茬粨鏉燂紝閫€鍑虹爜: {:?}", output.status.code()),
+            &format!("命令已结束，退出码: {:?}", output.status.code()),
         );
         return;
     }
@@ -654,7 +402,7 @@ fn append_command_output_to_session_logs(
     if omitted > 0 {
         qr_session::update_session_log(
             session_state,
-            &format!("鍏朵綑 {omitted} 琛屽懡浠よ緭鍑哄凡鐪佺暐銆?),
+            &format!("其余 {omitted} 行命令输出已省略。"),
         );
     }
 }
@@ -670,21 +418,11 @@ fn parse_openclaw_release_version(version: &str) -> Option<(u32, u32, u32)> {
 }
 
 #[path = "config.rs"]
-mod channel_config;
-mod feishu;
-mod qr_session;
+pub(crate) mod channel_config;
+pub(crate) mod feishu;
+pub(crate) mod qr_session;
 mod shared;
 mod weixin_plugin;
 mod weixin_qr;
 
-pub use channel_config::{
-    load_openclaw_channel_accounts_snapshot, load_openclaw_channel_form_values,
-    remove_openclaw_channel_config, save_openclaw_channel_binding,
-    save_openclaw_channel_config,
-};
-pub use feishu::{poll_feishu_openclaw_qr_result, request_feishu_openclaw_qr};
-pub use qr_session::{
-    clear_openclaw_channel_qr_binding_session, poll_openclaw_channel_qr_binding,
-    start_openclaw_channel_qr_binding,
-};
 
