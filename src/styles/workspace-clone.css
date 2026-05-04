@@ -6212,29 +6212,19 @@
   border-color: color-mix(in srgb, var(--dc-workspace-danger-text) 22%, transparent);
 }
 
-.workspace-command-modal__grid {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-  gap: 14px;
-}
-
-.workspace-command-modal__column {
-  min-height: 0;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 10px;
-}
-
 .workspace-command-modal__empty-stack {
   display: grid;
   gap: 12px;
 }
 
+.workspace-command-modal__empty-copy {
+  min-height: 0;
+}
+
 .workspace-command-modal__examples {
   display: grid;
   gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .workspace-command-modal__example {
@@ -6256,20 +6246,35 @@
   line-height: 1.5;
 }
 
+.workspace-command-modal__list {
+  padding-right: 6px;
+}
+
 .workspace-command-modal__row {
   border: 1px solid var(--dc-workspace-line);
-  border-radius: 16px;
-  background: var(--dc-workspace-panel-elevated);
+  border-radius: 18px;
+  background: linear-gradient(180deg, var(--dc-workspace-panel-elevated), var(--dc-workspace-panel-soft));
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  padding: 10px;
+  gap: 12px;
+  padding: 12px;
+  box-shadow: var(--dc-workspace-shadow-soft);
+  transition:
+    border-color var(--dc-motion-duration-fast) var(--dc-motion-ease-standard),
+    box-shadow var(--dc-motion-duration-fast) var(--dc-motion-ease-standard),
+    transform var(--dc-motion-duration-fast) var(--dc-motion-ease-standard);
 }
 
 .workspace-command-modal__row.is-active {
   border-color: var(--dc-workspace-selected-border);
   background: var(--dc-workspace-selected-surface);
   box-shadow: var(--dc-workspace-selected-shadow-soft);
+}
+
+.workspace-command-modal__row:not(.is-active):hover {
+  border-color: var(--dc-workspace-hover-border);
+  box-shadow: var(--dc-workspace-shadow);
+  transform: translateY(-1px);
 }
 
 .workspace-command-modal__row.is-readonly {
@@ -6283,24 +6288,80 @@
   background: transparent;
   color: inherit;
   text-align: left;
+  cursor: pointer;
+}
+
+.workspace-command-modal__row-main.is-static {
+  cursor: default;
+}
+
+.workspace-command-modal__row-main:disabled {
+  cursor: wait;
+}
+
+.workspace-command-modal__row-main:focus-visible {
+  outline: none;
+}
+
+.workspace-command-modal__row-main:focus-visible .workspace-command-modal__row-copy {
+  border-radius: 12px;
+  box-shadow: var(--dc-workspace-focus-ring);
 }
 
 .workspace-command-modal__row-copy {
   min-width: 0;
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 
 .workspace-command-modal__row-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .workspace-command-modal__row-head strong {
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1.4;
   color: var(--dc-workspace-ink-soft);
+}
+
+.workspace-command-modal__meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workspace-command-modal__tag {
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: var(--dc-radius-pill);
+  border: 1px solid var(--dc-workspace-line);
+  background: var(--dc-workspace-panel-soft);
+  color: var(--dc-workspace-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.workspace-command-modal__tag--active {
+  border-color: color-mix(in srgb, var(--dc-workspace-accent-strong) 28%, transparent);
+  background: color-mix(in srgb, var(--dc-workspace-accent-soft) 82%, white);
+  color: var(--dc-workspace-accent-strong);
+}
+
+.workspace-command-modal__row-name {
+  color: var(--dc-workspace-ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
 }
 
 .workspace-command-modal__row-copy p {
@@ -6312,7 +6373,9 @@
 
 .workspace-command-modal__row-actions {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding-top: 2px;
   gap: 8px;
 }
 
@@ -6320,28 +6383,9 @@
   color: var(--dc-workspace-danger-text);
 }
 
-.workspace-command-modal__editor {
-  display: grid;
-  gap: 12px;
-  padding: 14px;
-  border-radius: 18px;
-  border: 1px solid var(--dc-workspace-line);
-  background: linear-gradient(180deg, var(--dc-workspace-panel-elevated), var(--dc-workspace-panel-soft));
-}
-
-.workspace-command-modal__editor-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
 .workspace-command-modal__field {
   display: grid;
   gap: 8px;
-}
-
-.workspace-command-modal__field--wide {
-  grid-column: 1 / -1;
 }
 
 .workspace-command-modal__field span {
@@ -6364,14 +6408,23 @@
 .workspace-command-modal__input {
   min-height: 40px;
   padding: 0 12px;
+  font: inherit;
 }
 
 .workspace-command-modal__textarea {
-  min-height: 132px;
+  min-height: 96px;
   padding: 12px;
   resize: vertical;
   font: inherit;
   line-height: 1.6;
+}
+
+.workspace-command-modal__textarea--compact {
+  min-height: 110px;
+}
+
+.workspace-command-modal__textarea--editor {
+  min-height: 240px;
 }
 
 .workspace-command-modal__preview {
@@ -6386,6 +6439,67 @@
 
 .workspace-command-modal__footer {
   padding-top: 0;
+  gap: 8px;
+}
+
+.workspace-command-editor-modal__overlay {
+  backdrop-filter: blur(10px);
+}
+
+.modal-box.workspace-command-editor-modal__surface {
+  width: min(720px, 92vw);
+  max-height: min(820px, calc(100vh - 40px));
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--dc-workspace-selected-border) 72%, transparent);
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 247, 245, 0.98) 100%);
+  box-shadow: var(--dc-shadow-modal), 0 0 0 1px rgba(255, 255, 255, 0.52);
+}
+
+.workspace-command-editor-modal {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.workspace-command-editor-modal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 24px 26px 18px;
+  border-bottom: 1px solid color-mix(in srgb, var(--dc-workspace-line) 82%, white);
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--dc-workspace-accent-soft) 80%, white) 0%, transparent 58%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(250, 249, 247, 0.98) 100%);
+}
+
+.workspace-command-editor-modal__header h3 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.2;
+  color: var(--dc-workspace-ink);
+}
+
+.workspace-command-editor-modal__header p {
+  margin: 10px 0 0;
+  color: var(--dc-workspace-faint);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.workspace-command-editor-modal__body {
+  display: grid;
+  gap: 16px;
+  padding: 22px 26px 24px;
+  overflow: auto;
+}
+
+.workspace-command-editor-modal .workspace-resource-modal__footer {
+  padding: 0 26px 24px;
+  border-top: 1px solid color-mix(in srgb, var(--dc-workspace-line) 75%, white);
+  background: linear-gradient(180deg, rgba(250, 249, 247, 0.62) 0%, rgba(248, 247, 245, 0.96) 100%);
 }
 
 .workspace-resource-modal__list--grouped {
@@ -6668,18 +6782,37 @@
     grid-template-columns: 1fr;
   }
 
-  .workspace-command-modal__grid,
-  .workspace-command-modal__editor-grid {
+  .workspace-command-modal__row {
     grid-template-columns: 1fr;
   }
 
-  .workspace-command-modal__row {
-    grid-template-columns: 1fr;
+  .workspace-command-modal__row-head {
+    align-items: flex-start;
+  }
+
+  .workspace-command-modal__meta {
+    justify-content: flex-start;
   }
 
   .workspace-command-modal__row-actions {
     justify-content: flex-start;
     flex-wrap: wrap;
+  }
+
+  .workspace-command-modal__examples {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-box.workspace-command-editor-modal__surface {
+    width: min(720px, 94vw);
+    max-height: calc(100vh - 32px);
+  }
+
+  .workspace-command-editor-modal__header,
+  .workspace-command-editor-modal__body,
+  .workspace-command-editor-modal .workspace-resource-modal__footer {
+    padding-left: 18px;
+    padding-right: 18px;
   }
 
   .workspace-model-card {
