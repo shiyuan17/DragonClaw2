@@ -26,7 +26,10 @@ interface WorkspaceCloneComposerProps {
   onOpenSessionSection: (target: WorkspaceSessionSectionKey) => void;
   onOpenMemoryModal: () => void;
   onOpenCommandsModal: () => void;
+  onOpenEmailBindingModal: () => void;
   onOpenModelConfig: () => void;
+  emailBindingBound: boolean;
+  emailBindingBoundProviderLabel: string;
   slashCommands: WorkspaceSlashCommandDefinition[];
   activeSlashCommand: WorkspaceActiveSlashCommand;
   onActivateSlashCommand: (commandId: string) => void;
@@ -83,7 +86,10 @@ export function WorkspaceCloneComposer({
   isGenerating,
   resettingSession,
   onOpenCommandsModal,
+  onOpenEmailBindingModal,
   onOpenModelConfig,
+  emailBindingBound,
+  emailBindingBoundProviderLabel,
   slashCommands,
   activeSlashCommand,
   onActivateSlashCommand,
@@ -232,6 +238,17 @@ export function WorkspaceCloneComposer({
                 场景
               </button>
             ) : null}
+            <button
+              type="button"
+              className={`workspace-clone__composer-pill workspace-clone__composer-pill--muted ${emailBindingBound ? "is-active" : ""}`}
+              onClick={onOpenEmailBindingModal}
+              disabled={!chatEnabled}
+            >
+              <WorkspaceCloneIcon name="mail" size={14} strokeWidth={1.9} />
+              {emailBindingBound
+                ? `邮箱 ${emailBindingBoundProviderLabel || "已绑定"}`
+                : "邮箱"}
+            </button>
             <button
               type="button"
               className="workspace-clone__composer-pill workspace-clone__composer-pill--muted"

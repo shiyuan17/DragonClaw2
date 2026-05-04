@@ -168,6 +168,30 @@ function AppShell() {
   startingUpRef.current = setStartingUp;
 
   useEffect(() => {
+    if (phase !== "ready") {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function refreshGatewayConfig() {
+      await invoke("migrate_gateway_config").catch(() => undefined);
+      if (cancelled) {
+        return;
+      }
+      await refreshCurrentConfig().catch((error) => {
+        addLog("warn", `刷新网关配置失败: ${error}`);
+      });
+    }
+
+    void refreshGatewayConfig();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [addLog, phase, refreshCurrentConfig]);
+
+  useEffect(() => {
     if (phase !== "ready" || updateChecked.current || appVersion === "0.0.0") return;
     updateChecked.current = true;
 

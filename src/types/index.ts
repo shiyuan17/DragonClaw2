@@ -223,6 +223,49 @@ export interface FeishuOnboardingPollResponse {
     tenantBrand?: string | null;
 }
 
+export type EmailSkillBindingProvider =
+    | "qq"
+    | "163"
+    | "gmail"
+    | "outlook"
+    | "sina"
+    | "sohu"
+    | "custom"
+    | "";
+
+export interface EmailSkillBindingSnapshot {
+    configPath: string;
+    provider: EmailSkillBindingProvider | string;
+    emailAccount: string;
+    imapHost: string;
+    imapPort: string;
+    smtpHost: string;
+    smtpPort: string;
+    imapTls: boolean;
+    smtpSecure: boolean;
+    hasAuthorizationCode: boolean;
+    detail: string;
+}
+
+export interface SaveEmailSkillBindingPayload {
+    provider: Exclude<EmailSkillBindingProvider, ""> | string;
+    emailAccount: string;
+    authorizationCode: string;
+    customConfig?: {
+        imapHost: string;
+        imapPort: string;
+        smtpHost: string;
+        smtpPort: string;
+        imapTls: boolean;
+        smtpSecure: boolean;
+    } | null;
+}
+
+export interface EmailSkillBindingSaveResponse {
+    configPath: string;
+    detail: string;
+}
+
 export interface AgencyAgentInfo {
     name?: string;
     mission?: string;

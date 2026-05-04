@@ -9,6 +9,7 @@ mod chat_cache;
 mod config;
 mod diagnostics;
 mod download;
+mod email_binding;
 mod environment;
 mod installer;
 mod launcher_state;
@@ -172,6 +173,8 @@ pub fn run() {
             config::save_api_config,
             config::set_default_model,
             config::reset_config,
+            email_binding::load_imap_smtp_email_binding,
+            email_binding::save_imap_smtp_email_binding,
             channels::load_openclaw_channel_accounts_snapshot,
             channels::load_openclaw_channel_form_values,
             channels::save_openclaw_channel_config,
@@ -186,6 +189,9 @@ pub fn run() {
             chat_cache::upsert_workspace_chat_session_cache,
             chat_cache::list_workspace_chat_session_cache,
             chat_cache::prune_workspace_chat_session_cache,
+            chat_cache::list_workspace_agent_cache,
+            chat_cache::replace_workspace_agent_cache,
+            chat_cache::clear_workspace_agent_cache,
             memory::load_memory_file_snapshot,
             memory::save_source_file,
             onboarding::get_skillhub_install_runtime_info,

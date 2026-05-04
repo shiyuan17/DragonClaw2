@@ -65,6 +65,14 @@ pub fn slash_commands_path() -> Result<PathBuf, String> {
     Ok(user_config_dir()?.join("slash-commands.json"))
 }
 
+/// Get the path to `~/.config/imap-smtp-email/.env`.
+pub fn imap_smtp_email_env_path() -> Result<PathBuf, String> {
+    Ok(user_home_dir()?
+        .join(".config")
+        .join("imap-smtp-email")
+        .join(".env"))
+}
+
 /// Resolve the workspace that the official SkillHub installer bootstraps into.
 pub fn skillhub_workspace_dir() -> Result<PathBuf, String> {
     Ok(user_config_dir()?.join("workspace"))

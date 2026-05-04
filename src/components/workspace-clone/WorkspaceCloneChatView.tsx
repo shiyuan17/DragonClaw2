@@ -21,6 +21,7 @@ import {
   WorkspaceCloneServiceStartupPanel,
   type WorkspaceServiceStartupLogLine,
   type WorkspaceServiceStartupPhase,
+  type WorkspaceServiceStartupStep,
 } from "./WorkspaceCloneServiceStartupPanel";
 
 const MESSAGE_BOTTOM_THRESHOLD_PX = 72;
@@ -79,6 +80,7 @@ interface WorkspaceCloneChatViewProps {
   serviceStartup: {
     phase: WorkspaceServiceStartupPhase | "ready";
     message: string;
+    steps: WorkspaceServiceStartupStep[];
     logs: WorkspaceServiceStartupLogLine[];
     error: string | null;
     showPanel: boolean;
@@ -229,10 +231,10 @@ export function WorkspaceCloneChatView({
             <WorkspaceCloneServiceStartupPanel
               phase={serviceStartup.phase}
               message={serviceStartup.message}
+              steps={serviceStartup.steps}
               logs={serviceStartup.logs}
               error={serviceStartup.error}
               onRetry={onStart}
-              onOpenLogs={onOpenLogs}
             />
           ) : showDisconnectedState ? (
             <section className="workspace-clone__empty-state">

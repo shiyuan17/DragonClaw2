@@ -81,28 +81,6 @@ export function buildWorkspaceEntities(
         currentWork: running ? "等待新的任务请求" : "服务尚未启动，当前仅展示首页聊天界面。",
         recentOutput: `${currentModelName} / ${currentProviderName}`,
       },
-      {
-        id: "ops",
-        entityType: "agents",
-        name: "运营协作 Agent",
-        subtitle: "在线",
-        status: "online",
-        avatarLabel: "运",
-        accent: "ops",
-        currentWork: "整理渠道欢迎语与交接说明。",
-        recentOutput: "当前仅作为目录占位，不进入默认首页视图。",
-      },
-      {
-        id: "product",
-        entityType: "agents",
-        name: "产品策略 Agent",
-        subtitle: "待命中",
-        status: "offline",
-        avatarLabel: "策",
-        accent: "product",
-        currentWork: "等待下一轮界面和功能迁移任务。",
-        recentOutput: "当前仅作为目录占位，不进入默认首页视图。",
-      },
     ],
     channels: [
       {

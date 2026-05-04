@@ -153,13 +153,16 @@ export function useService({
             await invoke("start_service_silent");
             runningRef.current = true;
             setRunning(true);
+            await checkApiKey().catch((error) => {
+                addLog("warn", `刷新网关配置失败: ${error}`);
+            });
         } catch (err) {
             addLog("error", `启动失败: ${err}`);
             setStartingUp(false);
         } finally {
             setLoading(false);
         }
-    }, [addLog]);
+    }, [addLog, checkApiKey]);
 
     const handleStop = useCallback(async () => {
         setLoading(true);
@@ -210,13 +213,16 @@ export function useService({
             await invoke("start_service_silent");
             runningRef.current = true;
             setRunning(true);
+            await checkApiKey().catch((error) => {
+                addLog("warn", `刷新网关配置失败: ${error}`);
+            });
             addLog("success", "[OK] 连接修复完成，服务已重启");
         } catch (err) {
             addLog("error", `修复失败: ${err}`);
         } finally {
             setRepairing(false);
         }
-    }, [addLog, running, servicePort, setRepairToast]);
+    }, [addLog, checkApiKey, running, servicePort, setRepairToast]);
 
     return {
         loading, startingUp, setStartingUp,

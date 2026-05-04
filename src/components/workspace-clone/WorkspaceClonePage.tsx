@@ -38,6 +38,7 @@ import {
 import { WorkspaceCloneChatView } from "./WorkspaceCloneChatView";
 import { WorkspaceCloneComposer } from "./WorkspaceCloneComposer";
 import { WorkspaceCloneDirectory } from "./WorkspaceCloneDirectory";
+import { WorkspaceCloneEmailBindingModal } from "./WorkspaceCloneEmailBindingModal";
 import { WorkspaceCloneHeader } from "./WorkspaceCloneHeader";
 import { WorkspaceCloneScenePresetSwitcher } from "./WorkspaceCloneScenePresetSwitcher";
 import { WorkspaceCloneSidebar } from "./WorkspaceCloneSidebar";
@@ -49,6 +50,7 @@ import {
   updateWorkspaceScenePresetOpenState,
 } from "./workspaceCloneScenePresetState";
 import { useWorkspaceChannels } from "./useWorkspaceChannels";
+import { useWorkspaceEmailBinding } from "./useWorkspaceEmailBinding";
 import type {
   WorkspaceEntity,
   WorkspaceAgentSkillConfig,
@@ -136,20 +138,6 @@ const COMPACT_COPY: Record<Exclude<WorkspaceMenuKey, "chat" | "employees">, { ti
     bullets: ["当前不提供真实任务流。", "后续按 DragonClaw 的能力逐项接入。"],
   },
 };
-
-function formatRecentLabel(timestamp?: number | null) {
-  if (!timestamp) {
-    return "主会话";
-  }
-
-  const date = new Date(timestamp);
-  return `最近活跃 ${new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date)}`;
-}
 
 function resolveWorkspaceModelName(currentConfig: CurrentConfig | null, fallbackModelName: string) {
   const primaryModel = currentConfig?.model || fallbackModelName;
@@ -292,6 +280,8 @@ function buildGatewayAgentEntities(params: {
   currentSessionKey: string;
   currentMainSession: ReturnType<typeof useWorkspaceGatewayChat>["currentMainSession"];
   sessionsResult: ReturnType<typeof useWorkspaceGatewayChat>["sessionsResult"];
+  agentListSource: ReturnType<typeof useWorkspaceGatewayChat>["agentListSource"];
+  agentLastMessageById: ReturnType<typeof useWorkspaceGatewayChat>["agentLastMessageById"];
   running: boolean;
   isGenerating: boolean;
   currentModelName: string;
@@ -303,11 +293,14 @@ function buildGatewayAgentEntities(params: {
     currentSessionKey,
     currentMainSession,
     sessionsResult,
+    agentListSource,
+    agentLastMessageById,
     running,
     isGenerating,
     currentModelName,
     currentProviderName,
   } = params;
+  const isCachedAgentList = agentListSource === "cache";
 
   return agents.map<WorkspaceEntity>((agent) => {
     const sessionKey = `agent:${agent.id}:main`;
@@ -328,14 +321,9 @@ function buildGatewayAgentEntities(params: {
       searchText: [agent.id, agent.identity?.name?.trim(), agent.name?.trim()]
         .filter(Boolean)
         .join(" "),
-      subtitle:
-        !running
-          ? "待命中"
-          : isGenerating && isAgentSessionActive
-            ? "生成中"
-            : formatRecentLabel(mainSession?.updatedAt),
+      subtitle: agentLastMessageById[agent.id] || "",
       status:
-        !running
+        isCachedAgentList || !running
           ? "offline"
           : isGenerating && isAgentSessionActive
             ? "busy"
@@ -345,7 +333,9 @@ function buildGatewayAgentEntities(params: {
       avatarLabel: formatAgentAvatar(agent),
       accent: agent.id,
       currentWork:
-        !running
+        isCachedAgentList
+          ? "连接后同步最新 Agent 状态。"
+          : !running
           ? "服务尚未启动，首页聊天暂不可用。"
           : isGenerating && isAgentSessionActive
             ? "正在生成当前主会话回复。"
@@ -452,6 +442,7 @@ export function WorkspaceClonePage({
     connectionError: homepageChat.error,
     logs,
   });
+  const workspaceEmailBinding = useWorkspaceEmailBinding();
 
   const refreshSavedProviders = useCallback(async () => {
     const requestId = savedProvidersLoadSeqRef.current + 1;
@@ -492,13 +483,15 @@ export function WorkspaceClonePage({
 
   const gatewayAgentEntities = useMemo(
     () =>
-      homepageChat.agents.length > 0
+      homepageChat.agentListSource !== "none" && homepageChat.agents.length > 0
         ? buildGatewayAgentEntities({
             agents: homepageChat.agents,
             selectedAgentId: homepageChat.selectedAgentId,
             currentSessionKey: homepageChat.currentSessionKey,
             currentMainSession: homepageChat.currentMainSession,
             sessionsResult: homepageChat.sessionsResult,
+            agentListSource: homepageChat.agentListSource,
+            agentLastMessageById: homepageChat.agentLastMessageById,
             running,
             isGenerating: homepageChat.isGenerating,
             currentModelName: workspaceModelName,
@@ -511,6 +504,8 @@ export function WorkspaceClonePage({
       homepageChat.agents,
       homepageChat.currentMainSession,
       homepageChat.currentSessionKey,
+      homepageChat.agentListSource,
+      homepageChat.agentLastMessageById,
       homepageChat.isGenerating,
       homepageChat.selectedAgentId,
       homepageChat.sessionsResult,
@@ -590,8 +585,9 @@ export function WorkspaceClonePage({
       setSavedProvidersLoading(false);
       setShowRuntimeLogDetail(false);
       setShowSettingsTextPreview(false);
+      workspaceEmailBinding.closeEmailBindingModal({ clearStatus: true, force: true });
     }
-  }, [activeMenu, setContextMenu]);
+  }, [activeMenu, setContextMenu, workspaceEmailBinding.closeEmailBindingModal]);
 
   useEffect(() => {
     const handleDocumentClick = () => {
@@ -1826,7 +1822,10 @@ export function WorkspaceClonePage({
                 onOpenSessionSection={openSessionPanel}
                 onOpenMemoryModal={openMemoryModal}
                 onOpenCommandsModal={openCommandsModal}
+                onOpenEmailBindingModal={workspaceEmailBinding.openEmailBindingModal}
                 onOpenModelConfig={openModelConfigModal}
+                emailBindingBound={workspaceEmailBinding.isBound}
+                emailBindingBoundProviderLabel={workspaceEmailBinding.boundProviderLabel}
                 slashCommands={slashCommands}
                 activeSlashCommand={activeSlashCommand}
                 onActivateSlashCommand={handleActivateSlashCommand}
@@ -1983,6 +1982,39 @@ export function WorkspaceClonePage({
             />
           </Suspense>
         ) : null}
+
+        <WorkspaceCloneEmailBindingModal
+          show={workspaceEmailBinding.isOpen}
+          loading={workspaceEmailBinding.loading}
+          saving={workspaceEmailBinding.saving}
+          notice={workspaceEmailBinding.notice}
+          error={workspaceEmailBinding.error}
+          provider={workspaceEmailBinding.provider}
+          providerOptions={workspaceEmailBinding.providerOptions}
+          account={workspaceEmailBinding.account}
+          accountPlaceholder={workspaceEmailBinding.accountPlaceholder}
+          authorizationCode={workspaceEmailBinding.authorizationCode}
+          isCustomProvider={workspaceEmailBinding.isCustomProvider}
+          customImapHost={workspaceEmailBinding.customImapHost}
+          customImapPort={workspaceEmailBinding.customImapPort}
+          customSmtpHost={workspaceEmailBinding.customSmtpHost}
+          customSmtpPort={workspaceEmailBinding.customSmtpPort}
+          customImapTls={workspaceEmailBinding.customImapTls}
+          customSmtpSecure={workspaceEmailBinding.customSmtpSecure}
+          onClose={() => workspaceEmailBinding.closeEmailBindingModal({ clearStatus: true })}
+          onSubmit={() => {
+            void workspaceEmailBinding.saveBinding();
+          }}
+          onProviderChange={workspaceEmailBinding.updateProvider}
+          onAccountChange={workspaceEmailBinding.setAccount}
+          onAuthorizationCodeChange={workspaceEmailBinding.setAuthorizationCode}
+          onCustomImapHostChange={workspaceEmailBinding.setCustomImapHost}
+          onCustomImapPortChange={workspaceEmailBinding.setCustomImapPort}
+          onCustomSmtpHostChange={workspaceEmailBinding.setCustomSmtpHost}
+          onCustomSmtpPortChange={workspaceEmailBinding.setCustomSmtpPort}
+          onCustomImapTlsChange={workspaceEmailBinding.setCustomImapTls}
+          onCustomSmtpSecureChange={workspaceEmailBinding.setCustomSmtpSecure}
+        />
       </main>
     </motion.section>
   );

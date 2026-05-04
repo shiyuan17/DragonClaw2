@@ -15,7 +15,8 @@ Move the ready-workspace service startup feedback into the chat canvas without m
 - Add a presentational `WorkspaceCloneServiceStartupPanel` component.
 - Add a small `useWorkspaceServiceStartupStatus` hook that maps service loading/running state, gateway connection state, errors, and recent logs into panel props.
 - Keep the panel display-only: no Tauri invokes, no gateway client access, no global config reads.
-- Keep full logs in the existing logs drawer; show only compact recent startup lines in the panel.
+- Default the panel to a compact startup/check/connect stepper; only reveal recent startup logs when the user clicks the log icon.
+- Keep full logs in the existing logs drawer; show only compact recent startup lines inside the expanded panel log section.
 
 ### 2. Ready Workspace Startup UX
 
@@ -40,5 +41,5 @@ Move the ready-workspace service startup feedback into the chat canvas without m
 - `npm run build` passes.
 - `cargo test --manifest-path src-tauri/Cargo.toml --lib` passes.
 - Clicking chat startup shows an in-chat panel, not a full-screen overlay.
-- Startup, RPC check, connection, error retry, and logs access do not shift the composer or corrupt message rendering.
+- Startup, RPC check, connection, error retry, and collapsed/expanded logs do not shift the composer or corrupt message rendering.
 - Successful startup connects once and stays connected without repeated flashing.
