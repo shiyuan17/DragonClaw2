@@ -12,7 +12,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "check:file-size": "node scripts/check-file-size.mjs",
+    "build": "npm run check:file-size && tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri"
   },
