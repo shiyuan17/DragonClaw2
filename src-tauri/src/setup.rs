@@ -3,11 +3,14 @@
 // This file is part of DragonClaw. See LICENSE for details.
 /// OpenClaw setup orchestration.
 use std::fs;
+use std::path::PathBuf;
 
 use serde_json::json;
 use tauri::Emitter;
 
 use crate::config;
+use crate::config_store::ConfigRepository;
+use crate::control_ui;
 use crate::download;
 use crate::environment;
 use crate::installer;
@@ -50,7 +53,7 @@ fn migrate_legacy_engine_config_if_needed(app: Option<&tauri::AppHandle>) -> Res
     config::ensure_gateway_config(&mut config_value);
     config::ensure_default_workspace(&mut config_value);
     ensure_default_agent_models(&mut config_value);
-    config::write_openclaw_config(&config_value)?;
+    ConfigRepository::replace(&config_value)?;
 
     if let Some(app_handle) = app {
         let _ = app_handle.emit(
@@ -103,23 +106,25 @@ pub fn inject_default_config(
 ) -> Result<String, String> {
     let _ = migrate_legacy_engine_config_if_needed(Some(&app));
 
-    let mut config_value = config::read_openclaw_config()?;
-    let existed_before = config_value != json!({});
-
-    config::ensure_gateway_config(&mut config_value);
-    let workspace = if workspace_path
-        .as_ref()
-        .map(|value| !value.trim().is_empty())
-        .unwrap_or(false)
-    {
-        config::set_main_workspace(&mut config_value, workspace_path.as_deref())?
-    } else {
-        config::ensure_default_workspace(&mut config_value);
-        paths::main_workspace_dir()?
-    };
-    ensure_default_agent_models(&mut config_value);
-
-    config::write_openclaw_config(&config_value)?;
+    let existed_before = config::read_openclaw_config()? != json!({});
+    let mut resolved_workspace: Option<PathBuf> = None;
+    ConfigRepository::update(|config_value| {
+        config::ensure_gateway_config(config_value);
+        let workspace = if workspace_path
+            .as_ref()
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false)
+        {
+            config::set_main_workspace(config_value, workspace_path.as_deref())?
+        } else {
+            config::ensure_default_workspace(config_value);
+            paths::main_workspace_dir()?
+        };
+        ensure_default_agent_models(config_value);
+        resolved_workspace = Some(workspace);
+        Ok(())
+    })?;
+    let workspace = resolved_workspace.unwrap_or(paths::main_workspace_dir()?);
     launcher_state::mark_launcher_setup_completed_internal(None)?;
 
     let _ = app.emit(
@@ -245,6 +250,8 @@ pub async fn setup_openclaw(app: tauri::AppHandle) -> Result<String, String> {
     })
     .await
     .map_err(|error| format!("安装收尾配置任务调度失败: {error}"))??;
+    control_ui::schedule_control_ui_prepare(app.clone());
+
 
     let _ = app.emit(
         "setup-progress",
