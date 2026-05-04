@@ -1034,7 +1034,7 @@ export function useWorkspaceChannels({ configVersion, enabled = false }: UseWork
       await refreshChannels();
       pushFeedback({
         tone: "success",
-        message: "棰戦亾缁戝畾宸蹭繚瀛樸€?",
+        message: "频道绑定已保存。",
         dedupeKey: "workspace-channel-save-success",
         persistent: false,
       });
@@ -1078,7 +1078,7 @@ export function useWorkspaceChannels({ configVersion, enabled = false }: UseWork
       setContextMenu(null);
       pushFeedback({
         tone: "success",
-        message: `${entity.name} 宸茬Щ闄ょ粦瀹氥€?`,
+        message: `${entity.name} 已移除绑定。`,
         dedupeKey: "workspace-channel-remove-success",
         persistent: false,
       });

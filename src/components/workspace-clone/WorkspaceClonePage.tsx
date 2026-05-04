@@ -17,10 +17,10 @@ import type {
 import { useFeedback } from "../../hooks/useFeedback";
 import { useWorkspaceGatewayChat } from "../../hooks/useWorkspaceGatewayChat";
 import { formatUptime } from "../../utils/log-humanizer";
+import { useWorkspaceServiceStartupStatus } from "./useWorkspaceServiceStartupStatus";
 import {
   buildWorkspaceEntities,
   buildWorkspaceLogs,
-  WORKSPACE_COMMAND_ITEMS,
   WORKSPACE_HISTORY,
   WORKSPACE_MENU_ITEMS,
   WORKSPACE_SCHEDULES,
@@ -28,6 +28,13 @@ import {
   WORKSPACE_WORKBENCH,
 } from "./workspaceCloneData";
 import { formatAgentAvatar, isGatewaySkillStatusResult } from "./workspaceCloneGateway";
+import {
+  createUniqueWorkspaceSlashCommandValue,
+  createWorkspaceSlashCommandId,
+  mapWorkspaceSlashCommandRecord,
+  toWorkspaceActiveSlashCommand,
+  WORKSPACE_BUILTIN_SLASH_COMMANDS,
+} from "./workspaceCloneSlashCommands";
 import { WorkspaceCloneChatView } from "./WorkspaceCloneChatView";
 import { WorkspaceCloneComposer } from "./WorkspaceCloneComposer";
 import { WorkspaceCloneDirectory } from "./WorkspaceCloneDirectory";
@@ -52,6 +59,9 @@ import type {
   WorkspaceMemoryFile,
   WorkspaceRelatedResource,
   WorkspaceResourceItem,
+  WorkspaceSlashCommandDefinition,
+  WorkspaceSlashCommandDraftInput,
+  WorkspaceSlashCommandRecord,
   WorkspaceSkillCategory,
   WorkspaceSkillOption,
   WorkspaceSessionSectionKey,
@@ -195,6 +205,24 @@ function buildToolSummaryItems(options: WorkspaceToolOption[]): WorkspaceToolIte
   }));
 }
 
+function buildCommandSummaryItems(
+  commands: WorkspaceSlashCommandDefinition[],
+  activeCommandId: string,
+): WorkspaceResourceItem[] {
+  return commands.map((item) => ({
+    id: item.id,
+    title: item.command,
+    subtitle: item.description || item.name,
+    tag: item.source === "builtin" ? "只读" : item.id === activeCommandId ? "已激活" : "自定义",
+  }));
+}
+
+const EMPTY_WORKSPACE_SLASH_COMMAND_DRAFT: WorkspaceSlashCommandDraftInput = {
+  name: "",
+  description: "",
+  instruction: "",
+};
+
 /* function WorkspaceCloneSectionFallback({ label }: { label: string }) {
   return (
     <section className="workspace-clone__loading-shell" aria-busy="true" aria-label={`${label} 加载中`}>
@@ -238,9 +266,9 @@ function WorkspaceCloneSectionFallback({ label }: { label: string }) {
 }
 
 function WorkspaceCloneLazyFallback({ label }: { label: string }) {
-  const isEmployeesLabel = label === "数字员工" || label.includes("鏁") || label.includes("数");
-  const isSkillsLabel = label === "技能市场" || label.includes("鎶") || label.includes("技");
-  const isModelConfigLabel = label === "模型配置" || label.includes("妯") || label.includes("模");
+  const isEmployeesLabel = label === "数字员工" || label.includes("数");
+  const isSkillsLabel = label === "技能市场" || label.includes("技");
+  const isModelConfigLabel = label === "模型配置" || label.includes("模");
   const normalizedLabel = isEmployeesLabel ? "数字员工" : isSkillsLabel ? "技能市场" : label;
 
   if (!isModelConfigLabel) {
@@ -329,6 +357,7 @@ function buildGatewayAgentEntities(params: {
 
 export function WorkspaceClonePage({
   running,
+  loading,
   servicePort,
   gatewayToken,
   uptime,
@@ -389,6 +418,16 @@ export function WorkspaceClonePage({
   const [toolSaving, setToolSaving] = useState(false);
   const [toolNotice, setToolNotice] = useState("");
   const [toolError, setToolError] = useState("");
+  const [customSlashCommands, setCustomSlashCommands] = useState<WorkspaceSlashCommandDefinition[]>([]);
+  const [activeSlashCommandId, setActiveSlashCommandId] = useState("");
+  const [commandSearch, setCommandSearch] = useState("");
+  const [commandDraft, setCommandDraft] = useState<WorkspaceSlashCommandDraftInput>(EMPTY_WORKSPACE_SLASH_COMMAND_DRAFT);
+  const [editingCommandId, setEditingCommandId] = useState<string | null>(null);
+  const [commandEditorOpen, setCommandEditorOpen] = useState(false);
+  const [commandLoading, setCommandLoading] = useState(false);
+  const [commandSaving, setCommandSaving] = useState(false);
+  const [commandNotice, setCommandNotice] = useState("");
+  const [commandError, setCommandError] = useState("");
   const [scenePresetOpenStateByKey, setScenePresetOpenStateByKey] = useState<Record<string, boolean>>(
     () => loadWorkspaceScenePresetOpenState(),
   );
@@ -397,6 +436,7 @@ export function WorkspaceClonePage({
   const memoryLoadSeqRef = useRef(0);
   const skillLoadSeqRef = useRef(0);
   const toolLoadSeqRef = useRef(0);
+  const commandLoadSeqRef = useRef(0);
   const savedProvidersLoadSeqRef = useRef(0);
   const modelConfigOpenRef = useRef(false);
   const showDirectory = activeMenu === "chat";
@@ -405,6 +445,13 @@ export function WorkspaceClonePage({
     (activeType === "channels" || relatedResource === "channel" || (utilityPanel === "session" && activeSessionSection === "channel"));
   const workspaceChannels = useWorkspaceChannels({ configVersion, enabled: channelDataEnabled });
   const { setContextMenu } = workspaceChannels;
+  const serviceStartup = useWorkspaceServiceStartupStatus({
+    running,
+    loading,
+    connectionStatus: homepageChat.status,
+    connectionError: homepageChat.error,
+    logs,
+  });
 
   const refreshSavedProviders = useCallback(async () => {
     const requestId = savedProvidersLoadSeqRef.current + 1;
@@ -531,6 +578,14 @@ export function WorkspaceClonePage({
       setToolSaving(false);
       setToolNotice("");
       setToolError("");
+      setCommandSearch("");
+      setEditingCommandId(null);
+      setCommandDraft(EMPTY_WORKSPACE_SLASH_COMMAND_DRAFT);
+      setCommandEditorOpen(false);
+      setCommandLoading(false);
+      setCommandSaving(false);
+      setCommandNotice("");
+      setCommandError("");
       setIsModelConfigOpen(false);
       setSavedProvidersLoading(false);
       setShowRuntimeLogDetail(false);
@@ -582,6 +637,14 @@ export function WorkspaceClonePage({
       return null;
     },
     [activeType, homepageChat.selectedAgentId, selectedEntity?.id, selectedEntity?.runtimeAgentId, selectedEntityId],
+  );
+  const slashCommands = useMemo(
+    () => [...WORKSPACE_BUILTIN_SLASH_COMMANDS, ...customSlashCommands],
+    [customSlashCommands],
+  );
+  const activeSlashCommand = useMemo(
+    () => toWorkspaceActiveSlashCommand(slashCommands.find((item) => item.id === activeSlashCommandId) ?? null),
+    [activeSlashCommandId, slashCommands],
   );
 
   const showScenePresetToggle = activeMenu === "chat" && activeType === "agents" && Boolean(selectedEntity?.id);
@@ -652,6 +715,11 @@ export function WorkspaceClonePage({
     setToolError("");
   }, []);
 
+  const clearCommandStatus = useCallback(() => {
+    setCommandNotice("");
+    setCommandError("");
+  }, []);
+
   useEffect(() => {
     const message = memoryNotice.trim();
     if (!message) {
@@ -674,7 +742,7 @@ export function WorkspaceClonePage({
 
     pushFeedback({
       tone: "error",
-      title: "璁板繂",
+      title: "记忆",
       message,
       dedupeKey: "workspace-memory-error",
       persistent: false,
@@ -704,7 +772,7 @@ export function WorkspaceClonePage({
 
     pushFeedback({
       tone: "error",
-      title: "鎶€鑳藉簱",
+      title: "技能库",
       message,
       dedupeKey: "workspace-skills-error",
       persistent: false,
@@ -734,13 +802,43 @@ export function WorkspaceClonePage({
 
     pushFeedback({
       tone: "error",
-      title: "宸ュ叿鏉冮檺",
+      title: "工具权限",
       message,
       dedupeKey: "workspace-tools-error",
       persistent: false,
       autoCloseMs: 3600,
     });
   }, [pushFeedback, toolError]);
+
+  useEffect(() => {
+    const message = commandNotice.trim();
+    if (!message) {
+      return;
+    }
+
+    pushFeedback({
+      tone: "success",
+      message,
+      dedupeKey: "workspace-commands-notice",
+      persistent: false,
+    });
+  }, [commandNotice, pushFeedback]);
+
+  useEffect(() => {
+    const message = commandError.trim();
+    if (!message) {
+      return;
+    }
+
+    pushFeedback({
+      tone: "error",
+      title: "Slash Commands",
+      message,
+      dedupeKey: "workspace-commands-error",
+      persistent: false,
+      autoCloseMs: 3600,
+    });
+  }, [commandError, pushFeedback]);
 
   useEffect(() => {
     const message = workspaceChannels.modalNotice.trim();
@@ -983,6 +1081,89 @@ export function WorkspaceClonePage({
     }
   }, [currentMemoryAgentId]);
 
+  const refreshSlashCommands = useCallback(async (options?: { showLoading?: boolean }) => {
+    const showLoading = options?.showLoading ?? false;
+    const requestId = commandLoadSeqRef.current + 1;
+    commandLoadSeqRef.current = requestId;
+
+    if (showLoading) {
+      setCommandLoading(true);
+    }
+
+    try {
+      const records = await invoke<WorkspaceSlashCommandRecord[]>("load_custom_slash_commands");
+      if (commandLoadSeqRef.current !== requestId) {
+        return;
+      }
+
+      setCustomSlashCommands(records.map((item) => mapWorkspaceSlashCommandRecord(item)));
+      setCommandError("");
+    } catch (commandLoadError) {
+      if (commandLoadSeqRef.current !== requestId) {
+        return;
+      }
+      setCommandError(commandLoadError instanceof Error ? commandLoadError.message : "读取 Slash Commands 失败");
+    } finally {
+      if (showLoading && commandLoadSeqRef.current === requestId) {
+        setCommandLoading(false);
+      }
+    }
+  }, []);
+
+  const persistSlashCommands = useCallback(
+    async (
+      nextCommands: WorkspaceSlashCommandDefinition[],
+      successMessage: string,
+    ) => {
+      clearCommandStatus();
+      setCommandSaving(true);
+
+      try {
+        const records = nextCommands
+          .filter((item) => item.source === "custom")
+          .map<WorkspaceSlashCommandRecord>(({ id, command, name, description, instruction }) => ({
+            id,
+            command,
+            name,
+            description,
+            instruction,
+          }));
+        const savedRecords = await invoke<WorkspaceSlashCommandRecord[]>("save_custom_slash_commands", {
+          commands: records,
+        });
+        const savedCommands = savedRecords.map((item) => mapWorkspaceSlashCommandRecord(item));
+        setCustomSlashCommands(savedCommands);
+        setCommandNotice(successMessage);
+        return savedCommands;
+      } catch (commandSaveError) {
+        setCommandError(commandSaveError instanceof Error ? commandSaveError.message : "保存 Slash Commands 失败");
+        return null;
+      } finally {
+        setCommandSaving(false);
+      }
+    },
+    [clearCommandStatus],
+  );
+
+  const openCommandsModal = useCallback(() => {
+    setActiveSessionSection("commands");
+    setRelatedResource("commands");
+    clearCommandStatus();
+    void refreshSlashCommands({ showLoading: true });
+  }, [clearCommandStatus, refreshSlashCommands]);
+
+  const closeCommandsModal = useCallback(() => {
+    commandLoadSeqRef.current += 1;
+    setRelatedResource((current) => (current === "commands" ? null : current));
+    setCommandSearch("");
+    setEditingCommandId(null);
+    setCommandDraft(EMPTY_WORKSPACE_SLASH_COMMAND_DRAFT);
+    setCommandEditorOpen(false);
+    setCommandLoading(false);
+    setCommandSaving(false);
+    clearCommandStatus();
+  }, [clearCommandStatus]);
+
   const openMemoryModal = useCallback(() => {
     setActiveSessionSection("memory");
     setShowMemoryModal(true);
@@ -1129,13 +1310,129 @@ export function WorkspaceClonePage({
     }
   }, [clearToolStatus, currentMemoryAgentId, refreshToolOptions, toolDraftIds]);
 
+  const handleActivateSlashCommand = useCallback((commandId: string) => {
+    setActiveSlashCommandId(commandId);
+  }, []);
+
+  const handleStartCreateSlashCommand = useCallback(() => {
+    clearCommandStatus();
+    setEditingCommandId(null);
+    setCommandDraft(EMPTY_WORKSPACE_SLASH_COMMAND_DRAFT);
+    setCommandEditorOpen(true);
+  }, [clearCommandStatus]);
+
+  const handleStartEditSlashCommand = useCallback((commandId: string) => {
+    const target = customSlashCommands.find((item) => item.id === commandId);
+    if (!target) {
+      return;
+    }
+
+    clearCommandStatus();
+    setEditingCommandId(commandId);
+    setCommandDraft({
+      name: target.name,
+      description: target.description,
+      instruction: target.instruction,
+    });
+    setCommandEditorOpen(true);
+  }, [clearCommandStatus, customSlashCommands]);
+
+  const handleCancelSlashCommandEdit = useCallback(() => {
+    clearCommandStatus();
+    setEditingCommandId(null);
+    setCommandDraft(EMPTY_WORKSPACE_SLASH_COMMAND_DRAFT);
+    setCommandEditorOpen(false);
+  }, [clearCommandStatus]);
+
+  const handleDeleteSlashCommand = useCallback(async (commandId: string) => {
+    const target = customSlashCommands.find((item) => item.id === commandId);
+    if (!target) {
+      return;
+    }
+
+    const savedCommands = await persistSlashCommands(
+      customSlashCommands.filter((item) => item.id !== commandId),
+      `已删除命令：${target.name}`,
+    );
+    if (!savedCommands) {
+      return;
+    }
+
+    if (activeSlashCommandId === commandId) {
+      setActiveSlashCommandId("");
+    }
+    if (editingCommandId === commandId) {
+      setEditingCommandId(null);
+      setCommandDraft(EMPTY_WORKSPACE_SLASH_COMMAND_DRAFT);
+      setCommandEditorOpen(false);
+    }
+  }, [activeSlashCommandId, customSlashCommands, editingCommandId, persistSlashCommands]);
+
+  const handleSaveSlashCommandDraft = useCallback(async () => {
+    const name = commandDraft.name.trim();
+    const description = commandDraft.description.trim();
+    const instruction = commandDraft.instruction.trim();
+
+    if (!name) {
+      setCommandError("请填写命令名称");
+      return;
+    }
+
+    if (!instruction) {
+      setCommandError("请填写命令指令内容");
+      return;
+    }
+
+    const record = mapWorkspaceSlashCommandRecord({
+      id: editingCommandId || createWorkspaceSlashCommandId(),
+      command: createUniqueWorkspaceSlashCommandValue({
+        name,
+        existingCommands: slashCommands,
+        excludeId: editingCommandId,
+      }),
+      name,
+      description,
+      instruction,
+    });
+    const nextCommands = editingCommandId
+      ? customSlashCommands.map((item) => (item.id === editingCommandId ? record : item))
+      : [...customSlashCommands, record];
+    const savedCommands = await persistSlashCommands(
+      nextCommands,
+      editingCommandId ? `已保存命令：${name}` : `已创建命令：${name}`,
+    );
+
+    if (!savedCommands) {
+      return;
+    }
+
+    setEditingCommandId(null);
+    setCommandDraft(EMPTY_WORKSPACE_SLASH_COMMAND_DRAFT);
+    setCommandEditorOpen(false);
+  }, [commandDraft, customSlashCommands, editingCommandId, persistSlashCommands, slashCommands]);
+
   useEffect(() => {
     setSkillSearch("");
     setSkillCategory("builtIn");
     setToolCategory("all");
     clearSkillStatus();
     clearToolStatus();
-  }, [clearSkillStatus, clearToolStatus, currentMemoryAgentId]);
+    clearCommandStatus();
+  }, [clearCommandStatus, clearSkillStatus, clearToolStatus, currentMemoryAgentId]);
+
+  useEffect(() => {
+    if (!activeSlashCommandId) {
+      return;
+    }
+
+    if (!slashCommands.some((item) => item.id === activeSlashCommandId)) {
+      setActiveSlashCommandId("");
+    }
+  }, [activeSlashCommandId, slashCommands]);
+
+  useEffect(() => {
+    void refreshSlashCommands({ showLoading: true });
+  }, [refreshSlashCommands]);
 
   useEffect(() => {
     if (utilityPanel === "history") {
@@ -1149,6 +1446,7 @@ export function WorkspaceClonePage({
     showMemoryModal || relatedResource === "memory" || (utilityPanel === "session" && activeSessionSection === "memory");
   const shouldBuildSkillRows =
     showSkillsModal || relatedResource === "skills" || (utilityPanel === "session" && activeSessionSection === "skills");
+  const shouldBuildCommandRows = relatedResource === "commands" || utilityPanel === "session";
   const shouldBuildToolRows =
     showToolsModal || relatedResource === "tools" || (utilityPanel === "session" && activeSessionSection === "tools");
   const shouldBuildChannelRows =
@@ -1181,6 +1479,10 @@ export function WorkspaceClonePage({
           )
         : [],
     [shouldBuildToolRows, toolDraftIds, toolOptions],
+  );
+  const commandResourceItems = useMemo(
+    () => (shouldBuildCommandRows ? buildCommandSummaryItems(slashCommands, activeSlashCommandId) : []),
+    [activeSlashCommandId, shouldBuildCommandRows, slashCommands],
   );
   const openModelConfigModal = useCallback(() => {
     modelConfigOpenRef.current = true;
@@ -1223,6 +1525,10 @@ export function WorkspaceClonePage({
     }
     if (resource === "tools") {
       openToolsModal();
+      return;
+    }
+    if (resource === "commands") {
+      openCommandsModal();
       return;
     }
     setActiveSessionSection(resource);
@@ -1467,7 +1773,6 @@ export function WorkspaceClonePage({
                 chatDisabledReason={chatDisabledReason}
                 messages={chatEnabled ? homepageChat.messages : []}
                 liveSteps={chatEnabled ? homepageChat.liveSteps : []}
-                connectionStatus={homepageChat.status}
                 connectionError={homepageChat.error}
                 historyLoading={homepageChat.historyLoading}
                 isGenerating={homepageChat.isGenerating}
@@ -1479,12 +1784,13 @@ export function WorkspaceClonePage({
                 workbenchItems={WORKSPACE_WORKBENCH}
                 memoryItems={memoryResourceItems}
                 skillItems={skillResourceItems}
-                commandItems={WORKSPACE_COMMAND_ITEMS}
+                commandItems={commandResourceItems}
                 channelItems={shouldBuildChannelRows ? workspaceChannels.channelResourceItems : []}
                 toolItems={toolResourceItems}
                 currentModelName={workspaceModelName}
                 currentProviderName={workspaceProviderName}
                 running={running}
+                serviceStartup={serviceStartup}
                  showHomeSuggestions={activeType !== "agents"}
                  onCloseUtilityPanel={() => setUtilityPanel(null)}
                  onSelectSessionSection={setActiveSessionSection}
@@ -1519,8 +1825,13 @@ export function WorkspaceClonePage({
                 resettingSession={homepageChat.resettingSession}
                 onOpenSessionSection={openSessionPanel}
                 onOpenMemoryModal={openMemoryModal}
+                onOpenCommandsModal={openCommandsModal}
                 onOpenModelConfig={openModelConfigModal}
-                onSend={homepageChat.sendMessage}
+                slashCommands={slashCommands}
+                activeSlashCommand={activeSlashCommand}
+                onActivateSlashCommand={handleActivateSlashCommand}
+                onClearActiveSlashCommand={() => setActiveSlashCommandId("")}
+                onSend={(value) => homepageChat.sendMessage(value, { activeCommand: activeSlashCommand || undefined })}
                 onAbort={homepageChat.abortMessage}
                 onResetSession={homepageChat.resetSession}
               />
@@ -1580,7 +1891,16 @@ export function WorkspaceClonePage({
           toolNotice={toolNotice}
           toolError={toolError}
           memoryItems={memoryResourceItems}
-          commandItems={WORKSPACE_COMMAND_ITEMS}
+          commandItems={slashCommands}
+          activeCommandId={activeSlashCommandId}
+          commandSearch={commandSearch}
+          commandDraft={commandDraft}
+          editingCommandId={editingCommandId}
+          commandEditorOpen={commandEditorOpen}
+          commandLoading={commandLoading}
+          commandSaving={commandSaving}
+          commandNotice={commandNotice}
+          commandError={commandError}
           channelItems={shouldBuildChannelRows ? workspaceChannels.channelResourceItems : []}
           scheduleItems={scheduleResourceItems}
           onCloseAgentInfo={() => setShowAgentInfo(false)}
@@ -1621,6 +1941,23 @@ export function WorkspaceClonePage({
           onClearTools={() => setToolDraftIds([])}
           onSaveTools={() => {
             void handleSaveTools();
+          }}
+          onCloseCommandsModal={closeCommandsModal}
+          onRefreshCommandsModal={() => {
+            clearCommandStatus();
+            void refreshSlashCommands({ showLoading: true });
+          }}
+          onUpdateCommandSearch={setCommandSearch}
+          onActivateCommand={handleActivateSlashCommand}
+          onStartCreateCommand={handleStartCreateSlashCommand}
+          onStartEditCommand={handleStartEditSlashCommand}
+          onCancelCommandEdit={handleCancelSlashCommandEdit}
+          onDeleteCommand={(commandId) => {
+            void handleDeleteSlashCommand(commandId);
+          }}
+          onUpdateCommandDraft={setCommandDraft}
+          onSaveCommandDraft={() => {
+            void handleSaveSlashCommandDraft();
           }}
           onCloseRuntimeLogDetail={() => setShowRuntimeLogDetail(false)}
           onCloseSettingsTextPreview={() => setShowSettingsTextPreview(false)}

@@ -1,9 +1,12 @@
 import { Modal, ModalFooter } from "../ui/Modal";
 import { MAIN_AGENT_DISPLAY_NAME } from "../../data/agencyRoster";
+import { WorkspaceCloneCommandsModal } from "./WorkspaceCloneCommandsModal";
 import { WorkspaceCloneMemoryModal } from "./WorkspaceCloneMemoryModal";
 import { WorkspaceCloneSkillsModal } from "./WorkspaceCloneSkillsModal";
 import { WorkspaceCloneToolPermissionsModal } from "./WorkspaceCloneToolPermissionsModal";
 import type {
+  WorkspaceSlashCommandDefinition,
+  WorkspaceSlashCommandDraftInput,
   WorkspaceEntity,
   WorkspaceMemoryFile,
   WorkspaceRelatedResource,
@@ -44,8 +47,17 @@ interface WorkspaceCloneOverlayStackProps {
   toolSaving: boolean;
   toolNotice: string;
   toolError: string;
+  commandItems: WorkspaceSlashCommandDefinition[];
+  activeCommandId: string;
+  commandSearch: string;
+  commandDraft: WorkspaceSlashCommandDraftInput;
+  editingCommandId: string | null;
+  commandEditorOpen: boolean;
+  commandLoading: boolean;
+  commandSaving: boolean;
+  commandNotice: string;
+  commandError: string;
   memoryItems: WorkspaceResourceItem[];
-  commandItems: WorkspaceResourceItem[];
   channelItems: WorkspaceResourceItem[];
   scheduleItems: WorkspaceResourceItem[];
   onCloseAgentInfo: () => void;
@@ -69,6 +81,16 @@ interface WorkspaceCloneOverlayStackProps {
   onSelectAllTools: () => void;
   onClearTools: () => void;
   onSaveTools: () => void;
+  onCloseCommandsModal: () => void;
+  onRefreshCommandsModal: () => void;
+  onUpdateCommandSearch: (value: string) => void;
+  onActivateCommand: (commandId: string) => void;
+  onStartCreateCommand: () => void;
+  onStartEditCommand: (commandId: string) => void;
+  onCancelCommandEdit: () => void;
+  onDeleteCommand: (commandId: string) => void;
+  onUpdateCommandDraft: (draft: WorkspaceSlashCommandDraftInput) => void;
+  onSaveCommandDraft: () => void;
   onCloseRuntimeLogDetail: () => void;
   onCloseSettingsTextPreview: () => void;
   onCloseRelatedResource: () => void;
@@ -104,8 +126,17 @@ export function WorkspaceCloneOverlayStack({
   toolSaving,
   toolNotice,
   toolError,
-  memoryItems,
   commandItems,
+  activeCommandId,
+  commandSearch,
+  commandDraft,
+  editingCommandId,
+  commandEditorOpen,
+  commandLoading,
+  commandSaving,
+  commandNotice,
+  commandError,
+  memoryItems,
   channelItems,
   scheduleItems,
   onCloseAgentInfo,
@@ -129,19 +160,27 @@ export function WorkspaceCloneOverlayStack({
   onSelectAllTools,
   onClearTools,
   onSaveTools,
+  onCloseCommandsModal,
+  onRefreshCommandsModal,
+  onUpdateCommandSearch,
+  onActivateCommand,
+  onStartCreateCommand,
+  onStartEditCommand,
+  onCancelCommandEdit,
+  onDeleteCommand,
+  onUpdateCommandDraft,
+  onSaveCommandDraft,
   onCloseRuntimeLogDetail,
   onCloseSettingsTextPreview,
   onCloseRelatedResource,
 }: WorkspaceCloneOverlayStackProps) {
-  const relatedTitleMap: Record<Exclude<WorkspaceRelatedResource, null | "memory" | "skills" | "tools">, string> = {
+  const relatedTitleMap: Record<Exclude<WorkspaceRelatedResource, null | "memory" | "skills" | "tools" | "commands">, string> = {
     model: "模型资源面板",
-    commands: "命令面板",
     channel: "频道资源面板",
     schedule: "定时任务面板",
   };
 
   const relatedItemsMap = {
-    commands: commandItems,
     channel: channelItems,
     schedule: scheduleItems,
   };
@@ -222,6 +261,31 @@ export function WorkspaceCloneOverlayStack({
         onSave={onSaveTools}
       />
 
+      <WorkspaceCloneCommandsModal
+        show={relatedResource === "commands"}
+        agentName={selectedEntity?.name || MAIN_AGENT_DISPLAY_NAME}
+        items={commandItems}
+        activeCommandId={activeCommandId}
+        search={commandSearch}
+        draft={commandDraft}
+        editingCommandId={editingCommandId}
+        editorOpen={commandEditorOpen}
+        loading={commandLoading}
+        saving={commandSaving}
+        notice={commandNotice}
+        error={commandError}
+        onClose={onCloseCommandsModal}
+        onRefresh={onRefreshCommandsModal}
+        onSearchChange={onUpdateCommandSearch}
+        onActivate={onActivateCommand}
+        onStartCreate={onStartCreateCommand}
+        onStartEdit={onStartEditCommand}
+        onCancelEdit={onCancelCommandEdit}
+        onDelete={onDeleteCommand}
+        onDraftChange={onUpdateCommandDraft}
+        onSaveDraft={onSaveCommandDraft}
+      />
+
       <Modal show={showRuntimeLogDetail} onClose={onCloseRuntimeLogDetail} title="运行日志详情" maxWidth={760}>
         <div className="workspace-clone__dialog-body">
           <div className="workspace-clone__dialog-copy">
@@ -261,10 +325,10 @@ export function WorkspaceCloneOverlayStack({
       </Modal>
 
       <Modal
-        show={Boolean(relatedResource && relatedResource !== "memory" && relatedResource !== "skills" && relatedResource !== "tools")}
+        show={Boolean(relatedResource && relatedResource !== "memory" && relatedResource !== "skills" && relatedResource !== "tools" && relatedResource !== "commands")}
         onClose={onCloseRelatedResource}
         title={
-          relatedResource && relatedResource !== "memory" && relatedResource !== "skills" && relatedResource !== "tools"
+          relatedResource && relatedResource !== "memory" && relatedResource !== "skills" && relatedResource !== "tools" && relatedResource !== "commands"
             ? relatedTitleMap[relatedResource]
             : ""
         }
@@ -273,7 +337,7 @@ export function WorkspaceCloneOverlayStack({
         <div className="workspace-clone__dialog-body">
           <div className="workspace-clone__dialog-copy">
             <strong>Related Resource</strong>
-            <p>这里统一承接 model、commands、channel、schedule 的界面占位面板。</p>
+            <p>这里统一承接 model、channel、schedule 的界面占位面板。</p>
           </div>
 
           {relatedResource === "model" && (
@@ -288,7 +352,7 @@ export function WorkspaceCloneOverlayStack({
             </div>
           )}
 
-          {(relatedResource === "commands" || relatedResource === "channel" || relatedResource === "schedule") && (
+          {(relatedResource === "channel" || relatedResource === "schedule") && (
             <div className="workspace-clone__resource-list">
               {(relatedItemsMap[relatedResource] || []).map((item) => (
                 <div key={item.id} className="workspace-clone__resource-row">
@@ -319,7 +383,6 @@ export function WorkspaceCloneOverlayStack({
 
         <ModalFooter>
           <button className="btn-secondary" type="button" onClick={onCloseRelatedResource}>关闭</button>
-          <button className="btn-primary" type="button">刷新占位</button>
         </ModalFooter>
       </Modal>
     </>

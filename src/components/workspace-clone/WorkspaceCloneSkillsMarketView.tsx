@@ -199,7 +199,7 @@ export function WorkspaceCloneSkillsMarketView({
 
     pushFeedback({
       tone: "error",
-      title: "鎶€鑳藉競鍦?",
+      title: "技能市场",
       message,
       dedupeKey: "workspace-skills-market-error",
       persistent: false,
@@ -215,7 +215,7 @@ export function WorkspaceCloneSkillsMarketView({
 
     pushFeedback({
       tone: "error",
-      title: "鎶€鑳藉畨瑁?",
+      title: "技能安装",
       message,
       dedupeKey: "workspace-skills-market-install-error",
       persistent: false,

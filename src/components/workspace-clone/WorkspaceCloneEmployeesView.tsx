@@ -109,7 +109,7 @@ export function WorkspaceCloneEmployeesView() {
 
     pushFeedback({
       tone: "error",
-      title: "鏁板瓧鍛樺伐",
+      title: "数字员工",
       message,
       dedupeKey: "workspace-employees-error",
       persistent: false,

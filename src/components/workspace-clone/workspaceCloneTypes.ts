@@ -10,6 +10,7 @@ export type WorkspaceSuggestionMode = "slash" | "mention" | null;
 export type ChannelBindingView = "wechat" | "feishu" | "manual" | "placeholder";
 export type WorkspaceModelProviderApi = "openai-completions" | "anthropic-messages";
 export type WorkspaceSkillCategory = "builtIn" | "installed";
+export type WorkspaceSlashCommandSource = "builtin" | "custom";
 export type WorkspaceToolCategory =
   | "all"
   | "fs"
@@ -138,6 +139,27 @@ export interface WorkspaceResourceItem {
   title: string;
   subtitle: string;
   tag?: string;
+}
+
+export interface WorkspaceSlashCommandRecord {
+  id: string;
+  command: string;
+  name: string;
+  description: string;
+  instruction: string;
+}
+
+export interface WorkspaceSlashCommandDefinition extends WorkspaceSlashCommandRecord {
+  source: WorkspaceSlashCommandSource;
+  readonly: boolean;
+}
+
+export type WorkspaceActiveSlashCommand = Omit<WorkspaceSlashCommandDefinition, "readonly"> | null;
+
+export interface WorkspaceSlashCommandDraftInput {
+  name: string;
+  description: string;
+  instruction: string;
 }
 
 export interface WorkspaceSkillOption {
@@ -304,6 +326,23 @@ export interface WorkspaceGatewaySessionsListResult {
     contextTokens: number | null;
   };
   sessions: WorkspaceGatewaySessionRow[];
+}
+
+export interface WorkspaceChatSessionCacheRow {
+  sessionKey: string;
+  agentId: string;
+  updatedAt: number | null;
+  cachedAt: number;
+  title?: string | null;
+  messagesJson: string;
+}
+
+export interface WorkspaceChatSessionCacheSummary {
+  sessionKey: string;
+  agentId: string;
+  updatedAt: number | null;
+  cachedAt: number;
+  title?: string | null;
 }
 
 export interface WorkspaceGatewaySkillStatusEntry {

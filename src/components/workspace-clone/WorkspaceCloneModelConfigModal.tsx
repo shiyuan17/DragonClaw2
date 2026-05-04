@@ -253,7 +253,7 @@ export function WorkspaceCloneModelConfigModal({
 
     pushFeedback({
       tone: "error",
-      title: "妯″瀷閰嶇疆",
+      title: "模型配置",
       message,
       dedupeKey: "workspace-model-error",
       persistent: false,

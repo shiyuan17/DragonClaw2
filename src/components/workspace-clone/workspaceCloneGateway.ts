@@ -306,7 +306,7 @@ export class WorkspaceGatewayClient {
 }
 
 export function buildGatewayUrl(port: number) {
-  return `ws://localhost:${port}`;
+  return `ws://127.0.0.1:${port}`;
 }
 
 export function createAgentSessionKey(agentId: string) {

@@ -2,7 +2,6 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { WORKSPACE_HOME_SUGGESTIONS } from "./workspaceCloneData";
 import type {
   WorkspaceEntity,
-  WorkspaceGatewayStatus,
   WorkspaceHistoryFilter,
   WorkspaceHistoryItem,
   WorkspaceLiveStep,
@@ -18,6 +17,11 @@ import type {
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
 import { WorkspaceCloneLiveTimeline } from "./WorkspaceCloneLiveTimeline";
 import { shouldHideWorkspaceMessage, WorkspaceCloneMessagePreview } from "./WorkspaceCloneMessagePreview";
+import {
+  WorkspaceCloneServiceStartupPanel,
+  type WorkspaceServiceStartupLogLine,
+  type WorkspaceServiceStartupPhase,
+} from "./WorkspaceCloneServiceStartupPanel";
 
 const MESSAGE_BOTTOM_THRESHOLD_PX = 72;
 const MESSAGE_RENDER_LIMIT = 100;
@@ -55,7 +59,6 @@ interface WorkspaceCloneChatViewProps {
   chatDisabledReason?: "channel-unbound" | "unsupported";
   messages: WorkspaceMessage[];
   liveSteps: WorkspaceLiveStep[];
-  connectionStatus: WorkspaceGatewayStatus;
   connectionError: string | null;
   historyLoading: boolean;
   isGenerating: boolean;
@@ -73,6 +76,13 @@ interface WorkspaceCloneChatViewProps {
   currentModelName: string;
   currentProviderName: string;
   running: boolean;
+  serviceStartup: {
+    phase: WorkspaceServiceStartupPhase | "ready";
+    message: string;
+    logs: WorkspaceServiceStartupLogLine[];
+    error: string | null;
+    showPanel: boolean;
+  };
   showHomeSuggestions?: boolean;
   onCloseUtilityPanel: () => void;
   onSelectSessionSection: (section: WorkspaceSessionSectionKey) => void;
@@ -90,7 +100,6 @@ export function WorkspaceCloneChatView({
   chatDisabledReason,
   messages,
   liveSteps,
-  connectionStatus,
   connectionError,
   historyLoading,
   isGenerating,
@@ -108,6 +117,7 @@ export function WorkspaceCloneChatView({
   currentModelName,
   currentProviderName,
   running,
+  serviceStartup,
   showHomeSuggestions = true,
   onCloseUtilityPanel,
   onSelectSessionSection,
@@ -125,8 +135,8 @@ export function WorkspaceCloneChatView({
   const [historyFilter, setHistoryFilter] = useState<WorkspaceHistoryFilter>("all");
 
   const hasMessages = messages.length > 0 || liveSteps.length > 0;
-  const showDisconnectedState = !chatEnabled || !running || connectionStatus === "error";
-  const showConnectingState = running && connectionStatus === "connecting" && !hasMessages;
+  const showDisconnectedState = !chatEnabled;
+  const showStartupPanel = chatEnabled && serviceStartup.showPanel && !hasMessages;
   const showMissingTokenState = Boolean(connectionError?.includes("本地网关 token"));
   const showUnboundChannelState = !chatEnabled && chatDisabledReason === "channel-unbound";
   const visibleMessages = useMemo(
@@ -215,7 +225,16 @@ export function WorkspaceCloneChatView({
     <div className={`workspace-clone__chat-layout ${utilityPanel ? "drawer-open" : ""}`}>
       <div className="workspace-clone__chat-main">
         <div className="workspace-clone__canvas">
-          {showDisconnectedState ? (
+          {showStartupPanel && serviceStartup.phase !== "ready" ? (
+            <WorkspaceCloneServiceStartupPanel
+              phase={serviceStartup.phase}
+              message={serviceStartup.message}
+              logs={serviceStartup.logs}
+              error={serviceStartup.error}
+              onRetry={onStart}
+              onOpenLogs={onOpenLogs}
+            />
+          ) : showDisconnectedState ? (
             <section className="workspace-clone__empty-state">
               <div className="workspace-clone__empty-state-icon">
                 <WorkspaceCloneIcon name={running ? "terminal" : "panel"} size={18} strokeWidth={1.9} />
@@ -252,16 +271,6 @@ export function WorkspaceCloneChatView({
                     查看日志
                   </button>
                 )}
-              </div>
-            </section>
-          ) : showConnectingState ? (
-            <section className="workspace-clone__empty-state">
-              <div className="workspace-clone__empty-state-icon">
-                <WorkspaceCloneIcon name="sparkles" size={18} strokeWidth={1.9} />
-              </div>
-              <div className="workspace-clone__empty-state-copy">
-                <strong>正在连接首页聊天</strong>
-                <p>OpenClaw 网关就绪后，这里会自动拉取真实 Agent 列表和主会话历史。</p>
               </div>
             </section>
           ) : hasMessages ? (
