@@ -6,6 +6,9 @@
 ## Phase 5.38: 一次引导与常驻服务快启
 - [ ] 引入独立 Launcher 状态文件，区分首次引导与后续快启路径，并让 DragonClaw 退出后继续复用常驻 OpenClaw 服务。
 
+## Phase 5.37: Workspace 邮箱绑定功能迁移
+- [ ] 将 `workspace-clone` composer 邮箱绑定入口、React modal、`imap-smtp-email` 兼容配置读写与独立 Tauri command 迁移到项目中，并限定只影响聊天工作区。
+
 ## Phase 5.37: workspace-clone Slash Command 迁移
 - [ ] 在 `workspace-clone` 中迁移全局共享 Slash Command，支持系统默认/用户自定义两类模型，首版完整落地自定义命令的管理、`/` 联想、激活态展示与发送生效链路
 
