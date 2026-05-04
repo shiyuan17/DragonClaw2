@@ -125,7 +125,7 @@ export function WorkspaceCloneEmployeesView() {
 
     pushFeedback({
       tone: "error",
-      title: "鍒嗚韩瀹氫箟璇︽儏",
+      title: "分身定义详情",
       message,
       dedupeKey: "workspace-employees-definition-error",
       persistent: false,

@@ -195,7 +195,7 @@ function renderEntityButton(
       </span>
       <span className="workspace-clone__entity-text">
         <strong>{entity.name}</strong>
-        {entity.subtitle ? <small>{entity.subtitle}</small> : null}
+        {entity.subtitle ? <small title={entity.subtitle}>{entity.subtitle}</small> : null}
       </span>
       <i className={`workspace-clone__entity-status is-${entity.status}`} />
     </button>

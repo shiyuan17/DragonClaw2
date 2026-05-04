@@ -1078,6 +1078,12 @@
   line-height: 1.4;
 }
 
+.workspace-clone__entity-list.is-agents .workspace-clone__entity-text small {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .workspace-clone__drawer-card small,
 .workspace-clone__drawer-head small,
 .workspace-clone__composer-inline-card small,

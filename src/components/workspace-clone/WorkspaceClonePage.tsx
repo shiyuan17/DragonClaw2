@@ -513,7 +513,7 @@ export function WorkspaceClonePage({
     commandError: commandsAdmin.commandError,
     channelNotice: workspaceChannels.modalNotice,
     channelError: workspaceChannels.modalError,
-    channelErrorTitle: "棰戦亾缁戝畾",
+    channelErrorTitle: "频道绑定",
     activeChannelId: workspaceChannels.modal.channelId,
     weixinQrStarting: workspaceChannels.weixinQrStarting,
     weixinQrPolling: workspaceChannels.weixinQrPolling,
