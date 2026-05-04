@@ -14,9 +14,9 @@ import type {
   WorkspaceEntityType,
   WorkspaceMenuKey,
 } from "../../types";
-import { useFeedback } from "../../hooks/useFeedback";
 import { useWorkspaceGatewayChat } from "../../hooks/useWorkspaceGatewayChat";
 import { useWorkspaceCommandsAdmin } from "../../hooks/workspace-clone/useWorkspaceCommandsAdmin";
+import { useWorkspaceCloneFeedback } from "../../hooks/workspace-clone/useWorkspaceCloneFeedback";
 import { useWorkspaceMemoryAdmin } from "../../hooks/workspace-clone/useWorkspaceMemoryAdmin";
 import { useWorkspaceSkillsAdmin } from "../../hooks/workspace-clone/useWorkspaceSkillsAdmin";
 import { formatUptime } from "../../utils/log-humanizer";
@@ -37,6 +37,7 @@ import { WorkspaceCloneComposer } from "./WorkspaceCloneComposer";
 import { WorkspaceCloneDirectory } from "./WorkspaceCloneDirectory";
 import { WorkspaceCloneEmailBindingModal } from "./WorkspaceCloneEmailBindingModal";
 import { WorkspaceCloneHeader } from "./WorkspaceCloneHeader";
+import { WorkspaceCloneCompactView } from "./WorkspaceCloneCompactView";
 import { WorkspaceCloneScenePresetSwitcher } from "./WorkspaceCloneScenePresetSwitcher";
 import { WorkspaceCloneSidebar } from "./WorkspaceCloneSidebar";
 import {
@@ -101,29 +102,6 @@ export interface WorkspaceClonePageProps {
   }) => Promise<string>;
   handleDeleteSavedProviderConfig: (providerKey: string) => Promise<string>;
 }
-
-const COMPACT_COPY: Record<Exclude<WorkspaceMenuKey, "chat" | "employees">, { title: string; description: string; bullets: string[] }> = {
-  schedule: {
-    title: "定时任务工作区骨架",
-    description: "这里先保留定时任务栏目结构与信息节奏，后续再逐步迁移真实调度能力。",
-    bullets: ["后续迁移任务列表、启停状态和调度设置。", "当前仅保留标题、说明卡片和状态占位。"],
-  },
-  knowledge: {
-    title: "知识库管理工作区骨架",
-    description: "先保留知识类工作区的分区结构，为后续资料树、上传区和知识面板预留接口位置。",
-    bullets: ["占位卡片模拟知识源、文档集和索引状态。", "本次不接入任何真实文档或后端命令。"],
-  },
-  skills: {
-    title: "技能市场工作区骨架",
-    description: "保留技能市场的栏目名称、区块层级和卡片节奏，但暂不接入安装、搜索或管理逻辑。",
-    bullets: ["为后续迁移技能列表、筛选和安装入口预留空间。", "当前仅展示静态推荐卡片和说明文案。"],
-  },
-  tasks: {
-    title: "产品落地工作区骨架",
-    description: "保留产品落地栏目的主体结构，为后续承接项目编排、分阶段推进和结果沉淀预留骨架。",
-    bullets: ["当前不提供真实任务流。", "后续按 DragonClaw 的能力逐项接入。"],
-  },
-};
 
 function resolveWorkspaceModelName(currentConfig: CurrentConfig | null, fallbackModelName: string) {
   const primaryModel = currentConfig?.model || fallbackModelName;
@@ -308,7 +286,6 @@ export function WorkspaceClonePage({
   handleUpsertSavedProviderConfig,
   handleDeleteSavedProviderConfig,
 }: WorkspaceClonePageProps) {
-  const { pushFeedback } = useFeedback();
   const [activeMenu, setActiveMenu] = useState<WorkspaceMenuKey>("chat");
   const [activeType, setActiveType] = useState<WorkspaceEntityType>("agents");
   const [selectedEntityId, setSelectedEntityId] = useState("main");
@@ -331,7 +308,6 @@ export function WorkspaceClonePage({
     () => loadWorkspaceScenePresetOpenState(),
   );
   const homepageChat = useWorkspaceGatewayChat({ running, servicePort, gatewayToken });
-  const currentAgentIdRef = useRef<string | null>(null);
   const savedProvidersLoadSeqRef = useRef(0);
   const modelConfigOpenRef = useRef(false);
   const showDirectory = activeMenu === "chat";
@@ -523,6 +499,28 @@ export function WorkspaceClonePage({
   });
   const toolsAdmin = useWorkspaceToolsAdmin({ agentId: currentMemoryAgentId });
 
+  useWorkspaceCloneFeedback({
+    memoryNotice: memoryAdmin.memoryNotice,
+    memoryError: memoryAdmin.memoryError,
+    memoryErrorTitle: "记忆",
+    skillNotice: skillsAdmin.skillNotice,
+    skillError: skillsAdmin.skillError,
+    skillErrorTitle: "技能库",
+    toolNotice: toolsAdmin.toolNotice,
+    toolError: toolsAdmin.toolError,
+    toolErrorTitle: "工具权限",
+    commandNotice: commandsAdmin.commandNotice,
+    commandError: commandsAdmin.commandError,
+    channelNotice: workspaceChannels.modalNotice,
+    channelError: workspaceChannels.modalError,
+    channelErrorTitle: "棰戦亾缁戝畾",
+    activeChannelId: workspaceChannels.modal.channelId,
+    weixinQrStarting: workspaceChannels.weixinQrStarting,
+    weixinQrPolling: workspaceChannels.weixinQrPolling,
+    weixinQrUrl: workspaceChannels.weixinQrUrl,
+    hasActiveWeixinQrSession: workspaceChannels.hasActiveWeixinQrSession,
+  });
+
   const showScenePresetToggle = activeMenu === "chat" && activeType === "agents" && Boolean(selectedEntity?.id);
   const scenePresetStateKey = useMemo(
     () => buildWorkspaceScenePresetStateKey({
@@ -540,10 +538,6 @@ export function WorkspaceClonePage({
     ],
   );
   const scenePresetsOpen = resolveWorkspaceScenePresetOpenState(scenePresetOpenStateByKey, scenePresetStateKey);
-
-  useEffect(() => {
-    currentAgentIdRef.current = currentMemoryAgentId;
-  }, [currentMemoryAgentId]);
 
   useEffect(() => {
     if (activeMenu !== "chat") {
@@ -585,180 +579,6 @@ export function WorkspaceClonePage({
   const handleSelectScenePreset = useCallback((content: string) => {
     setComposerDraft(content);
   }, []);
-
-
-  useEffect(() => {
-    const message = memoryAdmin.memoryNotice.trim();
-    if (!message) {
-      return;
-    }
-
-    pushFeedback({
-      tone: "success",
-      message,
-      dedupeKey: "workspace-memory-notice",
-      persistent: false,
-    });
-  }, [memoryAdmin.memoryNotice, pushFeedback]);
-
-  useEffect(() => {
-    const message = memoryAdmin.memoryError.trim();
-    if (!message) {
-      return;
-    }
-
-    pushFeedback({
-      tone: "error",
-      title: "记忆",
-      message,
-      dedupeKey: "workspace-memory-error",
-      persistent: false,
-      autoCloseMs: 3600,
-    });
-  }, [memoryAdmin.memoryError, pushFeedback]);
-
-  useEffect(() => {
-    const message = skillsAdmin.skillNotice.trim();
-    if (!message) {
-      return;
-    }
-
-    pushFeedback({
-      tone: "success",
-      message,
-      dedupeKey: "workspace-skills-notice",
-      persistent: false,
-    });
-  }, [pushFeedback, skillsAdmin.skillNotice]);
-
-  useEffect(() => {
-    const message = skillsAdmin.skillError.trim();
-    if (!message) {
-      return;
-    }
-
-    pushFeedback({
-      tone: "error",
-      title: "技能库",
-      message,
-      dedupeKey: "workspace-skills-error",
-      persistent: false,
-      autoCloseMs: 3600,
-    });
-  }, [pushFeedback, skillsAdmin.skillError]);
-
-  useEffect(() => {
-    const message = toolsAdmin.toolNotice.trim();
-    if (!message) {
-      return;
-    }
-
-    pushFeedback({
-      tone: "success",
-      message,
-      dedupeKey: "workspace-tools-notice",
-      persistent: false,
-    });
-  }, [pushFeedback, toolsAdmin.toolNotice]);
-
-  useEffect(() => {
-    const message = toolsAdmin.toolError.trim();
-    if (!message) {
-      return;
-    }
-
-    pushFeedback({
-      tone: "error",
-      title: "工具权限",
-      message,
-      dedupeKey: "workspace-tools-error",
-      persistent: false,
-      autoCloseMs: 3600,
-    });
-  }, [pushFeedback, toolsAdmin.toolError]);
-
-  useEffect(() => {
-    const message = commandsAdmin.commandNotice.trim();
-    if (!message) {
-      return;
-    }
-
-    pushFeedback({
-      tone: "success",
-      message,
-      dedupeKey: "workspace-commands-notice",
-      persistent: false,
-    });
-  }, [commandsAdmin.commandNotice, pushFeedback]);
-
-  useEffect(() => {
-    const message = commandsAdmin.commandError.trim();
-    if (!message) {
-      return;
-    }
-
-    pushFeedback({
-      tone: "error",
-      title: "Slash Commands",
-      message,
-      dedupeKey: "workspace-commands-error",
-      persistent: false,
-      autoCloseMs: 3600,
-    });
-  }, [commandsAdmin.commandError, pushFeedback]);
-
-  useEffect(() => {
-    const message = workspaceChannels.modalNotice.trim();
-    if (!message) {
-      return;
-    }
-
-    const isWeixinProcessNotice = workspaceChannels.modal.channelId === "weixin" && (
-      workspaceChannels.weixinQrStarting
-      || workspaceChannels.weixinQrPolling
-      || workspaceChannels.weixinQrUrl.trim().length > 0
-      || workspaceChannels.hasActiveWeixinQrSession
-    );
-    if (isWeixinProcessNotice) {
-      return;
-    }
-
-    pushFeedback({
-      tone: "success",
-      message,
-      dedupeKey: "workspace-channel-notice",
-      persistent: false,
-    });
-  }, [
-    pushFeedback,
-    workspaceChannels.hasActiveWeixinQrSession,
-    workspaceChannels.modal.channelId,
-    workspaceChannels.modalNotice,
-    workspaceChannels.weixinQrPolling,
-    workspaceChannels.weixinQrStarting,
-    workspaceChannels.weixinQrUrl,
-  ]);
-
-  useEffect(() => {
-    const message = workspaceChannels.modalError.trim();
-    if (!message) {
-      return;
-    }
-
-    pushFeedback({
-      tone: "error",
-      title: "棰戦亾缁戝畾",
-      message,
-      dedupeKey: "workspace-channel-error",
-      persistent: false,
-      autoCloseMs: 3600,
-    });
-  }, [pushFeedback, workspaceChannels.modalError]);
-
-
-
-
-
 
   const openCommandsModal = useCallback(() => {
     setActiveSessionSection("commands");
@@ -886,46 +706,6 @@ export function WorkspaceClonePage({
     }
     setActiveSessionSection(resource);
     setRelatedResource(resource);
-  };
-
-  const renderCompactWorkspace = () => {
-    const section = COMPACT_COPY[activeMenu as Exclude<WorkspaceMenuKey, "chat" | "employees">];
-    const menuLabel = WORKSPACE_MENU_ITEMS.find((item) => item.key === activeMenu)?.label || "";
-
-    return (
-      <div className="workspace-clone__compact-panel">
-        <div className="workspace-clone__compact-hero">
-          <div className="workspace-clone__compact-badge">{menuLabel}</div>
-          <h1>{section.title}</h1>
-          <p>{section.description}</p>
-        </div>
-        <div className="workspace-clone__compact-grid">
-          {section.bullets.map((bullet) => (
-            <div key={bullet} className="workspace-clone__compact-card">
-              <div className="workspace-clone__compact-card-icon">{menuLabel.slice(0, 1)}</div>
-              <div>
-                <strong>{menuLabel}</strong>
-                <small>{bullet}</small>
-              </div>
-            </div>
-          ))}
-          <div className="workspace-clone__compact-card">
-            <div className="workspace-clone__compact-card-icon">模</div>
-            <div>
-              <strong>当前模型</strong>
-              <small>{workspaceModelName}</small>
-            </div>
-          </div>
-          <div className="workspace-clone__compact-card">
-            <div className="workspace-clone__compact-card-icon">运</div>
-            <div>
-              <strong>运行状态</strong>
-              <small>{running ? `运行中 · ${uptimeLabel}` : "服务尚未启动，当前仅保留骨架页面。"}</small>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
   };
 
   const shouldRenderOverlayStack = Boolean(
@@ -1204,7 +984,12 @@ export function WorkspaceClonePage({
               />
             </Suspense>
           ) : (
-            renderCompactWorkspace()
+            <WorkspaceCloneCompactView
+              activeMenu={activeMenu}
+              workspaceModelName={workspaceModelName}
+              running={running}
+              uptimeLabel={uptimeLabel}
+            />
           )}
         </section>
 
