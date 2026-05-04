@@ -7,6 +7,8 @@ mod agents;
 mod channels;
 mod chat_cache;
 mod config;
+mod config_store;
+mod control_ui;
 mod diagnostics;
 mod download;
 mod email_binding;
@@ -91,8 +93,10 @@ pub fn run() {
                                 .and_then(|current| current.gateway_token)
                                 .filter(|value| !value.trim().is_empty())
                                 .unwrap_or_else(|| config::DEFAULT_GATEWAY_TOKEN.to_string());
-                            let _ =
-                                open::that(format!("http://localhost:{}?token={}", port, token));
+                            let app_handle = app.clone();
+                            tauri::async_runtime::spawn(async move {
+                                let _ = control_ui::open_control_ui(app_handle, port, token).await;
+                            });
                         }
                         "restart" => {
                             // Show the window first so user sees the restart progress
@@ -160,6 +164,7 @@ pub fn run() {
             // Service lifecycle
             service::check_port_available,
             service::is_service_running,
+            service::get_service_lifecycle_snapshot,
             service::start_service,
             service::start_service_silent,
             service::stop_service,
@@ -175,16 +180,16 @@ pub fn run() {
             config::reset_config,
             email_binding::load_imap_smtp_email_binding,
             email_binding::save_imap_smtp_email_binding,
-            channels::load_openclaw_channel_accounts_snapshot,
-            channels::load_openclaw_channel_form_values,
-            channels::save_openclaw_channel_config,
-            channels::save_openclaw_channel_binding,
-            channels::remove_openclaw_channel_config,
-            channels::start_openclaw_channel_qr_binding,
-            channels::poll_openclaw_channel_qr_binding,
-            channels::clear_openclaw_channel_qr_binding_session,
-            channels::request_feishu_openclaw_qr,
-            channels::poll_feishu_openclaw_qr_result,
+            channels::channel_config::load_openclaw_channel_accounts_snapshot,
+            channels::channel_config::load_openclaw_channel_form_values,
+            channels::channel_config::save_openclaw_channel_config,
+            channels::channel_config::save_openclaw_channel_binding,
+            channels::channel_config::remove_openclaw_channel_config,
+            channels::qr_session::start_openclaw_channel_qr_binding,
+            channels::qr_session::poll_openclaw_channel_qr_binding,
+            channels::qr_session::clear_openclaw_channel_qr_binding_session,
+            channels::feishu::request_feishu_openclaw_qr,
+            channels::feishu::poll_feishu_openclaw_qr_result,
             chat_cache::load_workspace_chat_session_cache,
             chat_cache::upsert_workspace_chat_session_cache,
             chat_cache::list_workspace_chat_session_cache,

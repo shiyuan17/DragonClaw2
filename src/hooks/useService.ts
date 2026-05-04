@@ -13,7 +13,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-import type { AppPhase } from "../types";
+import type { AppPhase, ServiceLifecycleSnapshot } from "../types";
 
 interface UseServiceOptions {
     addLog: (level: string, message: string) => void;
@@ -22,10 +22,11 @@ interface UseServiceOptions {
     setShowReinstallModal: (show: boolean) => void;
     running: boolean;
     setRunning: (r: boolean) => void;
-    // From useSetup — needed for reinstall to reset phase
+    // From useSetup - needed for reinstall to reset phase
     setPhase: (phase: AppPhase) => void;
     setProgress: (p: number) => void;
     setProgressMsg: (m: string) => void;
+    serviceLifecycle: ServiceLifecycleSnapshot | null;
 }
 
 interface ServiceHeartbeatPayload {
@@ -33,48 +34,20 @@ interface ServiceHeartbeatPayload {
     port?: number;
 }
 
-interface ServiceLogPayload {
-    level: string;
-    message: string;
-}
-
-interface ServiceLogBatchPayload {
-    logs: ServiceLogPayload[];
-}
-
-function isServiceReadyLogMessage(message?: string) {
-    const msg = message?.toLowerCase() || "";
-    return (
-        msg.includes("listening") ||
-        msg.includes("started on") ||
-        msg.includes("ready on") ||
-        msg.includes("server is running") ||
-        msg.includes("server started") ||
-        msg.includes("正在打开浏览器")
-    );
-}
-
 export function useService({
     addLog, checkApiKey, setRepairToast, setShowReinstallModal,
     running, setRunning,
     setPhase, setProgress, setProgressMsg,
+    serviceLifecycle,
 }: UseServiceOptions) {
     const [loading, setLoading] = useState(false);
     const [uptime, setUptime] = useState(0);
     const [servicePort, setServicePort] = useState(18789);
     const [reinstalling, setReinstalling] = useState(false);
     const [repairing, setRepairing] = useState(false);
-    const [startingUp, setStartingUp] = useState(false);
     const uptimeRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const runningRef = useRef(running);
-    const reportedUnexpectedExitRef = useRef(false);
-
-    useEffect(() => {
-        runningRef.current = running;
-        if (running) {
-            reportedUnexpectedExitRef.current = false;
-        }
-    }, [running]);
+    const startingUp = serviceLifecycle?.status === "service-starting";
+    const setStartingUp = useCallback((_next: boolean) => {}, []);
 
     // Uptime counter
     useEffect(() => {
@@ -88,27 +61,31 @@ export function useService({
         return () => { if (uptimeRef.current) clearInterval(uptimeRef.current); };
     }, [running]);
 
-    // Runtime event listeners: heartbeat + port
+    useEffect(() => {
+        if (typeof serviceLifecycle?.port === "number" && serviceLifecycle.port > 0) {
+            setServicePort(serviceLifecycle.port);
+        }
+    }, [serviceLifecycle]);
+
+    useEffect(() => {
+        if (!serviceLifecycle) {
+            return;
+        }
+
+        if (serviceLifecycle.status === "ready" || serviceLifecycle.status === "service-starting") {
+            setRunning(true);
+            return;
+        }
+
+        if (serviceLifecycle.status === "failed") {
+            setRunning(false);
+        }
+    }, [serviceLifecycle, setRunning]);
+
     useEffect(() => {
         const unlistenHeartbeat = listen<ServiceHeartbeatPayload>("service-heartbeat", (event) => {
             if (typeof event.payload.port === "number") {
                 setServicePort(event.payload.port);
-            }
-
-            if (event.payload.running) {
-                reportedUnexpectedExitRef.current = false;
-                if (!runningRef.current) {
-                    runningRef.current = true;
-                    setRunning(true);
-                }
-                return;
-            }
-
-            if (runningRef.current && !reportedUnexpectedExitRef.current) {
-                reportedUnexpectedExitRef.current = true;
-                runningRef.current = false;
-                setRunning(false);
-                addLog("error", "OpenClaw 服务进程已意外退出");
             }
         });
 
@@ -117,48 +94,21 @@ export function useService({
             (event) => setServicePort(event.payload.port)
         );
 
-        // Listen for service-ready signal to dismiss startup overlay
-        const unlistenLog = listen<{ level: string; message: string }>(
-            "service-log",
-            (event) => {
-                if (isServiceReadyLogMessage(event.payload.message)) {
-                    setStartingUp(false);
-                }
-            }
-        );
-
-        const unlistenLogBatch = listen<ServiceLogBatchPayload>(
-            "service-log-batch",
-            (event) => {
-                const logs = Array.isArray(event.payload.logs) ? event.payload.logs : [];
-                if (logs.some((log) => isServiceReadyLogMessage(log.message))) {
-                    setStartingUp(false);
-                }
-            }
-        );
-
         return () => {
             unlistenHeartbeat.then((fn) => fn());
             unlistenPort.then((fn) => fn());
-            unlistenLog.then((fn) => fn());
-            unlistenLogBatch.then((fn) => fn());
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const handleStart = useCallback(async () => {
         setLoading(true);
-        setStartingUp(true);
         try {
             await invoke("start_service_silent");
-            runningRef.current = true;
-            setRunning(true);
             await checkApiKey().catch((error) => {
                 addLog("warn", `刷新网关配置失败: ${error}`);
             });
         } catch (err) {
             addLog("error", `启动失败: ${err}`);
-            setStartingUp(false);
         } finally {
             setLoading(false);
         }
@@ -168,15 +118,13 @@ export function useService({
         setLoading(true);
         try {
             await invoke("stop_service");
-            runningRef.current = false;
-            reportedUnexpectedExitRef.current = false;
             setRunning(false);
         } catch (err) {
             addLog("error", `停止失败: ${err}`);
         } finally {
             setLoading(false);
         }
-    }, [addLog]);
+    }, [addLog, setRunning]);
 
     const confirmReinstall = useCallback(async () => {
         setShowReinstallModal(false);
@@ -187,7 +135,7 @@ export function useService({
         try {
             await invoke("reinstall_environment");
             setPhase("ready");
-            addLog("success", "环境重新安装完成！");
+            addLog("success", "环境重新安装完成");
             await checkApiKey();
         } catch (err) {
             addLog("error", `重新安装失败: ${err}`);
@@ -200,19 +148,16 @@ export function useService({
     const handleRepairConnection = useCallback(async () => {
         setRepairing(true);
         setRepairToast(false);
-        addLog("info", "🔧 开始一键修复连接...");
+        addLog("info", "开始一键修复连接...");
         try {
             if (running) {
                 addLog("info", "正在停止服务...");
                 await invoke("stop_service");
-                runningRef.current = false;
                 setRunning(false);
                 await new Promise(r => setTimeout(r, 1500));
             }
             addLog("info", "正在重新启动服务...");
             await invoke("start_service_silent");
-            runningRef.current = true;
-            setRunning(true);
             await checkApiKey().catch((error) => {
                 addLog("warn", `刷新网关配置失败: ${error}`);
             });
@@ -222,7 +167,7 @@ export function useService({
         } finally {
             setRepairing(false);
         }
-    }, [addLog, checkApiKey, running, servicePort, setRepairToast]);
+    }, [addLog, checkApiKey, running, setRepairToast, setRunning]);
 
     return {
         loading, startingUp, setStartingUp,

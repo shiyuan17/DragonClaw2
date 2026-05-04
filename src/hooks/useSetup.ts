@@ -13,7 +13,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { AppPhase, CurrentConfig, LauncherState } from "../types";
+import type { AppPhase, CurrentConfig, LauncherState, ServiceLifecycleSnapshot } from "../types";
 import {
   getOnboardingSkillInstallDiagnostics,
   markOnboardingSkillInstallRequired,
@@ -25,45 +25,20 @@ const LAUNCH_POLL_INTERVAL_MS = 2000;
 const LAUNCH_POLL_TIMEOUT_MS = 60000;
 const ONBOARDING_BACKGROUND_DELAY_MS = 10000;
 
-type IdleWindow = Window & {
-  requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number;
-  cancelIdleCallback?: (handle: number) => void;
-};
-
-interface ServiceLogPayload {
-  level: string;
-  message: string;
-}
-
-interface ServiceLogBatchPayload {
-  logs: ServiceLogPayload[];
-}
-
-const DEFAULT_LAUNCHER_STATE: LauncherState = {
-  setupCompleted: false,
-  lastLaunchAt: null,
-  lastKnownPort: null,
-};
-
-function isServiceReadyLogMessage(message?: string) {
-  const msg = message?.toLowerCase() || "";
-  return (
-    msg.includes("listening")
-    || msg.includes("started on")
-    || msg.includes("ready on")
-    || msg.includes("server is running")
-    || msg.includes("server started")
-  );
-}
+type IdleWindow = Window & { requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number; cancelIdleCallback?: (handle: number) => void; };
+interface ServiceLogPayload { level: string; message: string; }
+interface ServiceLogBatchPayload { logs: ServiceLogPayload[]; }
+const DEFAULT_LAUNCHER_STATE: LauncherState = { setupCompleted: false, lastLaunchAt: null, lastKnownPort: null };
 
 interface UseSetupOptions {
   addLog: (level: string, message: string) => void;
   addLogs: (logs: ServiceLogPayload[]) => void;
   checkApiKey: () => Promise<void>;
   setRunning: (r: boolean) => void;
+  serviceLifecycle: ServiceLifecycleSnapshot | null;
 }
 
-export function useSetup({ addLog, addLogs, checkApiKey, setRunning }: UseSetupOptions) {
+export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLifecycle }: UseSetupOptions) {
   const [phase, setPhase] = useState<AppPhase>("checking");
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -84,13 +59,34 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning }: UseSetupO
   const finalizeStartupRef = useRef<(force?: boolean) => Promise<void>>(async () => {});
   const checkEnvironmentRef = useRef<() => Promise<void>>(async () => {});
 
-  useEffect(() => {
-    phaseRef.current = phase;
-  }, [phase]);
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+  useEffect(() => { servicePortRef.current = servicePort; }, [servicePort]);
 
   useEffect(() => {
-    servicePortRef.current = servicePort;
-  }, [servicePort]);
+    if (typeof serviceLifecycle?.port === "number" && serviceLifecycle.port > 0) {
+      setServicePort(serviceLifecycle.port);
+    }
+
+    if (serviceLifecycle?.status === "ready" && !startupFinalizingRef.current) {
+      void finalizeStartupRef.current(true);
+    }
+
+    if (serviceLifecycle?.status === "failed" && phaseRef.current === "launching") {
+      launchStartedRef.current = false;
+      if (launchFallbackRef.current) {
+        clearTimeout(launchFallbackRef.current);
+        launchFallbackRef.current = null;
+      }
+      const errorMessage = serviceLifecycle.lastError
+        || serviceLifecycle.detail
+        || "OpenClaw 服务启动失败";
+      setSetupError(errorMessage);
+      setProgressMsg("启动失败，请重试");
+      setLoading(false);
+      setRunning(false);
+      addLog("error", errorMessage);
+    }
+  }, [addLog, serviceLifecycle, setRunning]);
 
   const setSetupPhase = useCallback((nextPhase: AppPhase) => {
     phaseRef.current = nextPhase;
@@ -274,9 +270,18 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning }: UseSetupO
         if (!launchPollInFlightRef.current) {
           launchPollInFlightRef.current = true;
           try {
-            const alive = await invoke<boolean>("is_service_running");
-            if (alive) {
+            const snapshot = await invoke<ServiceLifecycleSnapshot | null>("get_service_lifecycle_snapshot");
+            if (snapshot?.status === "ready") {
               await finalizeStartup(true);
+              return;
+            }
+            if (snapshot?.status === "failed") {
+              launchStartedRef.current = false;
+              const errorMessage = snapshot.lastError || snapshot.detail || "OpenClaw 服务启动失败";
+              setSetupError(errorMessage);
+              setProgressMsg("启动失败，请重试");
+              addLog("error", errorMessage);
+              setLoading(false);
               return;
             }
           } catch (pollError) {
@@ -361,7 +366,8 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning }: UseSetupO
       const nodeOk = await invoke<boolean>("check_node_exists");
       const openclawOk = await invoke<boolean>("check_openclaw_exists");
       const modulesOk = await invoke<boolean>("check_node_modules_exists");
-      const serviceRunning = await invoke<boolean>("is_service_running");
+      const lifecycleSnapshot = await invoke<ServiceLifecycleSnapshot | null>("get_service_lifecycle_snapshot");
+      const serviceRunning = lifecycleSnapshot?.status === "ready" || lifecycleSnapshot?.status === "service-starting";
       const environmentReady = nodeOk && openclawOk && modulesOk;
       const configOk = environmentReady
         ? await invoke<boolean>("check_config_exists")
@@ -381,6 +387,9 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning }: UseSetupO
         if (typeof launcherState.lastKnownPort === "number") {
           setServicePort(launcherState.lastKnownPort);
         }
+        if (typeof lifecycleSnapshot?.port === "number" && lifecycleSnapshot.port > 0) {
+          setServicePort(lifecycleSnapshot.port);
+        }
 
         setRunning(serviceRunning);
         setSetupError(null);
@@ -395,7 +404,9 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning }: UseSetupO
             ? "Detected an existing OpenClaw service in the background; reusing it now."
             : "OpenClaw will continue starting in the background while the ready workspace loads.",
         );
-        void launchServiceInBackground();
+        if (!serviceRunning) {
+          void launchServiceInBackground();
+        }
         return;
       }
 
@@ -456,34 +467,15 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning }: UseSetupO
       "service-log",
       (event) => {
         addLog(event.payload.level, event.payload.message);
-        if (
-          phaseRef.current === "launching"
-          && !startupFinalizingRef.current
-          && isServiceReadyLogMessage(event.payload.message)
-        ) {
-          void finalizeStartupRef.current();
-        }
       },
     );
 
     const unlistenLogBatch = listen<ServiceLogBatchPayload>(
       "service-log-batch",
       (event) => {
-        let sawReadySignal = false;
         const logs = Array.isArray(event.payload.logs) ? event.payload.logs : [];
         if (logs.length > 0) {
           addLogs(logs);
-        }
-        for (const log of logs) {
-          sawReadySignal ||= isServiceReadyLogMessage(log.message);
-        }
-
-        if (
-          sawReadySignal
-          && phaseRef.current === "launching"
-          && !startupFinalizingRef.current
-        ) {
-          void finalizeStartupRef.current();
         }
       },
     );

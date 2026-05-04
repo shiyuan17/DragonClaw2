@@ -16,14 +16,14 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
-
 use crate::agency_agents;
 use crate::environment;
 use crate::launcher_state;
 use crate::openclaw_cli;
 use crate::paths;
+
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 
 const DEFAULT_PORT: u16 = 18789;
 const MAX_PORT: u16 = 18899;
@@ -62,12 +62,34 @@ struct ServiceLogEntry {
     message: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+enum ServiceLifecycleStatus {
+    #[serde(rename = "service-starting")]
+    ServiceStarting,
+    #[serde(rename = "ready")]
+    Ready,
+    #[serde(rename = "failed")]
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceLifecycleSnapshot {
+    status: ServiceLifecycleStatus,
+    port: u16,
+    detail: Option<String>,
+    started_at: Option<i64>,
+    last_error: Option<String>,
+}
+
 /// Global state to hold the running OpenClaw child process.
 pub struct ServiceState {
     pub(crate) child: Mutex<Option<Child>>,
     tracked_process: Mutex<Option<TrackedServiceProcess>>,
     pub(crate) port: Mutex<u16>,
     heartbeat_started: AtomicBool,
+    lifecycle: Mutex<Option<ServiceLifecycleSnapshot>>,
+    manual_stop_requested: AtomicBool,
 }
 
 impl Default for ServiceState {
@@ -77,6 +99,8 @@ impl Default for ServiceState {
             tracked_process: Mutex::new(None),
             port: Mutex::new(DEFAULT_PORT),
             heartbeat_started: AtomicBool::new(false),
+            lifecycle: Mutex::new(None),
+            manual_stop_requested: AtomicBool::new(false),
         }
     }
 }
@@ -162,6 +186,35 @@ fn clear_persisted_runtime_state() -> Result<(), String> {
     remove_runtime_state_file_at(&runtime_state_path()?)
 }
 
+fn lifecycle_snapshot(
+    status: ServiceLifecycleStatus,
+    port: u16,
+    detail: Option<String>,
+    started_at: Option<i64>,
+    last_error: Option<String>,
+) -> ServiceLifecycleSnapshot {
+    ServiceLifecycleSnapshot {
+        status,
+        port,
+        detail,
+        started_at,
+        last_error,
+    }
+}
+
+fn set_service_lifecycle(
+    app: &tauri::AppHandle,
+    state: &ServiceState,
+    snapshot: Option<ServiceLifecycleSnapshot>,
+) {
+    *state.lifecycle.lock().unwrap() = snapshot.clone();
+    let _ = app.emit("service-lifecycle", snapshot);
+}
+
+fn clear_service_lifecycle(app: &tauri::AppHandle, state: &ServiceState) {
+    set_service_lifecycle(app, state, None);
+}
+
 fn connect_to_port(port: u16) -> bool {
     TcpStream::connect_timeout(
         &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
@@ -191,7 +244,7 @@ fn summarize_gateway_probe_failure(output: std::process::Output) -> String {
 fn verify_gateway_rpc_ready(port: u16, token: &str) -> Result<(), String> {
     let url = gateway_ws_url(port);
     let mut command = openclaw_cli::create_openclaw_cli_command()
-        .map_err(|error| format!("构建 OpenClaw 网关探针命令失败: {error}"))?;
+        .map_err(|error| format!("鏋勫缓 OpenClaw 缃戝叧鎺㈤拡鍛戒护澶辫触: {error}"))?;
     command
         .arg("gateway")
         .arg("status")
@@ -218,172 +271,10 @@ fn verify_gateway_rpc_ready(port: u16, token: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!(
-            "OpenClaw gateway RPC 校验失败（{}）: {}",
+            "OpenClaw gateway RPC 校验失败（{}）：{}",
             url,
             summarize_gateway_probe_failure(output)
         ))
-    }
-}
-
-/// Pre-build Control UI assets if missing.
-///
-/// On Windows, usernames with spaces (e.g., "C:\Users\Alice Smith\...") cause
-/// the engine's internal `pnpm ui:build` to fail because Node.js `spawn()` with
-/// `shell: true` mishandles the CWD path. By running the build ourselves via
-/// Rust's `Command` (which doesn't use shell), we bypass this issue.
-fn ensure_control_ui_built(app: &tauri::AppHandle) {
-    let openclaw_dir = match paths::get_openclaw_dir() {
-        Ok(d) => d,
-        Err(_) => return,
-    };
-
-    let ui_index = openclaw_dir
-        .join("dist")
-        .join("control-ui")
-        .join("index.html");
-    if ui_index.exists() {
-        return;
-    }
-
-    let ui_dir = openclaw_dir.join("ui");
-    if !ui_dir.join("package.json").exists() {
-        return;
-    }
-
-    let node_bin = match environment::get_node_binary() {
-        Ok(b) => b,
-        Err(_) => return,
-    };
-
-    let _ = app.emit(
-        "service-log",
-        serde_json::json!({
-            "level": "info",
-            "message": "Control UI 缺失，正在预构建..."
-        }),
-    );
-
-    let node_dir = node_bin.parent().unwrap().to_path_buf();
-    let sandbox_path = if let Some(current_path) = std::env::var_os("PATH") {
-        let mut paths_vec = std::env::split_paths(&current_path).collect::<Vec<_>>();
-        paths_vec.insert(0, node_dir.clone());
-        std::env::join_paths(paths_vec).unwrap_or_default()
-    } else {
-        std::ffi::OsString::from(&node_dir)
-    };
-
-    let ui_node_modules = ui_dir.join("node_modules");
-    if !ui_node_modules.join("vite").exists() {
-        if let Ok(npm_bin) = environment::get_npm_binary() {
-            let mut npm_cmd = std::process::Command::new(&node_bin);
-            npm_cmd
-                .arg(&npm_bin)
-                .arg("install")
-                .arg("--prefix")
-                .arg(&ui_dir)
-                .env("PATH", &sandbox_path)
-                .stdout(Stdio::null())
-                .stderr(Stdio::piped());
-
-            #[cfg(target_os = "windows")]
-            npm_cmd.creation_flags(WINDOWS_HIDDEN_WINDOW_FLAG);
-
-            match openclaw_cli::run_command_with_timeout(
-                &mut npm_cmd,
-                Duration::from_secs(10 * 60),
-                "Control UI 依赖安装",
-            ) {
-                Ok(output) if output.status.success() => {
-                    let _ = app.emit(
-                        "service-log",
-                        serde_json::json!({
-                            "level": "info",
-                            "message": "Control UI 依赖安装完成"
-                        }),
-                    );
-                }
-                Ok(output) => {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    let _ = app.emit("service-log", serde_json::json!({
-                        "level": "warn",
-                        "message": format!("Control UI 依赖安装失败: {}", stderr.chars().take(200).collect::<String>())
-                    }));
-                    return;
-                }
-                Err(error) => {
-                    let _ = app.emit(
-                        "service-log",
-                        serde_json::json!({
-                            "level": "warn",
-                            "message": format!("Control UI 依赖安装异常: {error}")
-                        }),
-                    );
-                    return;
-                }
-            }
-        } else {
-            return;
-        }
-    }
-
-    let vite_js = ui_dir
-        .join("node_modules")
-        .join("vite")
-        .join("bin")
-        .join("vite.js");
-    if !vite_js.exists() {
-        let _ = app.emit(
-            "service-log",
-            serde_json::json!({
-                "level": "warn",
-                "message": "vite.js 未找到，跳过 Control UI 构建"
-            }),
-        );
-        return;
-    }
-
-    let mut build_cmd = std::process::Command::new(&node_bin);
-    build_cmd
-        .arg(&vite_js)
-        .arg("build")
-        .current_dir(&ui_dir)
-        .env("PATH", &sandbox_path)
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped());
-
-    #[cfg(target_os = "windows")]
-    build_cmd.creation_flags(WINDOWS_HIDDEN_WINDOW_FLAG);
-
-    match openclaw_cli::run_command_with_timeout(
-        &mut build_cmd,
-        Duration::from_secs(10 * 60),
-        "Control UI 构建",
-    ) {
-        Ok(output) if output.status.success() => {
-            let _ = app.emit(
-                "service-log",
-                serde_json::json!({
-                    "level": "success",
-                    "message": "[OK] Control UI 预构建完成"
-                }),
-            );
-        }
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let _ = app.emit("service-log", serde_json::json!({
-                "level": "warn",
-                "message": format!("Control UI 构建失败: {}", stderr.chars().take(200).collect::<String>())
-            }));
-        }
-        Err(error) => {
-            let _ = app.emit(
-                "service-log",
-                serde_json::json!({
-                    "level": "warn",
-                    "message": format!("Control UI 构建异常: {error}")
-                }),
-            );
-        }
     }
 }
 
@@ -568,6 +459,27 @@ fn emit_service_port(app: &tauri::AppHandle, port: u16) {
     let _ = app.emit("service-port", serde_json::json!({ "port": port }));
 }
 
+fn open_control_ui_async(app: tauri::AppHandle, port: u16, token: String) {
+    tauri::async_runtime::spawn(async move {
+        let _ = app.emit(
+            "service-log",
+            serde_json::json!({
+                "level": "success",
+                "message": "正在打开浏览器..."
+            }),
+        );
+        if let Err(error) = crate::control_ui::open_control_ui(app.clone(), port, token).await {
+            let _ = app.emit(
+                "service-log",
+                serde_json::json!({
+                    "level": "warn",
+                    "message": error
+                }),
+            );
+        }
+    });
+}
+
 fn cleanup_failed_service_start(state: &ServiceState) {
     if let Some(mut child) = state.child.lock().unwrap().take() {
         let _ = child.kill();
@@ -626,7 +538,7 @@ async fn wait_for_service_ready(
             if port_accepting {
                 if let Some(error) = last_rpc_error {
                     return Err(format!(
-                        "OpenClaw 服务启动超时，{error}（{} 秒）",
+                        "OpenClaw 服务启动超时，RPC 检查仍失败: {error}（{} 秒）",
                         SERVICE_READY_TIMEOUT_MS / 1000
                     ));
                 }
@@ -638,7 +550,7 @@ async fn wait_for_service_ready(
                 format!("网关端口 {port} 未监听")
             };
             return Err(format!(
-                "OpenClaw 服务启动超时，{detail}（{} 秒）",
+                "OpenClaw 服务启动超时：{detail}（{} 秒）",
                 SERVICE_READY_TIMEOUT_MS / 1000
             ));
         }
@@ -693,6 +605,35 @@ fn spawn_heartbeat_monitor(app: tauri::AppHandle, state: &ServiceState) {
                 );
             }
 
+            if !running && last_running == Some(true) {
+                if state
+                    .inner()
+                    .manual_stop_requested
+                    .swap(false, Ordering::SeqCst)
+                {
+                    clear_service_lifecycle(&app, state.inner());
+                } else {
+                    let started_at = state
+                        .inner()
+                        .lifecycle
+                        .lock()
+                        .unwrap()
+                        .as_ref()
+                        .and_then(|snapshot| snapshot.started_at);
+                    set_service_lifecycle(
+                        &app,
+                        state.inner(),
+                        Some(lifecycle_snapshot(
+                            ServiceLifecycleStatus::Failed,
+                            port,
+                            Some("OpenClaw service exited unexpectedly".to_string()),
+                            started_at,
+                            Some("OpenClaw service exited unexpectedly".to_string()),
+                        )),
+                    );
+                }
+            }
+
             last_running = Some(running);
         }
     });
@@ -710,6 +651,29 @@ pub fn is_service_running(state: tauri::State<ServiceState>) -> bool {
     resolve_known_process(state.inner())
         .map(|process| process.is_some())
         .unwrap_or(false)
+}
+
+#[tauri::command]
+pub fn get_service_lifecycle_snapshot(
+    state: tauri::State<ServiceState>,
+) -> Result<Option<ServiceLifecycleSnapshot>, String> {
+    if let Some(snapshot) = state.lifecycle.lock().unwrap().clone() {
+        return Ok(Some(snapshot));
+    }
+
+    if let Some(existing) = resolve_known_process(state.inner())? {
+        let snapshot = lifecycle_snapshot(
+            ServiceLifecycleStatus::Ready,
+            existing.port,
+            Some("Detected an existing OpenClaw service".to_string()),
+            Some(existing.started_at),
+            None,
+        );
+        *state.lifecycle.lock().unwrap() = Some(snapshot.clone());
+        return Ok(Some(snapshot));
+    }
+
+    Ok(None)
 }
 
 /// Start the OpenClaw service using sandboxed Node.js.
@@ -730,19 +694,16 @@ pub async fn start_service_silent(
     start_service_impl(app, state, false).await
 }
 
-async fn ensure_control_ui_built_nonblocking(app: tauri::AppHandle) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || {
-        ensure_control_ui_built(&app);
-    })
-    .await
-    .map_err(|error| format!("Control UI 预构建任务调度失败: {error}"))
-}
-
 async fn start_service_impl(
     app: tauri::AppHandle,
     state: tauri::State<'_, ServiceState>,
     open_browser: bool,
 ) -> Result<String, String> {
+    state
+        .inner()
+        .manual_stop_requested
+        .store(false, Ordering::SeqCst);
+
     if let Err(error) = agency_agents::migrate_legacy_agency_config() {
         let _ = app.emit(
             "service-log",
@@ -750,6 +711,17 @@ async fn start_service_impl(
                 "level": "warn",
                 "message": format!("清理数字员工旧配置失败: {error}")
             }),
+        );
+        set_service_lifecycle(
+            &app,
+            state.inner(),
+            Some(lifecycle_snapshot(
+                ServiceLifecycleStatus::Failed,
+                *state.port.lock().unwrap(),
+                Some(error.clone()),
+                None,
+                Some(error.clone()),
+            )),
         );
         return Err(error);
     }
@@ -771,6 +743,17 @@ async fn start_service_impl(
         } else {
             spawn_heartbeat_monitor(app.clone(), state.inner());
             emit_service_port(&app, existing.port);
+            set_service_lifecycle(
+                &app,
+                state.inner(),
+                Some(lifecycle_snapshot(
+                    ServiceLifecycleStatus::Ready,
+                    existing.port,
+                    Some("Detected an existing OpenClaw service".to_string()),
+                    Some(existing.started_at),
+                    None,
+                )),
+            );
             let _ = launcher_state::record_launcher_launch_internal(Some(existing.port));
             let _ = app.emit(
                 "service-log",
@@ -780,20 +763,27 @@ async fn start_service_impl(
                 }),
             );
             if open_browser {
-                let _ = open::that(format!(
-                    "http://127.0.0.1:{}?token={}",
-                    existing.port, token
-                ));
+                open_control_ui_async(app.clone(), existing.port, token.clone());
             }
             return Ok("Service is already running".to_string());
         }
     }
 
-    ensure_control_ui_built_nonblocking(app.clone()).await?;
-
     let openclaw_dir = paths::get_openclaw_dir()?;
     if !openclaw_dir.join("package.json").exists() {
-        return Err("OpenClaw 未安装，请先完成初始化".to_string());
+        let error = "OpenClaw 未安装，请先完成初始化".to_string();
+        set_service_lifecycle(
+            &app,
+            state.inner(),
+            Some(lifecycle_snapshot(
+                ServiceLifecycleStatus::Failed,
+                *state.port.lock().unwrap(),
+                Some(error.clone()),
+                None,
+                Some(error.clone()),
+            )),
+        );
+        return Err(error);
     }
 
     let mut chosen_port = DEFAULT_PORT;
@@ -807,10 +797,22 @@ async fn start_service_impl(
     }
 
     if !found {
-        return Err(format!(
+        let error = format!(
             "端口 {}-{} 全部被占用，请关闭其他 OpenClaw 实例后重试。",
             DEFAULT_PORT, MAX_PORT
-        ));
+        );
+        set_service_lifecycle(
+            &app,
+            state.inner(),
+            Some(lifecycle_snapshot(
+                ServiceLifecycleStatus::Failed,
+                *state.port.lock().unwrap(),
+                Some(error.clone()),
+                None,
+                Some(error.clone()),
+            )),
+        );
+        return Err(error);
     }
 
     if chosen_port != DEFAULT_PORT {
@@ -824,6 +826,18 @@ async fn start_service_impl(
     }
 
     emit_service_port(&app, chosen_port);
+    let started_at = now_unix_timestamp();
+    set_service_lifecycle(
+        &app,
+        state.inner(),
+        Some(lifecycle_snapshot(
+            ServiceLifecycleStatus::ServiceStarting,
+            chosen_port,
+            Some("Starting OpenClaw service".to_string()),
+            Some(started_at),
+            None,
+        )),
+    );
     let _ = app.emit(
         "service-log",
         serde_json::json!({
@@ -847,14 +861,29 @@ async fn start_service_impl(
         .env("OPENCLAW_GATEWAY_TOKEN", &token)
         .env("OPENCLAW_GATEWAY_AUTH_TOKEN", &token);
 
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("启动 OpenClaw 失败: {error}"))?;
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            let message = format!("启动 OpenClaw 失败: {error}");
+            set_service_lifecycle(
+                &app,
+                state.inner(),
+                Some(lifecycle_snapshot(
+                    ServiceLifecycleStatus::Failed,
+                    chosen_port,
+                    Some(message.clone()),
+                    Some(started_at),
+                    Some(message.clone()),
+                )),
+            );
+            return Err(message);
+        }
+    };
 
     let tracked = TrackedServiceProcess {
         pid: child.id(),
         port: chosen_port,
-        started_at: now_unix_timestamp(),
+        started_at,
     };
 
     let stdout = child.stdout.take();
@@ -891,17 +920,7 @@ async fn start_service_impl(
                     let browser_token = open_token.clone();
                     std::thread::spawn(move || {
                         std::thread::sleep(Duration::from_secs(2));
-                        let _ = app_browser.emit(
-                            "service-log",
-                            serde_json::json!({
-                                "level": "success",
-                                "message": "正在打开浏览器..."
-                            }),
-                        );
-                        let _ = open::that(format!(
-                            "http://127.0.0.1:{}?token={}",
-                            open_port, browser_token
-                        ));
+                        open_control_ui_async(app_browser, open_port, browser_token);
                     });
                 }
 
@@ -954,6 +973,17 @@ async fn start_service_impl(
                 "message": error.clone()
             }),
         );
+        set_service_lifecycle(
+            &app,
+            state.inner(),
+            Some(lifecycle_snapshot(
+                ServiceLifecycleStatus::Failed,
+                chosen_port,
+                Some(error.clone()),
+                Some(started_at),
+                Some(error.clone()),
+            )),
+        );
         return Err(error);
     }
 
@@ -966,11 +996,33 @@ async fn start_service_impl(
                 "message": error.clone()
             }),
         );
+        set_service_lifecycle(
+            &app,
+            state.inner(),
+            Some(lifecycle_snapshot(
+                ServiceLifecycleStatus::Failed,
+                chosen_port,
+                Some(error.clone()),
+                Some(started_at),
+                Some(error.clone()),
+            )),
+        );
         return Err(error);
     }
 
     let _ = launcher_state::record_launcher_launch_internal(Some(chosen_port));
     spawn_heartbeat_monitor(app.clone(), state.inner());
+    set_service_lifecycle(
+        &app,
+        state.inner(),
+        Some(lifecycle_snapshot(
+            ServiceLifecycleStatus::Ready,
+            chosen_port,
+            Some("OpenClaw service is ready".to_string()),
+            Some(started_at),
+            None,
+        )),
+    );
 
     let _ = app.emit(
         "service-log",
@@ -989,6 +1041,10 @@ pub fn stop_service(
     app: tauri::AppHandle,
     state: tauri::State<ServiceState>,
 ) -> Result<String, String> {
+    state
+        .inner()
+        .manual_stop_requested
+        .store(true, Ordering::SeqCst);
     let owned_child = state.child.lock().unwrap().take();
     let tracked = {
         let current = state.tracked_process.lock().unwrap().clone();
@@ -1009,6 +1065,7 @@ pub fn stop_service(
 
     set_tracked_process(state.inner(), None);
     let _ = clear_persisted_runtime_state();
+    clear_service_lifecycle(&app, state.inner());
 
     if stopped {
         let _ = app.emit(
@@ -1151,3 +1208,6 @@ mod tests {
         assert!(!validate_external_process(&tracked));
     }
 }
+
+
+

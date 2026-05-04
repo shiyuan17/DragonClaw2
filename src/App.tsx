@@ -20,6 +20,7 @@ import { useConfig } from "./hooks/useConfig";
 import { FeedbackProvider, useFeedback } from "./hooks/useFeedback";
 import { useLogs } from "./hooks/useLogs";
 import { useService } from "./hooks/useService";
+import { useServiceLifecycle } from "./hooks/useServiceLifecycle";
 import { useSetup } from "./hooks/useSetup";
 
 const WorkspaceCloneReadyPage = lazy(() => import("./components/ready/WorkspaceCloneReadyPage"));
@@ -85,6 +86,7 @@ function AppShell() {
     addLog,
     addLogs,
   } = useLogs();
+  const { serviceLifecycle } = useServiceLifecycle();
 
   const {
     providers,
@@ -140,7 +142,7 @@ function AppShell() {
     retrySetup,
     handleSelectFolder,
     handleConfirmWorkspace,
-  } = useSetup({ addLog, addLogs, checkApiKey, setRunning });
+  } = useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLifecycle });
 
   const {
     loading: serviceLoading,
@@ -162,6 +164,7 @@ function AppShell() {
     setPhase,
     setProgress,
     setProgressMsg,
+    serviceLifecycle,
   });
 
   const loading = setupLoading || serviceLoading;

@@ -115,6 +115,16 @@ export interface LauncherState {
     lastKnownPort?: number | null;
 }
 
+export type ServiceLifecycleStatus = "service-starting" | "ready" | "failed";
+
+export interface ServiceLifecycleSnapshot {
+    status: ServiceLifecycleStatus;
+    port: number;
+    detail?: string | null;
+    startedAt?: number | null;
+    lastError?: string | null;
+}
+
 export interface OnboardingSkillInstallResultItem {
     name: string;
     status: string;

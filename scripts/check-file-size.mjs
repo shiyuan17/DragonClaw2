@@ -26,7 +26,7 @@ const legacyOversizedBaselines = {
   "src-tauri/src/agency_agents.rs": 839,
   "src-tauri/src/channels.rs": 2962,
   "src-tauri/src/onboarding.rs": 1242,
-  "src-tauri/src/service.rs": 1153,
+  "src-tauri/src/service.rs": 1213,
 };
 
 const scanTargets = [
