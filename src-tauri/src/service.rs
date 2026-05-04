@@ -21,6 +21,7 @@ use std::os::windows::process::CommandExt;
 
 use crate::agency_agents;
 use crate::environment;
+use crate::launcher_state;
 use crate::openclaw_cli;
 use crate::paths;
 
@@ -28,6 +29,8 @@ const DEFAULT_PORT: u16 = 18789;
 const MAX_PORT: u16 = 18899;
 const CONNECT_TIMEOUT_MS: u64 = 200;
 const SERVICE_READY_TIMEOUT_MS: u64 = 90_000;
+const GATEWAY_RPC_CHECK_TIMEOUT_MS: u64 = 8_000;
+const GATEWAY_RPC_CHECK_INTERVAL_MS: u64 = 1_000;
 const WINDOWS_HIDDEN_WINDOW_FLAG: u32 = 0x0800_0000;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -165,6 +168,61 @@ fn connect_to_port(port: u16) -> bool {
         Duration::from_millis(CONNECT_TIMEOUT_MS),
     )
     .is_ok()
+}
+
+fn gateway_ws_url(port: u16) -> String {
+    format!("ws://127.0.0.1:{port}")
+}
+
+fn summarize_gateway_probe_failure(output: std::process::Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let detail = if !stderr.is_empty() {
+        stderr
+    } else if !stdout.is_empty() {
+        stdout
+    } else {
+        format!("exit status {}", output.status)
+    };
+
+    detail.chars().take(500).collect()
+}
+
+fn verify_gateway_rpc_ready(port: u16, token: &str) -> Result<(), String> {
+    let url = gateway_ws_url(port);
+    let mut command = openclaw_cli::create_openclaw_cli_command()
+        .map_err(|error| format!("构建 OpenClaw 网关探针命令失败: {error}"))?;
+    command
+        .arg("gateway")
+        .arg("status")
+        .arg("--json")
+        .arg("--require-rpc")
+        .arg("--url")
+        .arg(&url)
+        .arg("--token")
+        .arg(token)
+        .arg("--timeout")
+        .arg(GATEWAY_RPC_CHECK_TIMEOUT_MS.to_string())
+        .env("OPENCLAW_GATEWAY_TOKEN", token)
+        .env("OPENCLAW_GATEWAY_AUTH_TOKEN", token)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let output = openclaw_cli::run_command_with_timeout(
+        &mut command,
+        Duration::from_millis(GATEWAY_RPC_CHECK_TIMEOUT_MS + 2_000),
+        "OpenClaw gateway RPC readiness check",
+    )?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "OpenClaw gateway RPC 校验失败（{}）: {}",
+            url,
+            summarize_gateway_probe_failure(output)
+        ))
+    }
 }
 
 /// Pre-build Control UI assets if missing.
@@ -522,16 +580,27 @@ fn cleanup_failed_service_start(state: &ServiceState) {
 async fn wait_for_service_ready(
     state: &ServiceState,
     port: u16,
+    token: &str,
     ready_signal: Arc<AtomicBool>,
 ) -> Result<(), String> {
     let started_at = Instant::now();
+    let mut last_rpc_check_at =
+        Instant::now() - Duration::from_millis(GATEWAY_RPC_CHECK_INTERVAL_MS);
+    let mut last_rpc_error: Option<String> = None;
 
     loop {
-        if ready_signal.load(Ordering::SeqCst) {
-            return Ok(());
-        }
-
         let port_accepting = connect_to_port(port);
+        if (ready_signal.load(Ordering::SeqCst) || port_accepting)
+            && last_rpc_check_at.elapsed() >= Duration::from_millis(GATEWAY_RPC_CHECK_INTERVAL_MS)
+        {
+            last_rpc_check_at = Instant::now();
+            match verify_gateway_rpc_ready(port, token) {
+                Ok(()) => return Ok(()),
+                Err(error) => {
+                    last_rpc_error = Some(error);
+                }
+            }
+        }
         let child_status = {
             let mut child_guard = state.child.lock().unwrap();
             if let Some(child) = child_guard.as_mut() {
@@ -554,6 +623,15 @@ async fn wait_for_service_ready(
         }
 
         if started_at.elapsed() >= Duration::from_millis(SERVICE_READY_TIMEOUT_MS) {
+            if port_accepting {
+                if let Some(error) = last_rpc_error {
+                    return Err(format!(
+                        "OpenClaw 服务启动超时，{error}（{} 秒）",
+                        SERVICE_READY_TIMEOUT_MS / 1000
+                    ));
+                }
+            }
+
             let detail = if port_accepting {
                 format!("端口 {port} 已监听，但未收到 OpenClaw gateway ready 信号")
             } else {
@@ -677,23 +755,38 @@ async fn start_service_impl(
     }
 
     if let Some(existing) = resolve_known_process(state.inner())? {
-        spawn_heartbeat_monitor(app.clone(), state.inner());
-        emit_service_port(&app, existing.port);
-        let _ = app.emit(
-            "service-log",
-            serde_json::json!({
-                "level": "info",
-                "message": format!("检测到已在后台运行的 OpenClaw，复用端口 {}", existing.port)
-            }),
-        );
-        if open_browser {
-            let token = resolve_gateway_token();
-            let _ = open::that(format!(
-                "http://localhost:{}?token={}",
-                existing.port, token
-            ));
+        let token = resolve_gateway_token();
+        if let Err(error) = verify_gateway_rpc_ready(existing.port, &token) {
+            let _ = app.emit(
+                "service-log",
+                serde_json::json!({
+                    "level": "warn",
+                    "message": format!("Existing OpenClaw gateway failed RPC validation; restarting managed process: {error}")
+                }),
+            );
+            let _ = terminate_process_by_pid(existing.pid);
+            set_tracked_process(state.inner(), None);
+            let _ = clear_persisted_runtime_state();
+            std::thread::sleep(Duration::from_millis(500));
+        } else {
+            spawn_heartbeat_monitor(app.clone(), state.inner());
+            emit_service_port(&app, existing.port);
+            let _ = launcher_state::record_launcher_launch_internal(Some(existing.port));
+            let _ = app.emit(
+                "service-log",
+                serde_json::json!({
+                    "level": "info",
+                    "message": format!("检测到已在后台运行的 OpenClaw，复用端口 {}", existing.port)
+                }),
+            );
+            if open_browser {
+                let _ = open::that(format!(
+                    "http://127.0.0.1:{}?token={}",
+                    existing.port, token
+                ));
+            }
+            return Ok("Service is already running".to_string());
         }
-        return Ok("Service is already running".to_string());
     }
 
     ensure_control_ui_built_nonblocking(app.clone()).await?;
@@ -747,8 +840,11 @@ async fn start_service_impl(
         .arg("--allow-unconfigured")
         .arg("--port")
         .arg(chosen_port.to_string())
+        .arg("--token")
+        .arg(&token)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .env("OPENCLAW_GATEWAY_TOKEN", &token)
         .env("OPENCLAW_GATEWAY_AUTH_TOKEN", &token);
 
     let mut child = command
@@ -803,7 +899,7 @@ async fn start_service_impl(
                             }),
                         );
                         let _ = open::that(format!(
-                            "http://localhost:{}?token={}",
+                            "http://127.0.0.1:{}?token={}",
                             open_port, browser_token
                         ));
                     });
@@ -847,7 +943,9 @@ async fn start_service_impl(
         });
     }
 
-    if let Err(error) = wait_for_service_ready(state.inner(), chosen_port, ready_signal).await {
+    if let Err(error) =
+        wait_for_service_ready(state.inner(), chosen_port, &token, ready_signal).await
+    {
         cleanup_failed_service_start(state.inner());
         let _ = app.emit(
             "service-log",
@@ -871,6 +969,7 @@ async fn start_service_impl(
         return Err(error);
     }
 
+    let _ = launcher_state::record_launcher_launch_internal(Some(chosen_port));
     spawn_heartbeat_monitor(app.clone(), state.inner());
 
     let _ = app.emit(

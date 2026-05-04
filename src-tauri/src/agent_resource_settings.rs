@@ -193,7 +193,13 @@ pub fn save_agent_tool_config(
     } else {
         tools.insert(
             "allow".to_string(),
-            Value::Array(normalized_tools.iter().cloned().map(Value::String).collect()),
+            Value::Array(
+                normalized_tools
+                    .iter()
+                    .cloned()
+                    .map(Value::String)
+                    .collect(),
+            ),
         );
     }
 
@@ -269,7 +275,10 @@ fn read_string_array(values: &[Value]) -> Vec<String> {
 
 fn build_selected_tool_names(config_value: &AgentToolConfig) -> Vec<String> {
     let mut selected = if config_value.profile.as_deref() == Some("full") {
-        CORE_TOOL_NAMES.iter().map(|item| item.to_string()).collect::<Vec<_>>()
+        CORE_TOOL_NAMES
+            .iter()
+            .map(|item| item.to_string())
+            .collect::<Vec<_>>()
     } else {
         normalize_string_list(config_value.allow.clone().unwrap_or_default())
     };

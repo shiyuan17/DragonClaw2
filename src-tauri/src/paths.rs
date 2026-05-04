@@ -55,6 +55,16 @@ pub fn openclaw_service_state_path() -> Result<PathBuf, String> {
     Ok(user_config_dir()?.join("openclaw-service.json"))
 }
 
+/// Get the path to `~/.openclaw/dragonclaw-launcher.json`.
+pub fn dragonclaw_launcher_state_path() -> Result<PathBuf, String> {
+    Ok(user_config_dir()?.join("dragonclaw-launcher.json"))
+}
+
+/// Get the path to `~/.openclaw/slash-commands.json`.
+pub fn slash_commands_path() -> Result<PathBuf, String> {
+    Ok(user_config_dir()?.join("slash-commands.json"))
+}
+
 /// Resolve the workspace that the official SkillHub installer bootstraps into.
 pub fn skillhub_workspace_dir() -> Result<PathBuf, String> {
     Ok(user_config_dir()?.join("workspace"))

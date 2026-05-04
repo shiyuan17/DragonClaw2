@@ -5,7 +5,6 @@
 ///
 /// Loads the provider catalog from providers.json
 /// and exposes Tauri commands for provider queries and URL opening.
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

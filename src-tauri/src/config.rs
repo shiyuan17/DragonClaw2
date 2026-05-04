@@ -37,8 +37,7 @@ pub(crate) fn write_openclaw_config(config: &Value) -> Result<(), String> {
     let config_path = openclaw_config_path()?;
     let content = serde_json::to_string_pretty(config)
         .map_err(|error| format!("序列化 openclaw.json 失败: {error}"))?;
-    fs::write(&config_path, content)
-        .map_err(|error| format!("写入 openclaw.json 失败: {error}"))
+    fs::write(&config_path, content).map_err(|error| format!("写入 openclaw.json 失败: {error}"))
 }
 
 fn generate_gateway_token() -> String {
@@ -118,7 +117,11 @@ fn default_gateway_config() -> Value {
 }
 
 pub(crate) fn ensure_gateway_config(config: &mut Value) {
-    if !config.get("gateway").map(|value| value.is_object()).unwrap_or(false) {
+    if !config
+        .get("gateway")
+        .map(|value| value.is_object())
+        .unwrap_or(false)
+    {
         config["gateway"] = default_gateway_config();
         return;
     }
@@ -329,7 +332,10 @@ pub fn save_api_config(
     ensure_default_workspace(&mut config);
     write_openclaw_config(&config)?;
 
-    let agent_dir = get_user_openclaw_dir()?.join("agents").join("main").join("agent");
+    let agent_dir = get_user_openclaw_dir()?
+        .join("agents")
+        .join("main")
+        .join("agent");
     let _ = fs::create_dir_all(&agent_dir);
     let models_path = agent_dir.join("models.json");
     let mut agent_models: Value = if models_path.exists() {
@@ -363,7 +369,9 @@ pub fn save_api_config(
 
     Ok(format!(
         "已保存 {} 配置，默认模型: {}",
-        provider_info.map(|item| item.name.as_str()).unwrap_or(&provider),
+        provider_info
+            .map(|item| item.name.as_str())
+            .unwrap_or(&provider),
         full_model_id
     ))
 }
@@ -429,7 +437,10 @@ pub fn set_default_model(app: tauri::AppHandle, model_id: String) -> Result<Stri
     config["agents"]["defaults"]["models"][&full_model_id] = json!({});
     write_openclaw_config(&config)?;
 
-    let agent_dir = get_user_openclaw_dir()?.join("agents").join("main").join("agent");
+    let agent_dir = get_user_openclaw_dir()?
+        .join("agents")
+        .join("main")
+        .join("agent");
     let models_path = agent_dir.join("models.json");
     if models_path.exists() {
         if let Ok(content) = fs::read_to_string(&models_path) {
@@ -439,10 +450,12 @@ pub fn set_default_model(app: tauri::AppHandle, model_id: String) -> Result<Stri
                         .get_mut("providers")
                         .and_then(|providers| providers.get_mut(provider_name))
                     {
-                        if let Some(models) = provider.get_mut("models").and_then(Value::as_array_mut) {
-                            let exists = models
-                                .iter()
-                                .any(|model| model.get("id").and_then(Value::as_str) == Some(bare_model_id));
+                        if let Some(models) =
+                            provider.get_mut("models").and_then(Value::as_array_mut)
+                        {
+                            let exists = models.iter().any(|model| {
+                                model.get("id").and_then(Value::as_str) == Some(bare_model_id)
+                            });
                             if !exists {
                                 models.push(json!({
                                     "id": bare_model_id,
@@ -479,7 +492,8 @@ pub fn set_default_model(app: tauri::AppHandle, model_id: String) -> Result<Stri
 pub fn reset_config(app: tauri::AppHandle) -> Result<String, String> {
     let config_path = openclaw_config_path()?;
     if config_path.exists() {
-        fs::remove_file(&config_path).map_err(|error| format!("删除 openclaw.json 失败: {error}"))?;
+        fs::remove_file(&config_path)
+            .map_err(|error| format!("删除 openclaw.json 失败: {error}"))?;
     }
 
     let models_path = get_user_openclaw_dir()?

@@ -1157,11 +1157,19 @@ fn update_qr_session_from_cli_line(session_state: &SharedQrState, raw_line: &str
                 if state.status.trim().eq_ignore_ascii_case("running") {
                     state.status = "waiting_scan".to_string();
                 }
-                if state.detail.as_deref().map(str::trim).unwrap_or_default().is_empty()
-                    || state.detail.as_deref().unwrap_or_default().contains("已启动微信绑定流程")
+                if state
+                    .detail
+                    .as_deref()
+                    .map(str::trim)
+                    .unwrap_or_default()
+                    .is_empty()
+                    || state
+                        .detail
+                        .as_deref()
+                        .unwrap_or_default()
+                        .contains("已启动微信绑定流程")
                 {
-                    state.detail =
-                        Some("二维码已生成，请使用手机微信扫码完成绑定。".to_string());
+                    state.detail = Some("二维码已生成，请使用手机微信扫码完成绑定。".to_string());
                 }
             }
         }
@@ -1725,11 +1733,7 @@ fn run_openclaw_channel_login_fallback(
         if cancel_flag.load(Ordering::Relaxed) {
             let _ = child.kill();
             let _ = child.wait();
-            set_session_state_message(
-                session_state,
-                "error",
-                "已取消本次二维码绑定，请重新尝试。",
-            );
+            set_session_state_message(session_state, "error", "已取消本次二维码绑定，请重新尝试。");
             return Err(channel_error("二维码绑定已取消"));
         }
 
@@ -1756,7 +1760,9 @@ fn run_openclaw_channel_login_fallback(
                 thread::sleep(Duration::from_millis(180));
             }
             Err(error) => {
-                return Err(channel_error(format!("等待 OpenClaw 登录进程失败: {error}")));
+                return Err(channel_error(format!(
+                    "等待 OpenClaw 登录进程失败: {error}"
+                )));
             }
         }
     };
@@ -1792,7 +1798,9 @@ fn run_weixin_qr_binding_flow(
             Ok(())
         }
         Err(error) if !session_has_qr_url(session_state) => {
-            eprintln!("[weixin-qr] direct flow failed without QR URL, falling back to CLI: {error}");
+            eprintln!(
+                "[weixin-qr] direct flow failed without QR URL, falling back to CLI: {error}"
+            );
             update_session_log(
                 session_state,
                 &format!("微信 iLink 直连失败，准备尝试 CLI fallback: {error}"),

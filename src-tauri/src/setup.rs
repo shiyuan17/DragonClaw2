@@ -11,6 +11,7 @@ use crate::config;
 use crate::download;
 use crate::environment;
 use crate::installer;
+use crate::launcher_state;
 use crate::openclaw_cli;
 use crate::paths;
 
@@ -119,6 +120,7 @@ pub fn inject_default_config(
     ensure_default_agent_models(&mut config_value);
 
     config::write_openclaw_config(&config_value)?;
+    launcher_state::mark_launcher_setup_completed_internal(None)?;
 
     let _ = app.emit(
         "setup-progress",

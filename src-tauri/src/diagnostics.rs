@@ -1,14 +1,13 @@
 // Copyright (C) 2026 shiyuan
 // SPDX-License-Identifier: GPL-3.0-only
 // This file is part of DragonClaw. See LICENSE for details.
+use crate::environment;
+use crate::paths;
 /// Diagnostics export module
 ///
 /// Provides the `export_diagnostics_zip` Tauri command to collect
 /// config, logs, and system info into a ZIP file for troubleshooting.
-
 use std::io::Write;
-use crate::environment;
-use crate::paths;
 
 /// Export diagnostics data as a ZIP file.
 ///
@@ -22,8 +21,8 @@ pub async fn export_diagnostics_zip(
     let file = std::fs::File::create(&save_path)
         .map_err(|e| format!("Failed to create ZIP file: {}", e))?;
     let mut zip = zip::ZipWriter::new(file);
-    let options: zip::write::FileOptions<()> = zip::write::FileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated);
+    let options: zip::write::FileOptions<()> =
+        zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
     // 1. Sanitized config (mask API keys)
     let openclaw_dir = paths::get_openclaw_dir()?;
@@ -94,7 +93,12 @@ fn mask_api_keys(content: &str) -> String {
                         let original_value = &result[value_start..value_end];
                         if original_value.len() > 6 {
                             let masked = format!("{}****", &original_value[..6]);
-                            result = format!("{}{}{}", &result[..value_start], masked, &result[value_end..]);
+                            result = format!(
+                                "{}{}{}",
+                                &result[..value_start],
+                                masked,
+                                &result[value_end..]
+                            );
                         }
                     }
                 }

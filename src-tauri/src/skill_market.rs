@@ -61,8 +61,7 @@ async fn fetch_skill_market(url: &str) -> Result<Value, String> {
         .text()
         .await
         .map_err(|error| format!("技能市场响应读取失败: {error}"))?;
-    serde_json::from_str::<Value>(&text)
-        .map_err(|error| format!("技能市场响应解析失败: {error}"))
+    serde_json::from_str::<Value>(&text).map_err(|error| format!("技能市场响应解析失败: {error}"))
 }
 
 fn normalize_skill_market_slug(value: &str) -> String {
@@ -186,11 +185,29 @@ fn parse_skill_frontmatter(content: &str) -> (Option<String>, Option<String>, Op
         }
 
         if let Some(value) = line.strip_prefix("name:") {
-            name = Some(value.trim().trim_matches('"').trim_matches('\'').to_string());
+            name = Some(
+                value
+                    .trim()
+                    .trim_matches('"')
+                    .trim_matches('\'')
+                    .to_string(),
+            );
         } else if let Some(value) = line.strip_prefix("description:") {
-            description = Some(value.trim().trim_matches('"').trim_matches('\'').to_string());
+            description = Some(
+                value
+                    .trim()
+                    .trim_matches('"')
+                    .trim_matches('\'')
+                    .to_string(),
+            );
         } else if let Some(value) = line.strip_prefix("category:") {
-            category = Some(value.trim().trim_matches('"').trim_matches('\'').to_string());
+            category = Some(
+                value
+                    .trim()
+                    .trim_matches('"')
+                    .trim_matches('\'')
+                    .to_string(),
+            );
         }
     }
 

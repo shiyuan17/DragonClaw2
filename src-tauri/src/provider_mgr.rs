@@ -71,7 +71,8 @@ fn first_provider_model(providers: &Map<String, Value>) -> Option<(String, Strin
 fn sync_agent_models_provider(provider_key: &str, provider_entry: &Value) -> Result<(), String> {
     let openclaw_dir = get_user_openclaw_dir()?;
     let agent_dir = openclaw_dir.join("agents").join("main").join("agent");
-    fs::create_dir_all(&agent_dir).map_err(|e| format!("Failed to create agent directory: {}", e))?;
+    fs::create_dir_all(&agent_dir)
+        .map_err(|e| format!("Failed to create agent directory: {}", e))?;
 
     let models_path = agent_dir.join("models.json");
     let mut agent_models = if models_path.exists() {
@@ -199,7 +200,11 @@ pub fn list_all_models() -> Result<Vec<SavedModel>, String> {
         for m in &p.models {
             all_models.push(SavedModel {
                 id: format!("{}/{}", p.name, m.id),
-                name: Some(format!("{} ({})", m.name.clone().unwrap_or(m.id.clone()), p.name)),
+                name: Some(format!(
+                    "{} ({})",
+                    m.name.clone().unwrap_or(m.id.clone()),
+                    p.name
+                )),
             });
         }
     }
@@ -415,12 +420,18 @@ pub fn remove_model_from_provider(provider_name: String, model_id: String) -> Re
         let original_len = arr.len();
         arr.retain(|m| m.get("id").and_then(|id| id.as_str()) != Some(&model_id));
         if arr.len() == original_len {
-            return Err(format!("Model '{}' not found in '{}'", model_id, provider_name));
+            return Err(format!(
+                "Model '{}' not found in '{}'",
+                model_id, provider_name
+            ));
         }
         write_config(&config)?;
         Ok(())
     } else {
-        Err(format!("Provider '{}' missing or has no models list", provider_name))
+        Err(format!(
+            "Provider '{}' missing or has no models list",
+            provider_name
+        ))
     }
 }
 

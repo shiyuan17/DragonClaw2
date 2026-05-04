@@ -5,11 +5,13 @@ mod agency_agents;
 mod agent_resource_settings;
 mod agents;
 mod channels;
+mod chat_cache;
 mod config;
 mod diagnostics;
 mod download;
 mod environment;
 mod installer;
+mod launcher_state;
 mod memory;
 mod onboarding;
 mod openclaw_cli;
@@ -19,6 +21,7 @@ mod providers;
 mod service;
 mod setup;
 mod skill_market;
+mod slash_commands;
 
 #[cfg(test)]
 pub(crate) mod test_env {
@@ -151,6 +154,8 @@ pub fn run() {
             setup::install_preset_skills,
             setup::setup_openclaw,
             setup::reinstall_environment,
+            launcher_state::get_launcher_state,
+            launcher_state::mark_launcher_setup_completed,
             // Service lifecycle
             service::check_port_available,
             service::is_service_running,
@@ -177,6 +182,10 @@ pub fn run() {
             channels::clear_openclaw_channel_qr_binding_session,
             channels::request_feishu_openclaw_qr,
             channels::poll_feishu_openclaw_qr_result,
+            chat_cache::load_workspace_chat_session_cache,
+            chat_cache::upsert_workspace_chat_session_cache,
+            chat_cache::list_workspace_chat_session_cache,
+            chat_cache::prune_workspace_chat_session_cache,
             memory::load_memory_file_snapshot,
             memory::save_source_file,
             onboarding::get_skillhub_install_runtime_info,
@@ -211,6 +220,8 @@ pub fn run() {
             agent_resource_settings::save_agent_skill_config,
             agent_resource_settings::get_agent_tool_config,
             agent_resource_settings::save_agent_tool_config,
+            slash_commands::load_custom_slash_commands,
+            slash_commands::save_custom_slash_commands,
             provider_mgr::delete_provider,
             provider_mgr::remove_model_from_provider,
             provider_mgr::add_model_to_provider,
