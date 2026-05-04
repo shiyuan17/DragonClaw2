@@ -1,5 +1,8 @@
 # DragonClaw - 开发任务总表 (AI 开发规范版)
 
+## Phase 5.40: Large Module Split
+- [ ] Split homepage chat, workspace ready-page controllers, and channel backend into smaller internal modules without changing Tauri command signatures or frontend invoke contracts.
+
 ## Phase 5.39: Chat Startup and Gateway Stability
 - [ ] Move ready-workspace service startup feedback into an independent in-chat panel and stabilize gateway WebSocket/RPC readiness.
 
