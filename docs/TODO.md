@@ -1,4 +1,7 @@
-# DragonClaw - 开发任务总表 (AI 开发规范版)
+﻿# DragonClaw - 开发任务总表 (AI 开发规范版)
+
+## Phase 5.41: State and Config Consolidation
+- [ ] 收口 openclaw.json 写入口、服务生命周期结构化真源与 Control UI 预构建路径，不改变既有 Tauri command 签名或前端 invoke() 协议。
 
 ## Phase 5.40: Large Module Split
 - [ ] Split homepage chat, workspace ready-page controllers, and channel backend into smaller internal modules without changing Tauri command signatures or frontend invoke contracts.
@@ -353,3 +356,4 @@
 ## Phase 5.31: Homepage Chat Freeze Fix
 - [ ] Fix ready homepage chat freezes by guarding gateway reconnect loops, deduplicating initial history loads, lazy-loading markdown rendering, and batching high-frequency log updates.
 - [ ] 2026-05-03: remove the highlighted placeholder tool icons plus the `记忆` and `技能库` pills from the `workspace-clone` chat composer without changing command/model/send behavior.
+
