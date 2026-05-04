@@ -68,3 +68,53 @@ Upgrade the `workspace-clone` history drawer so users can switch between real Op
 - `全部`, `今天`, and `昨天` filter tabs correctly filter sessions by local calendar date using `updatedAt`.
 - Agent switch, gateway reconnect, and `chat.final` refreshes do not accidentally jump into the wrong session.
 - `npm run build` passes.
+
+## Phase 5.25.1: SQLite Session Cache
+
+### Goal
+
+Persist homepage chat session history in a local SQLite database so switching between previously opened sessions is instant, recent session content survives app restarts, and gateway refreshes can happen in the background without blanking the message area first.
+
+### Scope
+
+- Add a dedicated Tauri chat-cache module backed by a single SQLite file under `~/.openclaw/`.
+- Keep the homepage chat UI contract unchanged and reuse the existing history/session drawer interactions.
+- Cache only stable session history payloads and derived titles.
+- Refresh cached sessions from the gateway after local cache hydration when the gateway is connected.
+- Retain only the most recent 20 sessions across the cache store.
+
+### Non-goals
+
+- Do not change existing OpenClaw gateway methods or payload contracts.
+- Do not rename or modify existing Tauri command signatures.
+- Do not persist streaming deltas, pending user messages, live timeline steps, or transient error state.
+- Do not add encryption or remote sync for cached chat content.
+
+### Storage Rules
+
+- Database file path must resolve through `paths::user_config_dir()`.
+- Use a single table `session_history_cache` with:
+  - `session_key TEXT PRIMARY KEY`
+  - `agent_id TEXT NOT NULL`
+  - `updated_at INTEGER`
+  - `cached_at INTEGER NOT NULL`
+  - `title TEXT`
+  - `messages_json TEXT NOT NULL`
+- Create an `updated_at DESC` index for cache pruning and summary reads.
+- Store chat messages as the raw `chat.history` JSON payload string so the frontend can continue using its current normalization logic.
+
+### Frontend Behavior Rules
+
+- On session switch, hydrate from SQLite cache first.
+- If cache exists, render it immediately and refresh from `chat.history` in the background.
+- If cache does not exist, keep the current initial loading behavior for that session.
+- Update both in-memory state and SQLite after successful history reloads, title extraction, `chat.final`, and `sessions.reset`.
+- Use cached titles first when building history items after app restart; only backfill from `chat.history` when a title is missing.
+
+### Acceptance Criteria
+
+- Switching to a previously opened session no longer clears the message list before content reappears.
+- After quitting and reopening DragonClaw, cached sessions can restore their latest known history from SQLite.
+- Gateway-connected refreshes keep the active session stable and do not jump back to `:main`.
+- Resetting a session clears or replaces that session's cached content so stale messages do not reappear.
+- The cache store is pruned to the most recent 20 sessions without mixing content between agents.

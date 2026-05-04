@@ -1,5 +1,11 @@
 # DragonClaw - 开发任务总表 (AI 开发规范版)
 
+## Phase 5.39: Chat Startup and Gateway Stability
+- [ ] Move ready-workspace service startup feedback into an independent in-chat panel and stabilize gateway WebSocket/RPC readiness.
+
+## Phase 5.38: 一次引导与常驻服务快启
+- [ ] 引入独立 Launcher 状态文件，区分首次引导与后续快启路径，并让 DragonClaw 退出后继续复用常驻 OpenClaw 服务。
+
 ## Phase 5.37: workspace-clone Slash Command 迁移
 - [ ] 在 `workspace-clone` 中迁移全局共享 Slash Command，支持系统默认/用户自定义两类模型，首版完整落地自定义命令的管理、`/` 联想、激活态展示与发送生效链路
 
@@ -298,6 +304,7 @@
 - [ ] 2026-05-02: compact the workspace-clone home suggestion cards so the scene card row takes less space above the composer.
 - [ ] 2026-05-02: optimize the workspace-clone skill market install-target modal so its header hierarchy, multi-select cards, and footer actions feel denser and clearer without changing install behavior.
 - [ ] Phase 5.25: support clickable history session switching in `workspace-clone`, replace raw session-key titles with frontend-derived first-intent summaries, and refine the history drawer to a compact title + time list with `全部 / 今天 / 昨天` filters.
+- [ ] Phase 5.25.1: move `workspace-clone` session history caching to a local SQLite store so visited sessions switch instantly, survive app restarts, and refresh in the background without clearing the chat view first.
 - [ ] Phase 5.15.13: add inline Markdown / JSON preview for assistant messages in `workspace-clone` chat, with auto-detect + JSON-first fallback and post-stream rendering only.
 - [ ] Phase 5.24: add a live process timeline to `workspace-clone` chat, showing thinking, skill/tool calls, command execution, and step completion from existing gateway events without changing backend contracts.
 - [ ] Phase 5.24.1: add a transient `思考中` bridge in `workspace-clone` chat so completed tool/command steps are followed by visible processing feedback until the final assistant reply starts streaming.
@@ -338,3 +345,4 @@
 
 ## Phase 5.31: Homepage Chat Freeze Fix
 - [ ] Fix ready homepage chat freezes by guarding gateway reconnect loops, deduplicating initial history loads, lazy-loading markdown rendering, and batching high-frequency log updates.
+- [ ] 2026-05-03: remove the highlighted placeholder tool icons plus the `记忆` and `技能库` pills from the `workspace-clone` chat composer without changing command/model/send behavior.
