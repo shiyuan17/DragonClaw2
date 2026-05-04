@@ -55,6 +55,18 @@ Refactor the current homepage chat, ready-workspace page, and channel backend in
 - Do not bundle unrelated security, UX, or release fixes into this phase.
 - Keep file moves and edits scoped to the three refactor targets.
 
+## Large File Guardrails
+
+- This phase also establishes a size-control rule so future refactors do not recreate new large modules during the split.
+- Soft limit / hard limit targets:
+  - React page or container `.tsx`: warn at 500 lines, block at 800 lines.
+  - Hooks / service-style `.ts`: warn at 300 lines, block at 500 lines.
+  - Rust `.rs` modules: warn at 500 lines, block at 800 lines.
+- Existing files already above the hard limit are allowed only as explicit debt targets inside an active split phase; new work must reduce them or keep growth at zero.
+- New modules extracted during this phase should default to single-domain ownership and stay below the relevant hard limit.
+- If a change would push a file over the hard limit, the extraction must happen in the same task unless the phase document records a temporary exception.
+- The repository should expose an executable size check so the rule is enforceable instead of remaining documentation-only.
+
 ## Acceptance Criteria
 
 - `npm run build` passes after each subtask.
@@ -69,6 +81,7 @@ Refactor the current homepage chat, ready-workspace page, and channel backend in
 - Frontend:
   - `npm run build`
   - `npm run tauri dev`
+  - `npm run check:file-size`
   - Manual flow: start service -> open gateway -> chat works
 - Rust:
   - Preserve and migrate existing tests around channel key normalization, allow-from parsing, QR session cleanup, and Weixin plugin install planning.

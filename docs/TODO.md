@@ -2,6 +2,7 @@
 
 ## Phase 5.40: Large Module Split
 - [ ] Split homepage chat, workspace ready-page controllers, and channel backend into smaller internal modules without changing Tauri command signatures or frontend invoke contracts.
+- [ ] Add enforceable large-file guardrails for frontend pages/hooks and Rust modules so active split work does not recreate new oversized files.
 
 ## Phase 5.39: Chat Startup and Gateway Stability
 - [ ] Move ready-workspace service startup feedback into an independent in-chat panel and stabilize gateway WebSocket/RPC readiness.
