@@ -78,6 +78,11 @@ function buildConnectParams(token: string, _nonce?: string | null) {
   };
 }
 
+function formatGatewayDisconnectMessage(url: string, message?: string | null) {
+  const detail = message?.trim() || "连接已断开";
+  return `WebSocket 网关连接不可用：${detail}；url=${url}`;
+}
+
 export class WorkspaceGatewayClient {
   private ws: WebSocket | null = null;
   private pending = new Map<string, GatewayPendingRequest>();
@@ -156,11 +161,14 @@ export class WorkspaceGatewayClient {
 
     ws.addEventListener("close", (event) => {
       const reason = String(event.reason ?? "");
-      this.handleDisconnect(ws, socketSeq, reason || `WebSocket closed (${event.code})`);
+      const closeDetail = [`close code=${event.code}`, reason ? `reason=${reason}` : ""]
+        .filter(Boolean)
+        .join(", ");
+      this.handleDisconnect(ws, socketSeq, closeDetail || "WebSocket closed");
     });
 
     ws.addEventListener("error", () => {
-      this.handleDisconnect(ws, socketSeq, "WebSocket connection error");
+      this.handleDisconnect(ws, socketSeq, "浏览器 WebSocket error 事件，可能是端口未监听、服务未启动完成或 token/RPC 校验失败");
     });
   }
 
@@ -223,7 +231,7 @@ export class WorkspaceGatewayClient {
     try {
       this.clearConnectRequestTimer();
       this.connectRequestTimer = window.setTimeout(() => {
-        this.handleDisconnect(socket, socketSeq, "gateway connect timeout");
+        this.handleDisconnect(socket, socketSeq, `connect 请求 ${CONNECT_REQUEST_TIMEOUT_MS}ms 超时`);
       }, CONNECT_REQUEST_TIMEOUT_MS);
       const hello = await this.request<GatewayHelloOk>("connect", buildConnectParams(this.options.token, this.connectNonce));
       this.clearConnectRequestTimer();
@@ -235,7 +243,8 @@ export class WorkspaceGatewayClient {
       this.options.onConnected?.(hello);
     } catch (error) {
       this.clearConnectRequestTimer();
-      this.handleDisconnect(socket, socketSeq, error instanceof Error ? error.message : String(error));
+      const detail = error instanceof Error ? error.message : String(error);
+      this.handleDisconnect(socket, socketSeq, `connect 请求失败：${detail}`);
     }
   }
 
@@ -257,8 +266,9 @@ export class WorkspaceGatewayClient {
     this.ws = null;
     this.activeSocketSeq = 0;
     this.hasConnected = false;
-    this.rejectPending(new Error(errorMessage ?? "gateway disconnected"));
-    this.options.onDisconnected?.(errorMessage);
+    const disconnectMessage = formatGatewayDisconnectMessage(this.options.url, errorMessage);
+    this.rejectPending(new Error(disconnectMessage));
+    this.options.onDisconnected?.(disconnectMessage);
 
     if (this.stopped) {
       return;

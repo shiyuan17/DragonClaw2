@@ -12,8 +12,10 @@ import {
   isSessionsListResult,
 } from "../components/workspace-clone/workspaceCloneGateway";
 import type {
+  WorkspaceAgentCacheRow,
   WorkspaceChatSessionCacheRow,
   WorkspaceChatSessionCacheSummary,
+  WorkspaceGatewayAgentRow,
   WorkspaceGatewayAgentsListResult,
   WorkspaceGatewaySessionRow,
   WorkspaceGatewaySessionsListResult,
@@ -26,6 +28,7 @@ import type {
   WorkspaceMessage,
 } from "../components/workspace-clone/workspaceCloneTypes";
 import { buildWorkspaceSlashCommandTransportMessage } from "../components/workspace-clone/workspaceCloneSlashCommands";
+import type { CurrentConfig } from "../types";
 
 interface UseWorkspaceGatewayChatOptions {
   running: boolean;
@@ -40,6 +43,17 @@ interface ChatHistoryPayload {
 const SESSION_TITLE_MAX_LENGTH = 56;
 const INITIAL_HISTORY_LIMIT = 50;
 const SESSION_CACHE_KEEP_LIMIT = 20;
+const LEGACY_DEMO_AGENT_NAMES = new Set(["运营协作 Agent", "产品策略 Agent"]);
+const AGENT_LAST_MESSAGE_MAX_LENGTH = 44;
+
+function isLegacyDemoAgent(agentId: string, name?: string | null) {
+  const normalizedId = agentId.trim().toLowerCase();
+  if (normalizedId === "ops" || normalizedId === "product") {
+    return true;
+  }
+
+  return LEGACY_DEMO_AGENT_NAMES.has(name?.trim() || "");
+}
 
 function parseCachedMessagesJson(messagesJson?: string | null) {
   if (!messagesJson?.trim()) {
@@ -60,6 +74,78 @@ function serializeCachedMessages(messages: unknown[]) {
   } catch {
     return "[]";
   }
+}
+
+function parseAgentIdentityJson(identityJson?: string | null) {
+  if (!identityJson?.trim()) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(identityJson);
+    return parsed && typeof parsed === "object" ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function serializeAgentIdentity(identity?: WorkspaceGatewayAgentRow["identity"]) {
+  if (!identity) {
+    return null;
+  }
+
+  try {
+    return JSON.stringify(identity);
+  } catch {
+    return null;
+  }
+}
+
+function buildCachedAgentsResult(rows: WorkspaceAgentCacheRow[]): WorkspaceGatewayAgentsListResult | null {
+  const agents = rows
+    .filter((row) => !isLegacyDemoAgent(row.agentId, row.name))
+    .map<WorkspaceGatewayAgentRow>((row) => ({
+      id: row.agentId,
+      name: row.name?.trim() || row.agentId,
+      identity: parseAgentIdentityJson(row.identityJson) as WorkspaceGatewayAgentRow["identity"],
+    }));
+
+  if (agents.length === 0) {
+    return null;
+  }
+
+  const defaultRow = rows.find((row) => row.isDefault && agents.some((agent) => agent.id === row.agentId));
+  const defaultId = defaultRow?.agentId || agents[0].id;
+  return {
+    defaultId,
+    mainKey: createAgentSessionKey(defaultId),
+    scope: defaultRow?.scope || rows[0]?.scope || "workspace",
+    agents,
+  };
+}
+
+function toAgentCachePayload(result: WorkspaceGatewayAgentsListResult) {
+  return result.agents
+    .filter((agent) => !isLegacyDemoAgent(agent.id, agent.identity?.name || agent.name))
+    .map((agent) => ({
+      agentId: agent.id,
+      name: agent.name || agent.identity?.name || agent.id,
+      identityJson: serializeAgentIdentity(agent.identity),
+    }));
+}
+
+function sanitizeAgentsResult(result: WorkspaceGatewayAgentsListResult): WorkspaceGatewayAgentsListResult {
+  const agents = result.agents.filter((agent) => !isLegacyDemoAgent(agent.id, agent.identity?.name || agent.name));
+  const defaultId = agents.some((agent) => agent.id === result.defaultId)
+    ? result.defaultId
+    : agents[0]?.id || "";
+
+  return {
+    ...result,
+    defaultId,
+    mainKey: defaultId ? createAgentSessionKey(defaultId) : result.mainKey,
+    agents,
+  };
 }
 
 function sortSessionsByUpdatedAt(sessions: WorkspaceGatewaySessionRow[]) {
@@ -323,6 +409,40 @@ function extractFirstMeaningfulSessionTitle(messages: unknown[]) {
     }
 
     return normalized;
+  }
+
+  return null;
+}
+
+function normalizeAgentLastMessage(value: string) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= AGENT_LAST_MESSAGE_MAX_LENGTH) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, AGENT_LAST_MESSAGE_MAX_LENGTH - 1).trimEnd()}...`;
+}
+
+function extractLastMeaningfulMessageSummary(messages: unknown[]) {
+  for (const rawMessage of [...messages].reverse()) {
+    if (!rawMessage || typeof rawMessage !== "object") {
+      continue;
+    }
+
+    const message = rawMessage as { role?: unknown };
+    if (message.role === "tool") {
+      continue;
+    }
+
+    const text = extractGatewayMessageText(rawMessage).trim();
+    if (!text || looksLikeProcessPayloadJson(text)) {
+      continue;
+    }
+
+    const normalized = normalizeAgentLastMessage(text);
+    if (normalized && isMeaningfulSessionTitle(normalized)) {
+      return normalized;
+    }
   }
 
   return null;
@@ -751,6 +871,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
   const [status, setStatus] = useState<WorkspaceGatewayStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [agentsResult, setAgentsResult] = useState<WorkspaceGatewayAgentsListResult | null>(null);
+  const [cachedAgentsResult, setCachedAgentsResult] = useState<WorkspaceGatewayAgentsListResult | null>(null);
   const [sessionsResult, setSessionsResult] = useState<WorkspaceGatewaySessionsListResult | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [selectedSessionKey, setSelectedSessionKey] = useState("");
@@ -763,15 +884,21 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
   const [pendingUserMessage, setPendingUserMessage] = useState<WorkspaceMessage | null>(null);
   const [streamText, setStreamText] = useState<string | null>(null);
   const [liveSteps, setLiveSteps] = useState<WorkspaceLiveStep[]>([]);
+  const [cachedAgentLastMessageById, setCachedAgentLastMessageById] = useState<Record<string, string>>({});
+  const [fallbackGatewayToken, setFallbackGatewayToken] = useState("");
+  const [gatewayTokenRefreshState, setGatewayTokenRefreshState] = useState<"idle" | "loading" | "done">("idle");
 
   const connected = status === "connected";
-  const agents = agentsResult?.agents ?? [];
+  const effectiveAgentsResult = agentsResult ?? cachedAgentsResult;
+  const agentListSource = agentsResult ? "gateway" : cachedAgentsResult ? "cache" : "none";
+  const agents = effectiveAgentsResult?.agents ?? [];
   const selectedAgent = useMemo(
     () => agents.find((agent) => agent.id === selectedAgentId) ?? null,
     [agents, selectedAgentId],
   );
   const currentSessionKey = selectedSessionKey || (selectedAgentId ? createAgentSessionKey(selectedAgentId) : "");
-  const normalizedGatewayToken = gatewayToken?.trim() || "";
+  const configuredGatewayToken = gatewayToken?.trim() || "";
+  const normalizedGatewayToken = configuredGatewayToken || fallbackGatewayToken.trim();
   const sessionHistoryCacheRef = useRef<Record<string, unknown[]>>({});
 
   const resolveAssistantAuthor = useCallback(
@@ -896,8 +1023,93 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
   }, [selectedAgentId]);
 
   useEffect(() => {
+    if (agents.length === 0) {
+      return;
+    }
+
+    const selectedAgentExists = selectedAgentId
+      ? agents.some((agent) => agent.id === selectedAgentId)
+      : false;
+    const nextAgentId = selectedAgentExists
+      ? selectedAgentId
+      : effectiveAgentsResult?.defaultId || agents[0].id;
+
+    if (nextAgentId && nextAgentId !== selectedAgentId) {
+      setSelectedAgentId(nextAgentId);
+    }
+
+    if (nextAgentId && !selectedSessionKey) {
+      setSelectedSessionKey(createAgentSessionKey(nextAgentId));
+    }
+  }, [agents, effectiveAgentsResult?.defaultId, selectedAgentId, selectedSessionKey]);
+
+  useEffect(() => {
     sessionHistoryCacheRef.current = sessionHistoryCache;
   }, [sessionHistoryCache]);
+
+  useEffect(() => {
+    if (!running) {
+      setFallbackGatewayToken("");
+      setGatewayTokenRefreshState("idle");
+      return;
+    }
+
+    if (configuredGatewayToken) {
+      setFallbackGatewayToken("");
+      setGatewayTokenRefreshState("idle");
+      return;
+    }
+
+    let cancelled = false;
+    setGatewayTokenRefreshState("loading");
+
+    async function refreshGatewayToken() {
+      await invoke("migrate_gateway_config").catch(() => undefined);
+      const config = await invoke<CurrentConfig>("get_current_config").catch(() => null);
+      if (cancelled) {
+        return;
+      }
+
+      setFallbackGatewayToken(config?.gateway_token?.trim() || "");
+      setGatewayTokenRefreshState("done");
+    }
+
+    void refreshGatewayToken();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [configuredGatewayToken, running]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAgentCache() {
+      const rows = await invoke<WorkspaceAgentCacheRow[]>("list_workspace_agent_cache").catch(() => []);
+      if (cancelled) {
+        return;
+      }
+
+      const result = buildCachedAgentsResult(rows);
+      setCachedAgentsResult(result);
+
+      if (!result) {
+        return;
+      }
+
+      const nextAgentId = result.defaultId || result.agents[0]?.id || "";
+      if (nextAgentId) {
+        setSelectedAgentId((current) => current || nextAgentId);
+        setSelectedSessionKey((current) => current || createAgentSessionKey(nextAgentId));
+      }
+    }
+
+    void loadAgentCache();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const clearActiveRunRefs = useCallback(() => {
     currentRunIdRef.current = null;
@@ -964,6 +1176,62 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     },
     [],
   );
+
+  useEffect(() => {
+    if (agents.length === 0) {
+      setCachedAgentLastMessageById({});
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadAgentLastMessages() {
+      const entries = await Promise.all(
+        agents.map(async (agent) => {
+          const rows = await invoke<WorkspaceChatSessionCacheSummary[]>("list_workspace_chat_session_cache", {
+            agentId: agent.id,
+          }).catch(() => []);
+
+          const sortedRows = [...rows].sort(
+            (left, right) => (right.updatedAt ?? right.cachedAt ?? 0) - (left.updatedAt ?? left.cachedAt ?? 0),
+          );
+
+          for (const row of sortedRows) {
+            const cachedRow = await loadPersistedSessionHistoryCache(row.sessionKey, agent.id).catch(() => null);
+            const summary = cachedRow ? extractLastMeaningfulMessageSummary(parseCachedMessagesJson(cachedRow.messagesJson)) : null;
+            if (summary) {
+              return [agent.id, summary] as const;
+            }
+          }
+
+          return [agent.id, ""] as const;
+        }),
+      );
+
+      if (cancelled) {
+        return;
+      }
+
+      setCachedAgentLastMessageById((current) => {
+        const next = { ...current };
+        for (const agent of agents) {
+          delete next[agent.id];
+        }
+        for (const [agentId, summary] of entries) {
+          if (summary) {
+            next[agentId] = summary;
+          }
+        }
+        return next;
+      });
+    }
+
+    void loadAgentLastMessages();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [agents, loadPersistedSessionHistoryCache]);
 
   const pruneSessionHistoryCache = useCallback(
     async (
@@ -1176,15 +1444,23 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
         throw new Error("sessions.list 返回格式不正确");
       }
 
-      setAgentsResult(agentsPayload);
+      const nextAgentsPayload = sanitizeAgentsResult(agentsPayload);
+      setAgentsResult(nextAgentsPayload);
+      setCachedAgentsResult(nextAgentsPayload.agents.length > 0 ? nextAgentsPayload : null);
       setSessionsResult(sessionsPayload);
       setError(null);
 
+      void invoke("replace_workspace_agent_cache", {
+        defaultId: nextAgentsPayload.defaultId,
+        scope: nextAgentsPayload.scope,
+        agents: toAgentCachePayload(nextAgentsPayload),
+      }).catch(() => undefined);
+
       const currentSelectedAgentId = selectedAgentIdRef.current;
       const nextAgentId =
-        agentsPayload.agents.some((agent) => agent.id === currentSelectedAgentId)
+        nextAgentsPayload.agents.some((agent) => agent.id === currentSelectedAgentId)
           ? currentSelectedAgentId
-          : agentsPayload.defaultId || agentsPayload.agents[0]?.id || "";
+          : nextAgentsPayload.defaultId || nextAgentsPayload.agents[0]?.id || "";
       const nextSessionKey = nextAgentId
         ? resolveAgentSessionKey(sessionsPayload, nextAgentId, currentSessionKeyRef.current)
         : "";
@@ -1347,6 +1623,11 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     }
 
     if (!normalizedGatewayToken) {
+      if (!configuredGatewayToken && gatewayTokenRefreshState !== "done") {
+        setStatus("connecting");
+        setError(null);
+        return;
+      }
       resetGatewayState("error", MISSING_GATEWAY_TOKEN_ERROR);
       return;
     }
@@ -1379,7 +1660,14 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       }
       client.stop();
     };
-  }, [clearActiveRunRefs, normalizedGatewayToken, running, servicePort]);
+  }, [
+    clearActiveRunRefs,
+    configuredGatewayToken,
+    gatewayTokenRefreshState,
+    normalizedGatewayToken,
+    running,
+    servicePort,
+  ]);
 
   useEffect(() => {
     if (!connected || !currentSessionKey) {
@@ -1722,6 +2010,31 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     return merged;
   }, [normalizedHistoryMessages, pendingUserMessage, streamMessage]);
 
+  const agentLastMessageById = useMemo(() => {
+    const next = { ...cachedAgentLastMessageById };
+
+    for (const agent of agents) {
+      const sortedSessionKeys = sortSessionsByUpdatedAt(filterAgentSessions(sessionsResult, agent.id))
+        .map((session) => session.key);
+      const knownSessionKeys = Object.keys(sessionHistoryCache)
+        .filter((sessionKey) => sessionKey.startsWith(`agent:${agent.id}:`));
+      const sessionKeys = Array.from(new Set([...sortedSessionKeys, ...knownSessionKeys]));
+
+      for (const sessionKey of sessionKeys) {
+        const rawMessages = sessionKey === currentSessionKey
+          ? messages
+          : sessionHistoryCache[sessionKey] ?? [];
+        const summary = extractLastMeaningfulMessageSummary(rawMessages);
+        if (summary) {
+          next[agent.id] = summary;
+          break;
+        }
+      }
+    }
+
+    return next;
+  }, [agents, cachedAgentLastMessageById, currentSessionKey, messages, sessionHistoryCache, sessionsResult]);
+
   const currentMainSession = useMemo(
     () => (selectedAgentId ? findMainAgentSession(sessionsResult, selectedAgentId) : null),
     [selectedAgentId, sessionsResult],
@@ -1732,7 +2045,9 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     connected,
     error,
     agents,
-    agentsResult,
+    agentsResult: effectiveAgentsResult,
+    agentListSource,
+    agentLastMessageById,
     sessionsResult,
     selectedAgentId,
     selectedAgent,

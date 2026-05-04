@@ -285,6 +285,15 @@ export interface WorkspaceGatewayAgentRow {
   identity?: WorkspaceGatewayAgentIdentity;
 }
 
+export interface WorkspaceAgentCacheRow {
+  agentId: string;
+  name?: string | null;
+  identityJson?: string | null;
+  isDefault: boolean;
+  scope: string;
+  cachedAt: number;
+}
+
 export interface WorkspaceGatewayAgentsListResult {
   defaultId: string;
   mainKey: string;

@@ -33,6 +33,25 @@ pub struct WorkspaceChatSessionCacheSummary {
     pub title: Option<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceAgentCacheInput {
+    pub agent_id: String,
+    pub name: Option<String>,
+    pub identity_json: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceAgentCacheRow {
+    pub agent_id: String,
+    pub name: Option<String>,
+    pub identity_json: Option<String>,
+    pub is_default: bool,
+    pub scope: String,
+    pub cached_at: i64,
+}
+
 fn current_timestamp_millis() -> i64 {
     std::time::SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -68,10 +87,50 @@ fn open_chat_cache_connection() -> Result<Connection, String> {
             );
             CREATE INDEX IF NOT EXISTS idx_session_history_cache_updated_at
             ON session_history_cache(updated_at DESC);
+            CREATE TABLE IF NOT EXISTS agent_list_cache (
+                agent_id TEXT PRIMARY KEY,
+                name TEXT,
+                identity_json TEXT,
+                is_default INTEGER NOT NULL DEFAULT 0,
+                scope TEXT NOT NULL DEFAULT 'workspace',
+                cached_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_agent_list_cache_cached_at
+            ON agent_list_cache(cached_at DESC);
             ",
         )
         .map_err(|error| format!("初始化聊天缓存数据库失败: {error}"))?;
     Ok(connection)
+}
+
+fn is_legacy_demo_agent(agent_id: &str, name: Option<&str>) -> bool {
+    let normalized_id = agent_id.trim().to_ascii_lowercase();
+    if normalized_id == "ops" || normalized_id == "product" {
+        return true;
+    }
+
+    let normalized_name = name.unwrap_or("").trim();
+    normalized_name == "运营协作 Agent" || normalized_name == "产品策略 Agent"
+}
+
+fn normalize_optional_string(value: Option<String>) -> Option<String> {
+    value
+        .map(|item| item.trim().to_string())
+        .filter(|item| !item.is_empty())
+}
+
+fn remove_legacy_demo_agents(connection: &Connection) -> Result<(), String> {
+    connection
+        .execute(
+            "
+            DELETE FROM agent_list_cache
+            WHERE agent_id IN ('ops', 'product')
+               OR name IN ('运营协作 Agent', '产品策略 Agent')
+            ",
+            [],
+        )
+        .map_err(|error| format!("清理旧 Agent 缓存失败: {error}"))?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -225,4 +284,235 @@ pub fn prune_workspace_chat_session_cache(keep_session_keys: Vec<String>) -> Res
         .execute(&sql, params_from_iter(normalized_keys.iter()))
         .map_err(|error| format!("裁剪聊天缓存失败: {error}"))?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn list_workspace_agent_cache() -> Result<Vec<WorkspaceAgentCacheRow>, String> {
+    let connection = open_chat_cache_connection()?;
+    remove_legacy_demo_agents(&connection)?;
+
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT agent_id, name, identity_json, is_default, scope, cached_at
+            FROM agent_list_cache
+            ORDER BY is_default DESC, cached_at DESC, agent_id ASC
+            ",
+        )
+        .map_err(|error| format!("准备 Agent 缓存查询失败: {error}"))?;
+
+    let rows = statement
+        .query_map([], |row| {
+            Ok(WorkspaceAgentCacheRow {
+                agent_id: row.get(0)?,
+                name: row.get(1)?,
+                identity_json: row.get(2)?,
+                is_default: row.get::<_, i64>(3)? != 0,
+                scope: row.get(4)?,
+                cached_at: row.get(5)?,
+            })
+        })
+        .map_err(|error| format!("读取 Agent 缓存失败: {error}"))?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("整理 Agent 缓存失败: {error}"))
+}
+
+#[tauri::command]
+pub fn replace_workspace_agent_cache(
+    default_id: String,
+    scope: String,
+    agents: Vec<WorkspaceAgentCacheInput>,
+) -> Result<(), String> {
+    let normalized_default_id = default_id.trim().to_string();
+    let normalized_scope = if scope.trim().is_empty() {
+        "workspace".to_string()
+    } else {
+        scope.trim().to_string()
+    };
+    let cached_at = current_timestamp_millis();
+    let mut connection = open_chat_cache_connection()?;
+    let transaction = connection
+        .transaction()
+        .map_err(|error| format!("打开 Agent 缓存事务失败: {error}"))?;
+
+    transaction
+        .execute("DELETE FROM agent_list_cache", [])
+        .map_err(|error| format!("清空 Agent 缓存失败: {error}"))?;
+
+    for agent in agents {
+        let agent_id = agent.agent_id.trim().to_string();
+        let name = normalize_optional_string(agent.name);
+        if agent_id.is_empty() || is_legacy_demo_agent(&agent_id, name.as_deref()) {
+            continue;
+        }
+
+        let identity_json = normalize_optional_string(agent.identity_json);
+        transaction
+            .execute(
+                "
+                INSERT INTO agent_list_cache (
+                    agent_id,
+                    name,
+                    identity_json,
+                    is_default,
+                    scope,
+                    cached_at
+                )
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                ",
+                params![
+                    agent_id,
+                    name,
+                    identity_json,
+                    if normalized_default_id == agent_id {
+                        1
+                    } else {
+                        0
+                    },
+                    normalized_scope,
+                    cached_at
+                ],
+            )
+            .map_err(|error| format!("写入 Agent 缓存失败: {error}"))?;
+    }
+
+    transaction
+        .commit()
+        .map_err(|error| format!("提交 Agent 缓存失败: {error}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn clear_workspace_agent_cache() -> Result<(), String> {
+    let connection = open_chat_cache_connection()?;
+    connection
+        .execute("DELETE FROM agent_list_cache", [])
+        .map_err(|error| format!("清空 Agent 缓存失败: {error}"))?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    const USER_CONFIG_OVERRIDE_ENV: &str = "DRAGONCLAW_USER_CONFIG_DIR";
+
+    fn unique_temp_dir(prefix: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        std::env::temp_dir().join(format!("dragonclaw-{prefix}-{nonce}"))
+    }
+
+    fn with_mock_config_dir<F, R>(config_root: &Path, run: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        let _lock = crate::test_env::env_lock();
+        std::env::set_var(USER_CONFIG_OVERRIDE_ENV, config_root);
+        let result = run();
+        std::env::remove_var(USER_CONFIG_OVERRIDE_ENV);
+        result
+    }
+
+    #[test]
+    fn agent_cache_replace_and_list_round_trip() {
+        let temp_root = unique_temp_dir("agent-cache-round-trip");
+        let config_root = temp_root.join(".openclaw");
+
+        with_mock_config_dir(config_root.as_path(), || {
+            replace_workspace_agent_cache(
+                "main".to_string(),
+                "workspace".to_string(),
+                vec![
+                    WorkspaceAgentCacheInput {
+                        agent_id: "main".to_string(),
+                        name: Some("主分身".to_string()),
+                        identity_json: Some(r#"{"emoji":"M"}"#.to_string()),
+                    },
+                    WorkspaceAgentCacheInput {
+                        agent_id: "support".to_string(),
+                        name: Some("Support".to_string()),
+                        identity_json: None,
+                    },
+                ],
+            )
+            .expect("replace agent cache");
+
+            let rows = list_workspace_agent_cache().expect("list agent cache");
+            assert_eq!(rows.len(), 2);
+            assert_eq!(rows[0].agent_id, "main");
+            assert!(rows[0].is_default);
+            assert_eq!(rows[0].identity_json.as_deref(), Some(r#"{"emoji":"M"}"#));
+        });
+
+        let _ = std::fs::remove_dir_all(temp_root);
+    }
+
+    #[test]
+    fn agent_cache_replace_clears_legacy_demo_agents() {
+        let temp_root = unique_temp_dir("agent-cache-legacy");
+        let config_root = temp_root.join(".openclaw");
+
+        with_mock_config_dir(config_root.as_path(), || {
+            replace_workspace_agent_cache(
+                "ops".to_string(),
+                "workspace".to_string(),
+                vec![
+                    WorkspaceAgentCacheInput {
+                        agent_id: "ops".to_string(),
+                        name: Some("运营协作 Agent".to_string()),
+                        identity_json: None,
+                    },
+                    WorkspaceAgentCacheInput {
+                        agent_id: "product".to_string(),
+                        name: Some("产品策略 Agent".to_string()),
+                        identity_json: None,
+                    },
+                    WorkspaceAgentCacheInput {
+                        agent_id: "main".to_string(),
+                        name: Some("主分身".to_string()),
+                        identity_json: None,
+                    },
+                ],
+            )
+            .expect("replace agent cache");
+
+            let rows = list_workspace_agent_cache().expect("list agent cache");
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].agent_id, "main");
+        });
+
+        let _ = std::fs::remove_dir_all(temp_root);
+    }
+
+    #[test]
+    fn empty_agent_cache_replace_clears_rows() {
+        let temp_root = unique_temp_dir("agent-cache-empty");
+        let config_root = temp_root.join(".openclaw");
+
+        with_mock_config_dir(config_root.as_path(), || {
+            replace_workspace_agent_cache(
+                "main".to_string(),
+                "workspace".to_string(),
+                vec![WorkspaceAgentCacheInput {
+                    agent_id: "main".to_string(),
+                    name: Some("主分身".to_string()),
+                    identity_json: None,
+                }],
+            )
+            .expect("replace agent cache");
+            replace_workspace_agent_cache("".to_string(), "workspace".to_string(), Vec::new())
+                .expect("clear through empty replace");
+
+            let rows = list_workspace_agent_cache().expect("list agent cache");
+            assert!(rows.is_empty());
+        });
+
+        let _ = std::fs::remove_dir_all(temp_root);
+    }
 }
