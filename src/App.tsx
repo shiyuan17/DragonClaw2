@@ -391,7 +391,7 @@ function AppShell() {
           <p style={{ color: "var(--text-secondary)", fontSize: 12 }}>根据网络情况，可能需要 3-10 分钟</p>
         </ConfirmModal>
 
-        <StartupOverlay show={startingUp} />
+        <StartupOverlay show={phase !== "ready" && startingUp} />
 
         <ApiKeyModal
           show={showKeyModal}

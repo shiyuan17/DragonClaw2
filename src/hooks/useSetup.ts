@@ -13,7 +13,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { AppPhase, CurrentConfig } from "../types";
+import type { AppPhase, CurrentConfig, LauncherState } from "../types";
 import {
   getOnboardingSkillInstallDiagnostics,
   markOnboardingSkillInstallRequired,
@@ -38,6 +38,12 @@ interface ServiceLogPayload {
 interface ServiceLogBatchPayload {
   logs: ServiceLogPayload[];
 }
+
+const DEFAULT_LAUNCHER_STATE: LauncherState = {
+  setupCompleted: false,
+  lastLaunchAt: null,
+  lastKnownPort: null,
+};
 
 function isServiceReadyLogMessage(message?: string) {
   const msg = message?.toLowerCase() || "";
@@ -138,6 +144,18 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning }: UseSetupO
     await markOnboardingSkillInstallRequired();
     return await syncWorkspacePath(trimmedWorkspacePath || undefined);
   }, [syncWorkspacePath]);
+
+  const backfillOnboardingSkillStateIfNeeded = useCallback(async () => {
+    try {
+      const diagnostics = await getOnboardingSkillInstallDiagnostics();
+      if (diagnostics.shouldBackfill) {
+        addLog("info", "Detected missing onboarding skill install state for an existing user; backfill will run on this launch.");
+        await markOnboardingSkillInstallRequired();
+      }
+    } catch (diagnosticsError) {
+      addLog("warn", `Onboarding skill install diagnostics failed; skipping backfill check: ${diagnosticsError}`);
+    }
+  }, [addLog]);
 
   const startBackgroundOnboardingSkillInstall = useCallback(() => {
     if (onboardingInstallRunningRef.current) {
@@ -289,6 +307,34 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning }: UseSetupO
     }
   }, [addLog, clearLaunchFallback, finalizeStartup, setRunning, setSetupPhase]);
 
+  const launchServiceInBackground = useCallback(async () => {
+    if (launchStartedRef.current || startupFinalizingRef.current) {
+      return;
+    }
+
+    launchStartedRef.current = true;
+    clearLaunchFallback();
+    setSetupError(null);
+    setLoading(false);
+    setRunning(true);
+    setProgress(100);
+    setProgressMsg("OpenClaw 服务正在后台准备...");
+
+    try {
+      await invoke<string>("start_service_silent");
+      await checkApiKey();
+      startBackgroundOnboardingSkillInstall();
+    } catch (err) {
+      launchStartedRef.current = false;
+      setRunning(false);
+      setSetupError(String(err));
+      addLog("error", `后台启动失败: ${err}`);
+      return;
+    }
+
+    launchStartedRef.current = false;
+  }, [addLog, checkApiKey, clearLaunchFallback, setRunning, startBackgroundOnboardingSkillInstall]);
+
   const runSetup = useCallback(async () => {
     setLoading(true);
     setSetupError(null);
@@ -310,14 +356,50 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning }: UseSetupO
 
   const checkEnvironment = useCallback(async () => {
     try {
+      const launcherState = await invoke<LauncherState>("get_launcher_state")
+        .catch(() => DEFAULT_LAUNCHER_STATE);
       const nodeOk = await invoke<boolean>("check_node_exists");
       const openclawOk = await invoke<boolean>("check_openclaw_exists");
       const modulesOk = await invoke<boolean>("check_node_modules_exists");
       const serviceRunning = await invoke<boolean>("is_service_running");
+      const environmentReady = nodeOk && openclawOk && modulesOk;
+      const configOk = environmentReady
+        ? await invoke<boolean>("check_config_exists")
+        : false;
 
-      if (nodeOk && openclawOk && modulesOk) {
-        const configOk = await invoke<boolean>("check_config_exists");
-        if (!configOk) {
+      if (environmentReady && configOk) {
+        if (!launcherState.setupCompleted) {
+          await invoke("mark_launcher_setup_completed", {
+            lastKnownPort: launcherState.lastKnownPort ?? null,
+          });
+          addLog("info", "Detected an existing OpenClaw install without launcher state; backfilled the one-time setup marker.");
+        }
+
+        await syncWorkspacePath();
+        await backfillOnboardingSkillStateIfNeeded();
+
+        if (typeof launcherState.lastKnownPort === "number") {
+          setServicePort(launcherState.lastKnownPort);
+        }
+
+        setRunning(serviceRunning);
+        setSetupError(null);
+        setLoading(false);
+        setProgress(100);
+        setProgressMsg("DragonClaw ready");
+        setSetupPhase("ready");
+        addLog("success", "Launcher setup already completed; entering the ready workspace immediately.");
+        addLog(
+          "info",
+          serviceRunning
+            ? "Detected an existing OpenClaw service in the background; reusing it now."
+            : "OpenClaw will continue starting in the background while the ready workspace loads.",
+        );
+        void launchServiceInBackground();
+        return;
+      }
+
+      if (environmentReady && !configOk) {
           addLog("info", "首次使用，正在自动配置默认工作区...");
           try {
             const resolvedWorkspacePath = await configureWorkspace(null);
@@ -327,19 +409,6 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning }: UseSetupO
             addLog("warn", `默认工作区自动配置失败，已切换为手动选择: ${configError}`);
             return;
           }
-        } else {
-          await syncWorkspacePath();
-          try {
-            const diagnostics = await getOnboardingSkillInstallDiagnostics();
-            if (diagnostics.shouldBackfill) {
-              addLog("info", "Detected missing onboarding skill install state for an existing user; backfill will run on this launch.");
-              await markOnboardingSkillInstallRequired();
-            }
-          } catch (diagnosticsError) {
-            addLog("warn", `Onboarding skill install diagnostics failed; skipping backfill check: ${diagnosticsError}`);
-          }
-        }
-
         addLog("success", "[OK] 环境检查通过，所有组件就绪");
         if (serviceRunning) {
           addLog("info", "检测到已有 OpenClaw 在后台运行，正在复用现有服务...");
@@ -356,7 +425,17 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning }: UseSetupO
       setSetupPhase("initializing");
       await runSetup();
     }
-  }, [addLog, configureWorkspace, launchService, runSetup, setSetupPhase, syncWorkspacePath]);
+  }, [
+    addLog,
+    backfillOnboardingSkillStateIfNeeded,
+    configureWorkspace,
+    launchService,
+    launchServiceInBackground,
+    runSetup,
+    setRunning,
+    setSetupPhase,
+    syncWorkspacePath,
+  ]);
 
   useEffect(() => {
     finalizeStartupRef.current = finalizeStartup;

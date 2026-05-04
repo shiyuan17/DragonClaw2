@@ -109,6 +109,12 @@ export interface CurrentConfig {
     workspace_path?: string | null;
 }
 
+export interface LauncherState {
+    setupCompleted: boolean;
+    lastLaunchAt?: number | null;
+    lastKnownPort?: number | null;
+}
+
 export interface OnboardingSkillInstallResultItem {
     name: string;
     status: string;
