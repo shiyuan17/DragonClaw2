@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useFeedback } from "../../hooks/useFeedback";
+import { useFeedback } from "../useFeedback";
 import type {
   AgentInfo,
   OpenClawChannelAccountsSnapshotResponse,
@@ -19,7 +19,7 @@ import {
   saveOpenClawChannelConfig,
   startOpenClawChannelQrBinding,
 } from "../../api/channels";
-import { WORKSPACE_CHANNEL_CATALOG, resolveWorkspaceChannelName } from "./workspaceCloneChannels";
+import { WORKSPACE_CHANNEL_CATALOG, resolveWorkspaceChannelName } from "../../components/workspace-clone/workspaceCloneChannels";
 import { resolveWorkspaceAgentDisplayName } from "../../data/agencyRoster";
 import type {
   ChannelBindingModalState,
@@ -28,7 +28,7 @@ import type {
   WorkspaceChannelAgentOption,
   WorkspaceEntity,
   WorkspaceResourceItem,
-} from "./workspaceCloneTypes";
+} from "../../components/workspace-clone/workspaceCloneTypes";
 
 const WEIXIN_LINK_POLICY = {
   allowedSchemes: new Set(["https:", "http:"]),

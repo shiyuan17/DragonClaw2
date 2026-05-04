@@ -17,7 +17,7 @@ import type {
 import { useFeedback } from "../../hooks/useFeedback";
 import { useWorkspaceGatewayChat } from "../../hooks/useWorkspaceGatewayChat";
 import { formatUptime } from "../../utils/log-humanizer";
-import { useWorkspaceServiceStartupStatus } from "./useWorkspaceServiceStartupStatus";
+import { useWorkspaceServiceStartupStatus } from "../../hooks/workspace-clone/useWorkspaceServiceStartupStatus";
 import {
   buildWorkspaceEntities,
   buildWorkspaceLogs,
@@ -49,8 +49,8 @@ import {
   resolveWorkspaceScenePresetOpenState,
   updateWorkspaceScenePresetOpenState,
 } from "./workspaceCloneScenePresetState";
-import { useWorkspaceChannels } from "./useWorkspaceChannels";
-import { useWorkspaceEmailBinding } from "./useWorkspaceEmailBinding";
+import { useWorkspaceChannels } from "../../hooks/workspace-clone/useWorkspaceChannels";
+import { useWorkspaceEmailBinding } from "../../hooks/workspace-clone/useWorkspaceEmailBinding";
 import type {
   WorkspaceEntity,
   WorkspaceAgentSkillConfig,

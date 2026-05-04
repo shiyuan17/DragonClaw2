@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { loadImapSmtpEmailBinding, saveImapSmtpEmailBinding } from "../../api/emailSkillBinding";
-import { useFeedback } from "../../hooks/useFeedback";
+import { useFeedback } from "../useFeedback";
 import type { EmailSkillBindingProvider, EmailSkillBindingSnapshot } from "../../types";
 
 type WorkspaceEmailBindingProvider = Exclude<EmailSkillBindingProvider, ""> | "";

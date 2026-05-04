@@ -1,13 +1,13 @@
 import { useMemo } from "react";
 
 import type { LogEntry } from "../../types";
-import type { WorkspaceGatewayStatus } from "./workspaceCloneTypes";
+import type { WorkspaceGatewayStatus } from "../../components/workspace-clone/workspaceCloneTypes";
 import type {
   WorkspaceServiceStartupLogLine,
   WorkspaceServiceStartupPhase,
   WorkspaceServiceStartupStep,
   WorkspaceServiceStartupStepState,
-} from "./WorkspaceCloneServiceStartupPanel";
+} from "../../components/workspace-clone/WorkspaceCloneServiceStartupPanel";
 
 interface UseWorkspaceServiceStartupStatusOptions {
   running: boolean;
