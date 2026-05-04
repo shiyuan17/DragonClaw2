@@ -16,8 +16,12 @@ import type {
 } from "../../types";
 import { useFeedback } from "../../hooks/useFeedback";
 import { useWorkspaceGatewayChat } from "../../hooks/useWorkspaceGatewayChat";
+import { useWorkspaceCommandsAdmin } from "../../hooks/workspace-clone/useWorkspaceCommandsAdmin";
+import { useWorkspaceMemoryAdmin } from "../../hooks/workspace-clone/useWorkspaceMemoryAdmin";
+import { useWorkspaceSkillsAdmin } from "../../hooks/workspace-clone/useWorkspaceSkillsAdmin";
 import { formatUptime } from "../../utils/log-humanizer";
 import { useWorkspaceServiceStartupStatus } from "../../hooks/workspace-clone/useWorkspaceServiceStartupStatus";
+import { useWorkspaceToolsAdmin } from "../../hooks/workspace-clone/useWorkspaceToolsAdmin";
 import {
   buildWorkspaceEntities,
   buildWorkspaceLogs,
@@ -27,14 +31,7 @@ import {
   WORKSPACE_TYPE_TABS,
   WORKSPACE_WORKBENCH,
 } from "./workspaceCloneData";
-import { formatAgentAvatar, isGatewaySkillStatusResult } from "./workspaceCloneGateway";
-import {
-  createUniqueWorkspaceSlashCommandValue,
-  createWorkspaceSlashCommandId,
-  mapWorkspaceSlashCommandRecord,
-  toWorkspaceActiveSlashCommand,
-  WORKSPACE_BUILTIN_SLASH_COMMANDS,
-} from "./workspaceCloneSlashCommands";
+import { formatAgentAvatar } from "./workspaceCloneGateway";
 import { WorkspaceCloneChatView } from "./WorkspaceCloneChatView";
 import { WorkspaceCloneComposer } from "./WorkspaceCloneComposer";
 import { WorkspaceCloneDirectory } from "./WorkspaceCloneDirectory";
@@ -53,24 +50,13 @@ import { useWorkspaceChannels } from "../../hooks/workspace-clone/useWorkspaceCh
 import { useWorkspaceEmailBinding } from "../../hooks/workspace-clone/useWorkspaceEmailBinding";
 import type {
   WorkspaceEntity,
-  WorkspaceAgentSkillConfig,
-  WorkspaceAgentSkillSaveResult,
-  WorkspaceAgentToolConfig,
   WorkspaceGatewaySkillStatusResult,
-  WorkspaceInstalledSkillInfo,
   WorkspaceMemoryFile,
   WorkspaceRelatedResource,
   WorkspaceResourceItem,
   WorkspaceSlashCommandDefinition,
-  WorkspaceSlashCommandDraftInput,
-  WorkspaceSlashCommandRecord,
-  WorkspaceSkillCategory,
-  WorkspaceSkillOption,
   WorkspaceSessionSectionKey,
   WorkspaceSidebarAdminPanel,
-  WorkspaceToolCategory,
-  WorkspaceToolItem,
-  WorkspaceToolOption,
   WorkspaceUtilityPanel,
 } from "./workspaceCloneTypes";
 
@@ -147,22 +133,6 @@ function resolveWorkspaceModelName(currentConfig: CurrentConfig | null, fallback
   return primaryModel.includes("/") ? primaryModel.split("/").slice(1).join("/") : primaryModel;
 }
 
-function normalizeWorkspaceStringList(values: string[]) {
-  const seen = new Set<string>();
-  const normalized: string[] = [];
-
-  for (const value of values) {
-    const trimmed = value.trim();
-    if (!trimmed || seen.has(trimmed)) {
-      continue;
-    }
-    seen.add(trimmed);
-    normalized.push(trimmed);
-  }
-
-  return normalized;
-}
-
 function buildWorkspaceMemoryResourceItems(files: WorkspaceMemoryFile[]): WorkspaceResourceItem[] {
   return [...files]
     .sort((left, right) => left.displayName.localeCompare(right.displayName, "zh-CN", { sensitivity: "base" }))
@@ -170,27 +140,8 @@ function buildWorkspaceMemoryResourceItems(files: WorkspaceMemoryFile[]): Worksp
       id: file.id,
       title: file.displayName,
       subtitle: file.summary,
-      tag: file.isFocus ? "重点" : file.exists ? undefined : "待创建",
+      tag: file.isFocus ? "\u91cd\u70b9" : file.exists ? undefined : "\u5f85\u521b\u5efa",
     }));
-}
-
-function buildSkillSummaryItems(options: WorkspaceSkillOption[]): WorkspaceResourceItem[] {
-  return options.map((item) => ({
-    id: item.id,
-    title: item.title,
-    subtitle: item.description,
-    tag: item.selected ? "已启用" : item.tag,
-  }));
-}
-
-function buildToolSummaryItems(options: WorkspaceToolOption[]): WorkspaceToolItem[] {
-  return options.map((item) => ({
-    id: item.id,
-    title: item.title,
-    description: item.description,
-    enabled: item.selected,
-    tag: item.selected ? "已启用" : item.tag,
-  }));
 }
 
 function buildCommandSummaryItems(
@@ -201,15 +152,9 @@ function buildCommandSummaryItems(
     id: item.id,
     title: item.command,
     subtitle: item.description || item.name,
-    tag: item.source === "builtin" ? "只读" : item.id === activeCommandId ? "已激活" : "自定义",
+    tag: item.source === "builtin" ? "\u53ea\u8bfb" : item.id === activeCommandId ? "\u5df2\u6fc0\u6d3b" : "\u81ea\u5b9a\u4e49",
   }));
 }
-
-const EMPTY_WORKSPACE_SLASH_COMMAND_DRAFT: WorkspaceSlashCommandDraftInput = {
-  name: "",
-  description: "",
-  instruction: "",
-};
 
 /* function WorkspaceCloneSectionFallback({ label }: { label: string }) {
   return (
@@ -376,57 +321,17 @@ export function WorkspaceClonePage({
   const [adminOpen, setAdminOpen] = useState(false);
   const [adminPanel, setAdminPanel] = useState<WorkspaceSidebarAdminPanel>(null);
   const [showAgentInfo, setShowAgentInfo] = useState(false);
-  const [showMemoryModal, setShowMemoryModal] = useState(false);
-  const [showSkillsModal, setShowSkillsModal] = useState(false);
-  const [showToolsModal, setShowToolsModal] = useState(false);
   const [showRuntimeLogDetail, setShowRuntimeLogDetail] = useState(false);
   const [showSettingsTextPreview, setShowSettingsTextPreview] = useState(false);
   const [relatedResource, setRelatedResource] = useState<WorkspaceRelatedResource>(null);
   const [isModelConfigOpen, setIsModelConfigOpen] = useState(false);
   const [savedProviders, setSavedProviders] = useState<SavedProvider[]>([]);
   const [savedProvidersLoading, setSavedProvidersLoading] = useState(false);
-  const [memoryFiles, setMemoryFiles] = useState<WorkspaceMemoryFile[]>([]);
-  const [selectedMemoryFileId, setSelectedMemoryFileId] = useState("agents.md");
-  const [memoryDraftContent, setMemoryDraftContent] = useState("");
-  const [memoryLoading, setMemoryLoading] = useState(false);
-  const [memorySaving, setMemorySaving] = useState(false);
-  const [memoryNotice, setMemoryNotice] = useState("");
-  const [memoryError, setMemoryError] = useState("");
-  const [skillOptions, setSkillOptions] = useState<WorkspaceSkillOption[]>([]);
-  const [skillSearch, setSkillSearch] = useState("");
-  const [skillCategory, setSkillCategory] = useState<WorkspaceSkillCategory>("builtIn");
-  const [skillDraftIds, setSkillDraftIds] = useState<string[]>([]);
-  const [skillLoading, setSkillLoading] = useState(false);
-  const [skillSaving, setSkillSaving] = useState(false);
-  const [skillNotice, setSkillNotice] = useState("");
-  const [skillError, setSkillError] = useState("");
-  const [toolOptions, setToolOptions] = useState<WorkspaceToolOption[]>([]);
-  const [toolCategory, setToolCategory] = useState<WorkspaceToolCategory>("all");
-  const [toolProfileLabel, setToolProfileLabel] = useState("全量");
-  const [toolDraftIds, setToolDraftIds] = useState<string[]>([]);
-  const [toolLoading, setToolLoading] = useState(false);
-  const [toolSaving, setToolSaving] = useState(false);
-  const [toolNotice, setToolNotice] = useState("");
-  const [toolError, setToolError] = useState("");
-  const [customSlashCommands, setCustomSlashCommands] = useState<WorkspaceSlashCommandDefinition[]>([]);
-  const [activeSlashCommandId, setActiveSlashCommandId] = useState("");
-  const [commandSearch, setCommandSearch] = useState("");
-  const [commandDraft, setCommandDraft] = useState<WorkspaceSlashCommandDraftInput>(EMPTY_WORKSPACE_SLASH_COMMAND_DRAFT);
-  const [editingCommandId, setEditingCommandId] = useState<string | null>(null);
-  const [commandEditorOpen, setCommandEditorOpen] = useState(false);
-  const [commandLoading, setCommandLoading] = useState(false);
-  const [commandSaving, setCommandSaving] = useState(false);
-  const [commandNotice, setCommandNotice] = useState("");
-  const [commandError, setCommandError] = useState("");
   const [scenePresetOpenStateByKey, setScenePresetOpenStateByKey] = useState<Record<string, boolean>>(
     () => loadWorkspaceScenePresetOpenState(),
   );
   const homepageChat = useWorkspaceGatewayChat({ running, servicePort, gatewayToken });
   const currentAgentIdRef = useRef<string | null>(null);
-  const memoryLoadSeqRef = useRef(0);
-  const skillLoadSeqRef = useRef(0);
-  const toolLoadSeqRef = useRef(0);
-  const commandLoadSeqRef = useRef(0);
   const savedProvidersLoadSeqRef = useRef(0);
   const modelConfigOpenRef = useRef(false);
   const showDirectory = activeMenu === "chat";
@@ -546,41 +451,12 @@ export function WorkspaceClonePage({
 
   useEffect(() => {
     if (activeMenu !== "chat") {
-      memoryLoadSeqRef.current += 1;
-      skillLoadSeqRef.current += 1;
-      toolLoadSeqRef.current += 1;
       savedProvidersLoadSeqRef.current += 1;
       modelConfigOpenRef.current = false;
       setUtilityPanel(null);
       setContextMenu(null);
       setRelatedResource(null);
       setShowAgentInfo(false);
-      setShowMemoryModal(false);
-      setShowSkillsModal(false);
-      setShowToolsModal(false);
-      setMemoryLoading(false);
-      setMemorySaving(false);
-      setMemoryNotice("");
-      setMemoryError("");
-      setSkillSearch("");
-      setSkillCategory("builtIn");
-      setSkillLoading(false);
-      setSkillSaving(false);
-      setSkillNotice("");
-      setSkillError("");
-      setToolCategory("all");
-      setToolLoading(false);
-      setToolSaving(false);
-      setToolNotice("");
-      setToolError("");
-      setCommandSearch("");
-      setEditingCommandId(null);
-      setCommandDraft(EMPTY_WORKSPACE_SLASH_COMMAND_DRAFT);
-      setCommandEditorOpen(false);
-      setCommandLoading(false);
-      setCommandSaving(false);
-      setCommandNotice("");
-      setCommandError("");
       setIsModelConfigOpen(false);
       setSavedProvidersLoading(false);
       setShowRuntimeLogDetail(false);
@@ -634,14 +510,18 @@ export function WorkspaceClonePage({
     },
     [activeType, homepageChat.selectedAgentId, selectedEntity?.id, selectedEntity?.runtimeAgentId, selectedEntityId],
   );
-  const slashCommands = useMemo(
-    () => [...WORKSPACE_BUILTIN_SLASH_COMMANDS, ...customSlashCommands],
-    [customSlashCommands],
+  const memoryAdmin = useWorkspaceMemoryAdmin({ agentId: currentMemoryAgentId });
+  const commandsAdmin = useWorkspaceCommandsAdmin();
+  const requestSkillStatus = useCallback(
+    (agentId: string) => homepageChat.request<WorkspaceGatewaySkillStatusResult>("skills.status", { agentId }),
+    [homepageChat.request],
   );
-  const activeSlashCommand = useMemo(
-    () => toWorkspaceActiveSlashCommand(slashCommands.find((item) => item.id === activeSlashCommandId) ?? null),
-    [activeSlashCommandId, slashCommands],
-  );
+  const skillsAdmin = useWorkspaceSkillsAdmin({
+    agentId: currentMemoryAgentId,
+    gatewayConnected: homepageChat.connected,
+    requestSkillStatus,
+  });
+  const toolsAdmin = useWorkspaceToolsAdmin({ agentId: currentMemoryAgentId });
 
   const showScenePresetToggle = activeMenu === "chat" && activeType === "agents" && Boolean(selectedEntity?.id);
   const scenePresetStateKey = useMemo(
@@ -664,6 +544,21 @@ export function WorkspaceClonePage({
   useEffect(() => {
     currentAgentIdRef.current = currentMemoryAgentId;
   }, [currentMemoryAgentId]);
+
+  useEffect(() => {
+    if (activeMenu !== "chat") {
+      memoryAdmin.closeMemoryModal();
+      commandsAdmin.closeCommandsModal();
+      skillsAdmin.closeSkillsModal();
+      toolsAdmin.closeToolsModal();
+    }
+  }, [
+    activeMenu,
+    commandsAdmin.closeCommandsModal,
+    memoryAdmin.closeMemoryModal,
+    skillsAdmin.closeSkillsModal,
+    toolsAdmin.closeToolsModal,
+  ]);
 
   const toggleScenePresets = useCallback(() => {
     if (!showScenePresetToggle) {
@@ -691,33 +586,9 @@ export function WorkspaceClonePage({
     setComposerDraft(content);
   }, []);
 
-  const activeMemoryFile = useMemo(
-    () => memoryFiles.find((file) => file.id === selectedMemoryFileId) ?? memoryFiles[0] ?? null,
-    [memoryFiles, selectedMemoryFileId],
-  );
-
-  const clearMemoryStatus = useCallback(() => {
-    setMemoryNotice("");
-    setMemoryError("");
-  }, []);
-
-  const clearSkillStatus = useCallback(() => {
-    setSkillNotice("");
-    setSkillError("");
-  }, []);
-
-  const clearToolStatus = useCallback(() => {
-    setToolNotice("");
-    setToolError("");
-  }, []);
-
-  const clearCommandStatus = useCallback(() => {
-    setCommandNotice("");
-    setCommandError("");
-  }, []);
 
   useEffect(() => {
-    const message = memoryNotice.trim();
+    const message = memoryAdmin.memoryNotice.trim();
     if (!message) {
       return;
     }
@@ -728,10 +599,10 @@ export function WorkspaceClonePage({
       dedupeKey: "workspace-memory-notice",
       persistent: false,
     });
-  }, [memoryNotice, pushFeedback]);
+  }, [memoryAdmin.memoryNotice, pushFeedback]);
 
   useEffect(() => {
-    const message = memoryError.trim();
+    const message = memoryAdmin.memoryError.trim();
     if (!message) {
       return;
     }
@@ -744,10 +615,10 @@ export function WorkspaceClonePage({
       persistent: false,
       autoCloseMs: 3600,
     });
-  }, [memoryError, pushFeedback]);
+  }, [memoryAdmin.memoryError, pushFeedback]);
 
   useEffect(() => {
-    const message = skillNotice.trim();
+    const message = skillsAdmin.skillNotice.trim();
     if (!message) {
       return;
     }
@@ -758,10 +629,10 @@ export function WorkspaceClonePage({
       dedupeKey: "workspace-skills-notice",
       persistent: false,
     });
-  }, [pushFeedback, skillNotice]);
+  }, [pushFeedback, skillsAdmin.skillNotice]);
 
   useEffect(() => {
-    const message = skillError.trim();
+    const message = skillsAdmin.skillError.trim();
     if (!message) {
       return;
     }
@@ -774,10 +645,10 @@ export function WorkspaceClonePage({
       persistent: false,
       autoCloseMs: 3600,
     });
-  }, [pushFeedback, skillError]);
+  }, [pushFeedback, skillsAdmin.skillError]);
 
   useEffect(() => {
-    const message = toolNotice.trim();
+    const message = toolsAdmin.toolNotice.trim();
     if (!message) {
       return;
     }
@@ -788,10 +659,10 @@ export function WorkspaceClonePage({
       dedupeKey: "workspace-tools-notice",
       persistent: false,
     });
-  }, [pushFeedback, toolNotice]);
+  }, [pushFeedback, toolsAdmin.toolNotice]);
 
   useEffect(() => {
-    const message = toolError.trim();
+    const message = toolsAdmin.toolError.trim();
     if (!message) {
       return;
     }
@@ -804,10 +675,10 @@ export function WorkspaceClonePage({
       persistent: false,
       autoCloseMs: 3600,
     });
-  }, [pushFeedback, toolError]);
+  }, [pushFeedback, toolsAdmin.toolError]);
 
   useEffect(() => {
-    const message = commandNotice.trim();
+    const message = commandsAdmin.commandNotice.trim();
     if (!message) {
       return;
     }
@@ -818,10 +689,10 @@ export function WorkspaceClonePage({
       dedupeKey: "workspace-commands-notice",
       persistent: false,
     });
-  }, [commandNotice, pushFeedback]);
+  }, [commandsAdmin.commandNotice, pushFeedback]);
 
   useEffect(() => {
-    const message = commandError.trim();
+    const message = commandsAdmin.commandError.trim();
     if (!message) {
       return;
     }
@@ -834,7 +705,7 @@ export function WorkspaceClonePage({
       persistent: false,
       autoCloseMs: 3600,
     });
-  }, [commandError, pushFeedback]);
+  }, [commandsAdmin.commandError, pushFeedback]);
 
   useEffect(() => {
     const message = workspaceChannels.modalNotice.trim();
@@ -884,551 +755,56 @@ export function WorkspaceClonePage({
     });
   }, [pushFeedback, workspaceChannels.modalError]);
 
-  const refreshMemoryFiles = useCallback(async (options?: {
-    showLoading?: boolean;
-    preferredId?: string;
-  }) => {
-    const showLoading = options?.showLoading ?? false;
-    const preferredId = options?.preferredId;
 
-    if (!currentMemoryAgentId) {
-      setMemoryFiles([]);
-      setSelectedMemoryFileId("");
-      setMemoryDraftContent("");
-      return;
-    }
 
-    if (showLoading) {
-      setMemoryLoading(true);
-    }
 
-    const targetAgentId = currentMemoryAgentId;
-    const requestId = memoryLoadSeqRef.current + 1;
-    memoryLoadSeqRef.current = requestId;
 
-    try {
-      const memoryModule = await import("./workspaceCloneMemory");
-      const snapshot = await memoryModule.loadWorkspaceMemorySnapshot(targetAgentId);
-      if (memoryLoadSeqRef.current !== requestId || currentAgentIdRef.current !== targetAgentId) {
-        return;
-      }
-      const nextFiles = snapshot.items.length > 0
-        ? snapshot.items.map((item) => memoryModule.normalizeWorkspaceMemoryFile(item))
-        : memoryModule.createWorkspaceFallbackMemoryFiles();
-      const nextSelectedId =
-        preferredId && nextFiles.some((file) => file.id === preferredId)
-          ? preferredId
-          : nextFiles.some((file) => file.id === selectedMemoryFileId)
-            ? selectedMemoryFileId
-            : nextFiles[0]?.id || "";
-      const nextActiveFile = nextFiles.find((file) => file.id === nextSelectedId) ?? nextFiles[0] ?? null;
-
-      setMemoryFiles(nextFiles);
-      setSelectedMemoryFileId(nextSelectedId);
-      setMemoryDraftContent(nextActiveFile?.content || "");
-      setMemoryError("");
-    } catch (memoryLoadError) {
-      if (memoryLoadSeqRef.current !== requestId || currentAgentIdRef.current !== targetAgentId) {
-        return;
-      }
-      setMemoryError(memoryLoadError instanceof Error ? memoryLoadError.message : "读取记忆文件失败");
-      if (memoryFiles.length === 0) {
-        const memoryModule = await import("./workspaceCloneMemory");
-        const fallbackFiles = memoryModule.createWorkspaceFallbackMemoryFiles();
-        setMemoryFiles(fallbackFiles);
-        setSelectedMemoryFileId(fallbackFiles[0]?.id || "");
-        setMemoryDraftContent(fallbackFiles[0]?.content || "");
-      }
-    } finally {
-      if (showLoading && memoryLoadSeqRef.current === requestId && currentAgentIdRef.current === targetAgentId) {
-        setMemoryLoading(false);
-      }
-    }
-  }, [currentMemoryAgentId, memoryFiles.length, selectedMemoryFileId]);
-
-  const refreshSkillOptions = useCallback(async (options?: { showLoading?: boolean }) => {
-    const showLoading = options?.showLoading ?? false;
-    if (!currentMemoryAgentId) {
-      setSkillOptions([]);
-      setSkillDraftIds([]);
-      return;
-    }
-
-    if (showLoading) {
-      setSkillLoading(true);
-    }
-
-    const targetAgentId = currentMemoryAgentId;
-    const requestId = skillLoadSeqRef.current + 1;
-    skillLoadSeqRef.current = requestId;
-
-    try {
-      const agentResources = await import("./workspaceCloneAgentResources");
-      const savedConfig = await invoke<WorkspaceAgentSkillConfig>("get_agent_skill_config", {
-        agentId: targetAgentId,
-      });
-      if (skillLoadSeqRef.current !== requestId || currentAgentIdRef.current !== targetAgentId) {
-        return;
-      }
-
-      let nextOptions: WorkspaceSkillOption[] = [];
-      if (homepageChat.connected) {
-        const report = await homepageChat.request<WorkspaceGatewaySkillStatusResult>("skills.status", {
-          agentId: targetAgentId,
-        });
-        if (skillLoadSeqRef.current !== requestId || currentAgentIdRef.current !== targetAgentId) {
-          return;
-        }
-        if (!isGatewaySkillStatusResult(report)) {
-          throw new Error("skills.status 返回格式不正确");
-        }
-        const installedSkills = await invoke<WorkspaceInstalledSkillInfo[]>("list_skills").catch(() => []);
-        if (skillLoadSeqRef.current !== requestId || currentAgentIdRef.current !== targetAgentId) {
-          return;
-        }
-        nextOptions = agentResources.buildSkillOptions({
-          selectedSkillNames: savedConfig.selectedSkillNames,
-          statusEntries: report.skills,
-          installedSkills,
-        });
-      } else {
-        const installedSkills = await invoke<WorkspaceInstalledSkillInfo[]>("list_skills");
-        if (skillLoadSeqRef.current !== requestId || currentAgentIdRef.current !== targetAgentId) {
-          return;
-        }
-        nextOptions = agentResources.buildSkillOptions({
-          selectedSkillNames: savedConfig.selectedSkillNames,
-          installedSkills,
-        });
-      }
-
-      setSkillOptions(nextOptions);
-      setSkillDraftIds(nextOptions.filter((item) => item.selected).map((item) => item.id));
-      setSkillError("");
-    } catch (skillLoadError) {
-      if (skillLoadSeqRef.current !== requestId || currentAgentIdRef.current !== targetAgentId) {
-        return;
-      }
-      setSkillError(skillLoadError instanceof Error ? skillLoadError.message : "读取技能配置失败");
-      setSkillOptions((current) =>
-        current.length > 0
-          ? current
-          : [
-              {
-                id: "pending",
-                title: "技能配置",
-                description: "未能读取真实技能配置，请稍后刷新。",
-                tag: "Error",
-                category: "builtIn",
-                selected: false,
-              },
-            ],
-      );
-      setSkillDraftIds((current) => current);
-    } finally {
-      if (showLoading && skillLoadSeqRef.current === requestId && currentAgentIdRef.current === targetAgentId) {
-        setSkillLoading(false);
-      }
-    }
-  }, [currentMemoryAgentId, homepageChat.connected, homepageChat.request]);
-
-  const refreshToolOptions = useCallback(async (options?: { showLoading?: boolean }) => {
-    const showLoading = options?.showLoading ?? false;
-    if (!currentMemoryAgentId) {
-      setToolOptions([]);
-      setToolProfileLabel("全量");
-      setToolDraftIds([]);
-      return;
-    }
-
-    if (showLoading) {
-      setToolLoading(true);
-    }
-
-    const targetAgentId = currentMemoryAgentId;
-    const requestId = toolLoadSeqRef.current + 1;
-    toolLoadSeqRef.current = requestId;
-
-    try {
-      const agentResources = await import("./workspaceCloneAgentResources");
-      const config = await invoke<WorkspaceAgentToolConfig>("get_agent_tool_config", {
-        agentId: targetAgentId,
-      });
-      if (toolLoadSeqRef.current !== requestId || currentAgentIdRef.current !== targetAgentId) {
-        return;
-      }
-      const nextOptions = agentResources.buildToolOptions(config);
-      setToolOptions(nextOptions);
-      setToolProfileLabel(agentResources.getWorkspaceToolProfileLabel(config));
-      setToolDraftIds(nextOptions.filter((item) => item.selected).map((item) => item.id));
-      setToolError("");
-    } catch (toolLoadError) {
-      if (toolLoadSeqRef.current !== requestId || currentAgentIdRef.current !== targetAgentId) {
-        return;
-      }
-      setToolError(toolLoadError instanceof Error ? toolLoadError.message : "读取工具权限失败");
-      setToolOptions([]);
-      setToolProfileLabel("全量");
-      setToolDraftIds([]);
-    } finally {
-      if (showLoading && toolLoadSeqRef.current === requestId && currentAgentIdRef.current === targetAgentId) {
-        setToolLoading(false);
-      }
-    }
-  }, [currentMemoryAgentId]);
-
-  const refreshSlashCommands = useCallback(async (options?: { showLoading?: boolean }) => {
-    const showLoading = options?.showLoading ?? false;
-    const requestId = commandLoadSeqRef.current + 1;
-    commandLoadSeqRef.current = requestId;
-
-    if (showLoading) {
-      setCommandLoading(true);
-    }
-
-    try {
-      const records = await invoke<WorkspaceSlashCommandRecord[]>("load_custom_slash_commands");
-      if (commandLoadSeqRef.current !== requestId) {
-        return;
-      }
-
-      setCustomSlashCommands(records.map((item) => mapWorkspaceSlashCommandRecord(item)));
-      setCommandError("");
-    } catch (commandLoadError) {
-      if (commandLoadSeqRef.current !== requestId) {
-        return;
-      }
-      setCommandError(commandLoadError instanceof Error ? commandLoadError.message : "读取 Slash Commands 失败");
-    } finally {
-      if (showLoading && commandLoadSeqRef.current === requestId) {
-        setCommandLoading(false);
-      }
-    }
-  }, []);
-
-  const persistSlashCommands = useCallback(
-    async (
-      nextCommands: WorkspaceSlashCommandDefinition[],
-      successMessage: string,
-    ) => {
-      clearCommandStatus();
-      setCommandSaving(true);
-
-      try {
-        const records = nextCommands
-          .filter((item) => item.source === "custom")
-          .map<WorkspaceSlashCommandRecord>(({ id, command, name, description, instruction }) => ({
-            id,
-            command,
-            name,
-            description,
-            instruction,
-          }));
-        const savedRecords = await invoke<WorkspaceSlashCommandRecord[]>("save_custom_slash_commands", {
-          commands: records,
-        });
-        const savedCommands = savedRecords.map((item) => mapWorkspaceSlashCommandRecord(item));
-        setCustomSlashCommands(savedCommands);
-        setCommandNotice(successMessage);
-        return savedCommands;
-      } catch (commandSaveError) {
-        setCommandError(commandSaveError instanceof Error ? commandSaveError.message : "保存 Slash Commands 失败");
-        return null;
-      } finally {
-        setCommandSaving(false);
-      }
-    },
-    [clearCommandStatus],
-  );
 
   const openCommandsModal = useCallback(() => {
     setActiveSessionSection("commands");
     setRelatedResource("commands");
-    clearCommandStatus();
-    void refreshSlashCommands({ showLoading: true });
-  }, [clearCommandStatus, refreshSlashCommands]);
+    commandsAdmin.openCommandsModal();
+  }, [commandsAdmin.openCommandsModal]);
 
   const closeCommandsModal = useCallback(() => {
-    commandLoadSeqRef.current += 1;
     setRelatedResource((current) => (current === "commands" ? null : current));
-    setCommandSearch("");
-    setEditingCommandId(null);
-    setCommandDraft(EMPTY_WORKSPACE_SLASH_COMMAND_DRAFT);
-    setCommandEditorOpen(false);
-    setCommandLoading(false);
-    setCommandSaving(false);
-    clearCommandStatus();
-  }, [clearCommandStatus]);
+    commandsAdmin.closeCommandsModal();
+  }, [commandsAdmin.closeCommandsModal]);
 
   const openMemoryModal = useCallback(() => {
     setActiveSessionSection("memory");
-    setShowMemoryModal(true);
-    clearMemoryStatus();
-    void refreshMemoryFiles({
-      showLoading: true,
-      preferredId: selectedMemoryFileId || undefined,
-    });
-  }, [clearMemoryStatus, refreshMemoryFiles, selectedMemoryFileId]);
+    memoryAdmin.openMemoryModal();
+  }, [memoryAdmin.openMemoryModal]);
 
   const closeMemoryModal = useCallback(() => {
-    memoryLoadSeqRef.current += 1;
-    setShowMemoryModal(false);
-    setMemoryLoading(false);
-    setMemorySaving(false);
-    clearMemoryStatus();
-  }, [clearMemoryStatus]);
+    memoryAdmin.closeMemoryModal();
+  }, [memoryAdmin.closeMemoryModal]);
 
   const openSkillsModal = useCallback(() => {
     setActiveSessionSection("skills");
-    setShowSkillsModal(true);
-    clearSkillStatus();
-    void refreshSkillOptions({ showLoading: true });
-  }, [clearSkillStatus, refreshSkillOptions]);
+    skillsAdmin.openSkillsModal();
+  }, [skillsAdmin.openSkillsModal]);
 
   const closeSkillsModal = useCallback(() => {
-    skillLoadSeqRef.current += 1;
-    setShowSkillsModal(false);
-    setSkillSearch("");
-    setSkillLoading(false);
-    setSkillSaving(false);
-    clearSkillStatus();
-  }, [clearSkillStatus]);
+    skillsAdmin.closeSkillsModal();
+  }, [skillsAdmin.closeSkillsModal]);
 
   const openToolsModal = useCallback(() => {
     setActiveSessionSection("tools");
-    setShowToolsModal(true);
-    clearToolStatus();
-    void refreshToolOptions({ showLoading: true });
-  }, [clearToolStatus, refreshToolOptions]);
+    toolsAdmin.openToolsModal();
+  }, [toolsAdmin.openToolsModal]);
 
   const closeToolsModal = useCallback(() => {
-    toolLoadSeqRef.current += 1;
-    setShowToolsModal(false);
-    setToolLoading(false);
-    setToolSaving(false);
-    clearToolStatus();
-  }, [clearToolStatus]);
+    toolsAdmin.closeToolsModal();
+  }, [toolsAdmin.closeToolsModal]);
 
-  const handleSelectMemoryFile = useCallback((fileId: string) => {
-    setSelectedMemoryFileId(fileId);
-    const nextFile = memoryFiles.find((file) => file.id === fileId);
-    setMemoryDraftContent(nextFile?.content || "");
-  }, [memoryFiles]);
 
-  const handleSaveMemoryFile = useCallback(async () => {
-    if (!activeMemoryFile || !currentMemoryAgentId) {
-      setMemoryError("请先选择一个记忆文件");
-      return;
-    }
 
-    clearMemoryStatus();
-    setMemorySaving(true);
 
-    try {
-      const memoryModule = await import("./workspaceCloneMemory");
-      await memoryModule.saveWorkspaceMemoryFile({
-        sourcePath: activeMemoryFile.sourcePath,
-        content: memoryDraftContent,
-        agentId: currentMemoryAgentId,
-      });
-      setMemoryNotice(`记忆文件已保存：${activeMemoryFile.displayName}`);
-      await refreshMemoryFiles({ preferredId: activeMemoryFile.id });
-    } catch (memorySaveError) {
-      setMemoryError(memorySaveError instanceof Error ? memorySaveError.message : "保存记忆文件失败");
-    } finally {
-      setMemorySaving(false);
-    }
-  }, [activeMemoryFile, clearMemoryStatus, currentMemoryAgentId, memoryDraftContent, refreshMemoryFiles]);
-
-  const handleToggleSkill = useCallback((skillId: string) => {
-    setSkillDraftIds((current) =>
-      current.includes(skillId)
-        ? current.filter((item) => item !== skillId)
-        : [...current, skillId],
-    );
-  }, []);
-
-  const handleToggleTool = useCallback((toolId: string) => {
-    setToolDraftIds((current) =>
-      current.includes(toolId)
-        ? current.filter((item) => item !== toolId)
-        : [...current, toolId],
-    );
-  }, []);
-
-  const handleSaveSkills = useCallback(async () => {
-    if (!currentMemoryAgentId) {
-      setSkillError("当前未选中 Agent");
-      return;
-    }
-
-    clearSkillStatus();
-    setSkillSaving(true);
-
-    try {
-      const result = await invoke<WorkspaceAgentSkillSaveResult>("save_agent_skill_config", {
-        agentId: currentMemoryAgentId,
-        skillNames: normalizeWorkspaceStringList(skillDraftIds),
-      });
-      setSkillNotice(
-        result.appliesOnNextMessage
-          ? "技能配置已保存，下一条消息会按新配置生效。"
-          : "技能配置已保存。",
-      );
-      await refreshSkillOptions();
-    } catch (saveError) {
-      setSkillError(saveError instanceof Error ? saveError.message : "保存技能配置失败");
-    } finally {
-      setSkillSaving(false);
-    }
-  }, [clearSkillStatus, currentMemoryAgentId, refreshSkillOptions, skillDraftIds]);
-
-  const handleSaveTools = useCallback(async () => {
-    if (!currentMemoryAgentId) {
-      setToolError("当前未选中 Agent");
-      return;
-    }
-
-    clearToolStatus();
-    setToolSaving(true);
-
-    try {
-      await invoke<WorkspaceAgentToolConfig>("save_agent_tool_config", {
-        agentId: currentMemoryAgentId,
-        selectedToolNames: normalizeWorkspaceStringList(toolDraftIds),
-      });
-      setToolNotice("工具权限已保存，下一条消息会按新权限执行。");
-      await refreshToolOptions();
-    } catch (saveError) {
-      setToolError(saveError instanceof Error ? saveError.message : "保存工具权限失败");
-    } finally {
-      setToolSaving(false);
-    }
-  }, [clearToolStatus, currentMemoryAgentId, refreshToolOptions, toolDraftIds]);
-
-  const handleActivateSlashCommand = useCallback((commandId: string) => {
-    setActiveSlashCommandId(commandId);
-  }, []);
-
-  const handleStartCreateSlashCommand = useCallback(() => {
-    clearCommandStatus();
-    setEditingCommandId(null);
-    setCommandDraft(EMPTY_WORKSPACE_SLASH_COMMAND_DRAFT);
-    setCommandEditorOpen(true);
-  }, [clearCommandStatus]);
-
-  const handleStartEditSlashCommand = useCallback((commandId: string) => {
-    const target = customSlashCommands.find((item) => item.id === commandId);
-    if (!target) {
-      return;
-    }
-
-    clearCommandStatus();
-    setEditingCommandId(commandId);
-    setCommandDraft({
-      name: target.name,
-      description: target.description,
-      instruction: target.instruction,
-    });
-    setCommandEditorOpen(true);
-  }, [clearCommandStatus, customSlashCommands]);
-
-  const handleCancelSlashCommandEdit = useCallback(() => {
-    clearCommandStatus();
-    setEditingCommandId(null);
-    setCommandDraft(EMPTY_WORKSPACE_SLASH_COMMAND_DRAFT);
-    setCommandEditorOpen(false);
-  }, [clearCommandStatus]);
-
-  const handleDeleteSlashCommand = useCallback(async (commandId: string) => {
-    const target = customSlashCommands.find((item) => item.id === commandId);
-    if (!target) {
-      return;
-    }
-
-    const savedCommands = await persistSlashCommands(
-      customSlashCommands.filter((item) => item.id !== commandId),
-      `已删除命令：${target.name}`,
-    );
-    if (!savedCommands) {
-      return;
-    }
-
-    if (activeSlashCommandId === commandId) {
-      setActiveSlashCommandId("");
-    }
-    if (editingCommandId === commandId) {
-      setEditingCommandId(null);
-      setCommandDraft(EMPTY_WORKSPACE_SLASH_COMMAND_DRAFT);
-      setCommandEditorOpen(false);
-    }
-  }, [activeSlashCommandId, customSlashCommands, editingCommandId, persistSlashCommands]);
-
-  const handleSaveSlashCommandDraft = useCallback(async () => {
-    const name = commandDraft.name.trim();
-    const description = commandDraft.description.trim();
-    const instruction = commandDraft.instruction.trim();
-
-    if (!name) {
-      setCommandError("请填写命令名称");
-      return;
-    }
-
-    if (!instruction) {
-      setCommandError("请填写命令指令内容");
-      return;
-    }
-
-    const record = mapWorkspaceSlashCommandRecord({
-      id: editingCommandId || createWorkspaceSlashCommandId(),
-      command: createUniqueWorkspaceSlashCommandValue({
-        name,
-        existingCommands: slashCommands,
-        excludeId: editingCommandId,
-      }),
-      name,
-      description,
-      instruction,
-    });
-    const nextCommands = editingCommandId
-      ? customSlashCommands.map((item) => (item.id === editingCommandId ? record : item))
-      : [...customSlashCommands, record];
-    const savedCommands = await persistSlashCommands(
-      nextCommands,
-      editingCommandId ? `已保存命令：${name}` : `已创建命令：${name}`,
-    );
-
-    if (!savedCommands) {
-      return;
-    }
-
-    setEditingCommandId(null);
-    setCommandDraft(EMPTY_WORKSPACE_SLASH_COMMAND_DRAFT);
-    setCommandEditorOpen(false);
-  }, [commandDraft, customSlashCommands, editingCommandId, persistSlashCommands, slashCommands]);
 
   useEffect(() => {
-    setSkillSearch("");
-    setSkillCategory("builtIn");
-    setToolCategory("all");
-    clearSkillStatus();
-    clearToolStatus();
-    clearCommandStatus();
-  }, [clearCommandStatus, clearSkillStatus, clearToolStatus, currentMemoryAgentId]);
-
-  useEffect(() => {
-    if (!activeSlashCommandId) {
-      return;
-    }
-
-    if (!slashCommands.some((item) => item.id === activeSlashCommandId)) {
-      setActiveSlashCommandId("");
-    }
-  }, [activeSlashCommandId, slashCommands]);
-
-  useEffect(() => {
-    void refreshSlashCommands({ showLoading: true });
-  }, [refreshSlashCommands]);
+    commandsAdmin.clearCommandStatus();
+  }, [commandsAdmin.clearCommandStatus, currentMemoryAgentId]);
 
   useEffect(() => {
     if (utilityPanel === "history") {
@@ -1439,46 +815,27 @@ export function WorkspaceClonePage({
   const uptimeLabel = running ? formatUptime(uptime) : "未启动";
   const shouldBuildLogRows = utilityPanel === "logs" || showRuntimeLogDetail;
   const shouldBuildMemoryRows =
-    showMemoryModal || relatedResource === "memory" || (utilityPanel === "session" && activeSessionSection === "memory");
+    memoryAdmin.showMemoryModal || relatedResource === "memory" || (utilityPanel === "session" && activeSessionSection === "memory");
   const shouldBuildSkillRows =
-    showSkillsModal || relatedResource === "skills" || (utilityPanel === "session" && activeSessionSection === "skills");
+    skillsAdmin.showSkillsModal || relatedResource === "skills" || (utilityPanel === "session" && activeSessionSection === "skills");
   const shouldBuildCommandRows = relatedResource === "commands" || utilityPanel === "session";
   const shouldBuildToolRows =
-    showToolsModal || relatedResource === "tools" || (utilityPanel === "session" && activeSessionSection === "tools");
+    toolsAdmin.showToolsModal || relatedResource === "tools" || (utilityPanel === "session" && activeSessionSection === "tools");
   const shouldBuildChannelRows =
     relatedResource === "channel" || (utilityPanel === "session" && activeSessionSection === "channel");
   const derivedLogs = useMemo(() => (shouldBuildLogRows ? buildWorkspaceLogs(logs) : []), [logs, shouldBuildLogRows]);
   const memoryResourceItems = useMemo(
-    () => (shouldBuildMemoryRows ? buildWorkspaceMemoryResourceItems(memoryFiles) : []),
-    [memoryFiles, shouldBuildMemoryRows],
+    () => (shouldBuildMemoryRows ? buildWorkspaceMemoryResourceItems(memoryAdmin.memoryFiles) : []),
+    [memoryAdmin.memoryFiles, shouldBuildMemoryRows],
   );
-  const skillResourceItems = useMemo(
-    () =>
-      shouldBuildSkillRows
-        ? buildSkillSummaryItems(
-            skillOptions.map((item) => ({
-              ...item,
-              selected: skillDraftIds.includes(item.id),
-            })),
-          )
-        : [],
-    [shouldBuildSkillRows, skillDraftIds, skillOptions],
-  );
-  const toolResourceItems = useMemo(
-    () =>
-      shouldBuildToolRows
-        ? buildToolSummaryItems(
-            toolOptions.map((item) => ({
-              ...item,
-              selected: toolDraftIds.includes(item.id),
-            })),
-          )
-        : [],
-    [shouldBuildToolRows, toolDraftIds, toolOptions],
-  );
+  const skillResourceItems = useMemo(() => (shouldBuildSkillRows ? skillsAdmin.skillResourceItems : []), [shouldBuildSkillRows, skillsAdmin.skillResourceItems]);
+  const toolResourceItems = useMemo(() => (shouldBuildToolRows ? toolsAdmin.toolResourceItems : []), [shouldBuildToolRows, toolsAdmin.toolResourceItems]);
   const commandResourceItems = useMemo(
-    () => (shouldBuildCommandRows ? buildCommandSummaryItems(slashCommands, activeSlashCommandId) : []),
-    [activeSlashCommandId, shouldBuildCommandRows, slashCommands],
+    () =>
+      shouldBuildCommandRows
+        ? buildCommandSummaryItems(commandsAdmin.slashCommands, commandsAdmin.activeSlashCommandId)
+        : [],
+    [commandsAdmin.activeSlashCommandId, commandsAdmin.slashCommands, shouldBuildCommandRows],
   );
   const openModelConfigModal = useCallback(() => {
     modelConfigOpenRef.current = true;
@@ -1573,9 +930,9 @@ export function WorkspaceClonePage({
 
   const shouldRenderOverlayStack = Boolean(
     showAgentInfo ||
-    showMemoryModal ||
-    showSkillsModal ||
-    showToolsModal ||
+    memoryAdmin.showMemoryModal ||
+    skillsAdmin.showSkillsModal ||
+    toolsAdmin.showToolsModal ||
     showRuntimeLogDetail ||
     showSettingsTextPreview ||
     relatedResource,
@@ -1826,11 +1183,11 @@ export function WorkspaceClonePage({
                 onOpenModelConfig={openModelConfigModal}
                 emailBindingBound={workspaceEmailBinding.isBound}
                 emailBindingBoundProviderLabel={workspaceEmailBinding.boundProviderLabel}
-                slashCommands={slashCommands}
-                activeSlashCommand={activeSlashCommand}
-                onActivateSlashCommand={handleActivateSlashCommand}
-                onClearActiveSlashCommand={() => setActiveSlashCommandId("")}
-                onSend={(value) => homepageChat.sendMessage(value, { activeCommand: activeSlashCommand || undefined })}
+                slashCommands={commandsAdmin.slashCommands}
+                activeSlashCommand={commandsAdmin.activeSlashCommand}
+                onActivateSlashCommand={commandsAdmin.handleActivateSlashCommand}
+                onClearActiveSlashCommand={() => commandsAdmin.handleActivateSlashCommand("")}
+                onSend={(value) => homepageChat.sendMessage(value, { activeCommand: commandsAdmin.activeSlashCommand || undefined })}
                 onAbort={homepageChat.abortMessage}
                 onResetSession={homepageChat.resetSession}
               />
@@ -1843,7 +1200,7 @@ export function WorkspaceClonePage({
             <Suspense fallback={<WorkspaceCloneLazyFallback label="技能市场" />}>
               <WorkspaceCloneSkillsMarketView
                 currentAgentId={currentMemoryAgentId}
-                onRefreshCurrentAgentSkills={() => refreshSkillOptions({ showLoading: true })}
+                onRefreshCurrentAgentSkills={() => skillsAdmin.refreshSkillOptions({ showLoading: true })}
               />
             </Suspense>
           ) : (
@@ -1856,107 +1213,101 @@ export function WorkspaceClonePage({
             <WorkspaceCloneOverlayStack
           selectedEntity={selectedEntity}
           showAgentInfo={showAgentInfo}
-          showMemoryModal={showMemoryModal}
-          showSkillsModal={showSkillsModal}
-          showToolsModal={showToolsModal}
+          showMemoryModal={memoryAdmin.showMemoryModal}
+          showSkillsModal={skillsAdmin.showSkillsModal}
+          showToolsModal={toolsAdmin.showToolsModal}
           showRuntimeLogDetail={showRuntimeLogDetail}
           showSettingsTextPreview={showSettingsTextPreview}
           relatedResource={relatedResource}
-          memoryFiles={memoryFiles}
-          selectedMemoryFileId={selectedMemoryFileId}
-          memoryDraftContent={memoryDraftContent}
-          memoryLoading={memoryLoading}
-          memorySaving={memorySaving}
-          memoryNotice={memoryNotice}
-          memoryError={memoryError}
-          skillSearch={skillSearch}
-          skillCategory={skillCategory}
-          skillOptions={skillOptions.map((item) => ({
-            ...item,
-            selected: skillDraftIds.includes(item.id),
-          }))}
-          skillLoading={skillLoading}
-          skillSaving={skillSaving}
-          skillNotice={skillNotice}
-          skillError={skillError}
-          toolCategory={toolCategory}
-          toolProfileLabel={toolProfileLabel}
-          toolOptions={toolOptions.map((item) => ({
-            ...item,
-            selected: toolDraftIds.includes(item.id),
-          }))}
-          toolLoading={toolLoading}
-          toolSaving={toolSaving}
-          toolNotice={toolNotice}
-          toolError={toolError}
+          memoryFiles={memoryAdmin.memoryFiles}
+          selectedMemoryFileId={memoryAdmin.selectedMemoryFileId}
+          memoryDraftContent={memoryAdmin.memoryDraftContent}
+          memoryLoading={memoryAdmin.memoryLoading}
+          memorySaving={memoryAdmin.memorySaving}
+          memoryNotice={memoryAdmin.memoryNotice}
+          memoryError={memoryAdmin.memoryError}
+          skillSearch={skillsAdmin.skillSearch}
+          skillCategory={skillsAdmin.skillCategory}
+          skillOptions={skillsAdmin.selectedSkillOptions}
+          skillLoading={skillsAdmin.skillLoading}
+          skillSaving={skillsAdmin.skillSaving}
+          skillNotice={skillsAdmin.skillNotice}
+          skillError={skillsAdmin.skillError}
+          toolCategory={toolsAdmin.toolCategory}
+          toolProfileLabel={toolsAdmin.toolProfileLabel}
+          toolOptions={toolsAdmin.selectedToolOptions}
+          toolLoading={toolsAdmin.toolLoading}
+          toolSaving={toolsAdmin.toolSaving}
+          toolNotice={toolsAdmin.toolNotice}
+          toolError={toolsAdmin.toolError}
           memoryItems={memoryResourceItems}
-          commandItems={slashCommands}
-          activeCommandId={activeSlashCommandId}
-          commandSearch={commandSearch}
-          commandDraft={commandDraft}
-          editingCommandId={editingCommandId}
-          commandEditorOpen={commandEditorOpen}
-          commandLoading={commandLoading}
-          commandSaving={commandSaving}
-          commandNotice={commandNotice}
-          commandError={commandError}
+          commandItems={commandsAdmin.slashCommands}
+          activeCommandId={commandsAdmin.activeSlashCommandId}
+          commandSearch={commandsAdmin.commandSearch}
+          commandDraft={commandsAdmin.commandDraft}
+          editingCommandId={commandsAdmin.editingCommandId}
+          commandEditorOpen={commandsAdmin.commandEditorOpen}
+          commandLoading={commandsAdmin.commandLoading}
+          commandSaving={commandsAdmin.commandSaving}
+          commandNotice={commandsAdmin.commandNotice}
+          commandError={commandsAdmin.commandError}
           channelItems={shouldBuildChannelRows ? workspaceChannels.channelResourceItems : []}
           scheduleItems={scheduleResourceItems}
           onCloseAgentInfo={() => setShowAgentInfo(false)}
           onCloseMemoryModal={closeMemoryModal}
           onRefreshMemoryModal={() => {
-            clearMemoryStatus();
-            void refreshMemoryFiles({
+            memoryAdmin.clearMemoryStatus();
+            void memoryAdmin.refreshMemoryFiles({
               showLoading: true,
-              preferredId: selectedMemoryFileId || undefined,
+              preferredId: memoryAdmin.selectedMemoryFileId || undefined,
             });
           }}
-          onSelectMemoryFile={handleSelectMemoryFile}
-          onUpdateMemoryDraftContent={setMemoryDraftContent}
+          onSelectMemoryFile={memoryAdmin.handleSelectMemoryFile}
+          onUpdateMemoryDraftContent={memoryAdmin.setMemoryDraftContent}
           onSaveMemoryFile={() => {
-            void handleSaveMemoryFile();
+            void memoryAdmin.handleSaveMemoryFile();
           }}
           onCloseSkillsModal={closeSkillsModal}
           onRefreshSkillsModal={() => {
-            clearSkillStatus();
-            void refreshSkillOptions({ showLoading: true });
+            skillsAdmin.clearSkillStatus();
+            void skillsAdmin.refreshSkillOptions({ showLoading: true });
           }}
-          onUpdateSkillSearch={setSkillSearch}
-          onChangeSkillCategory={setSkillCategory}
-          onToggleSkill={handleToggleSkill}
-          onSelectAllSkills={() => setSkillDraftIds(skillOptions.map((item) => item.id))}
-          onClearSkills={() => setSkillDraftIds([])}
+          onUpdateSkillSearch={skillsAdmin.setSkillSearch}
+          onChangeSkillCategory={skillsAdmin.setSkillCategory}
+          onToggleSkill={skillsAdmin.handleToggleSkill}
+          onSelectAllSkills={skillsAdmin.handleSelectAllSkills}
+          onClearSkills={skillsAdmin.handleClearSkills}
           onSaveSkills={() => {
-            void handleSaveSkills();
+            void skillsAdmin.handleSaveSkills();
           }}
           onCloseToolsModal={closeToolsModal}
           onRefreshToolsModal={() => {
-            clearToolStatus();
-            void refreshToolOptions({ showLoading: true });
+            toolsAdmin.clearToolStatus();
+            void toolsAdmin.refreshToolOptions({ showLoading: true });
           }}
-          onChangeToolCategory={setToolCategory}
-          onToggleTool={handleToggleTool}
-          onSelectAllTools={() => setToolDraftIds(toolOptions.map((item) => item.id))}
-          onClearTools={() => setToolDraftIds([])}
+          onChangeToolCategory={toolsAdmin.setToolCategory}
+          onToggleTool={toolsAdmin.handleToggleTool}
+          onSelectAllTools={toolsAdmin.handleSelectAllTools}
+          onClearTools={toolsAdmin.handleClearTools}
           onSaveTools={() => {
-            void handleSaveTools();
+            void toolsAdmin.handleSaveTools();
           }}
           onCloseCommandsModal={closeCommandsModal}
           onRefreshCommandsModal={() => {
-            clearCommandStatus();
-            void refreshSlashCommands({ showLoading: true });
+            commandsAdmin.clearCommandStatus();
+            void commandsAdmin.refreshSlashCommands({ showLoading: true });
           }}
-          onUpdateCommandSearch={setCommandSearch}
-          onActivateCommand={handleActivateSlashCommand}
-          onStartCreateCommand={handleStartCreateSlashCommand}
-          onStartEditCommand={handleStartEditSlashCommand}
-          onCancelCommandEdit={handleCancelSlashCommandEdit}
+          onUpdateCommandSearch={commandsAdmin.setCommandSearch}
+          onActivateCommand={commandsAdmin.handleActivateSlashCommand}
+          onStartCreateCommand={commandsAdmin.handleStartCreateSlashCommand}
+          onStartEditCommand={commandsAdmin.handleStartEditSlashCommand}
+          onCancelCommandEdit={commandsAdmin.handleCancelSlashCommandEdit}
           onDeleteCommand={(commandId) => {
-            void handleDeleteSlashCommand(commandId);
+            void commandsAdmin.handleDeleteSlashCommand(commandId);
           }}
-          onUpdateCommandDraft={setCommandDraft}
+          onUpdateCommandDraft={commandsAdmin.setCommandDraft}
           onSaveCommandDraft={() => {
-            void handleSaveSlashCommandDraft();
+            void commandsAdmin.handleSaveSlashCommandDraft();
           }}
           onCloseRuntimeLogDetail={() => setShowRuntimeLogDetail(false)}
           onCloseSettingsTextPreview={() => setShowSettingsTextPreview(false)}
