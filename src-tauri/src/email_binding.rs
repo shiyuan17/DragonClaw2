@@ -706,12 +706,14 @@ WORK_SMTP_HOST=smtp.company.com
             home_dir.join("Documents").to_string_lossy()
         );
         let expected_write_dirs = home_dir.join("Downloads").to_string_lossy().to_string();
+        let escaped_read_dirs = expected_read_dirs.replace('\\', "\\\\");
+        let escaped_write_dirs = expected_write_dirs.replace('\\', "\\\\");
 
         assert!(content.contains("# Default account"));
         assert!(content.contains("IMAP_HOST=\"imap.gmail.com\""));
         assert!(content.contains("SMTP_HOST=\"smtp.gmail.com\""));
-        assert!(content.contains(format!("ALLOWED_READ_DIRS=\"{expected_read_dirs}\"").as_str()));
-        assert!(content.contains(format!("ALLOWED_WRITE_DIRS=\"{expected_write_dirs}\"").as_str()));
+        assert!(content.contains(format!("ALLOWED_READ_DIRS=\"{escaped_read_dirs}\"").as_str()));
+        assert!(content.contains(format!("ALLOWED_WRITE_DIRS=\"{escaped_write_dirs}\"").as_str()));
         assert!(content.contains("WORK_IMAP_HOST=imap.company.com"));
         assert!(content.contains("WORK_SMTP_HOST=smtp.company.com"));
     }
