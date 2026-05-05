@@ -1,5 +1,23 @@
 # DragonClaw - 开发任务总表 (AI 开发规范版)
 
+## Phase 5.42a: Security Hotfix
+- [ ] 修复邮箱绑定 `.env` 注入、gateway token 暴露边界、敏感凭据落盘与安装/插件完整性校验问题，不改现有 Tauri command 签名或 `invoke()` 契约。
+
+## Phase 5.43: Startup Truth Source and Encoding Cleanup
+- [ ] 统一服务生命周期真源，移除前端 optimistic ready / 日志文案 ready 判定，并修复启动、设置、聊天、绑定与服务提示中的高曝光乱码文本。
+
+## Phase 5.44: Config Repository Completion
+- [ ] 将 `openclaw.json` 写入口继续收口到 `ConfigRepository`，修复 `save_api_config` 双写与吞错问题，保持 JSON shape 与现有契约不变。
+
+## Phase 5.45: Workspace Clone Consolidation
+- [ ] 继续拆分 `workspace-clone` 聊天/渠道编排，修复 `openBindingModal` 陈旧快照判断，并同步落实大文件约束与目录职责边界。
+
+## Phase 5.46: Channel Flow Unification
+- [ ] 统一渠道 / 邮箱 / 二维码接入 flow、typed payload 与完成态，保持现有 command 名称、参数和返回 shape 不变。
+
+## Phase 5.47: IA, Test, and Governance Follow-through
+- [ ] 收敛占位信息架构，补启动/配置/渠道/聊天关键自动化护栏，并继续下调大文件 baseline 与编码门禁。
+
 ## Phase 5.41: State and Config Consolidation
 - [ ] 收口 `openclaw.json` 写入口、服务生命周期结构化真源与 Control UI 预构建路径，不改变既有 Tauri command 签名或前端 `invoke()` 协议。
 
