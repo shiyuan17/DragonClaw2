@@ -16,10 +16,9 @@ interface UseConfigOptions {
     addLog: (level: string, message: string) => void;
     running: boolean;
     setRunning: (r: boolean) => void;
-    setStartingUp?: (v: boolean) => void;
 }
 
-export function useConfig({ addLog, running, setRunning, setStartingUp }: UseConfigOptions) {
+export function useConfig({ addLog, running, setRunning }: UseConfigOptions) {
     const [providers, setProviders] = useState<ProviderInfo[]>([]);
     const [selectedCategory, setSelectedCategory] = useState("free");
     const [selectedProvider, setSelectedProvider] = useState("");
@@ -93,8 +92,7 @@ export function useConfig({ addLog, running, setRunning, setStartingUp }: UseCon
                     setRunning(false);
                     await new Promise((resolve) => setTimeout(resolve, 1000));
                     await invoke("start_service_silent");
-                    setRunning(true);
-                    addLog("success", "[OK] 服务已重启，新配置生效");
+                    addLog("success", "[OK] 服务重启请求已提交，新配置将随生命周期恢复生效");
                 } catch (err) {
                     addLog("error", `重启服务失败: ${err}`);
                 }
@@ -118,24 +116,21 @@ export function useConfig({ addLog, running, setRunning, setStartingUp }: UseCon
             setConfigVersion((value) => value + 1);
 
             if (running) {
-                setStartingUp?.(true);
                 addLog("info", "正在重启服务以加载新模型...");
                 try {
                     await invoke("stop_service");
                     setRunning(false);
                     await new Promise((resolve) => setTimeout(resolve, 1000));
                     await invoke("start_service_silent");
-                    setRunning(true);
-                    addLog("success", "[OK] 服务已重启，新模型配置生效");
+                    addLog("success", "[OK] 服务重启请求已提交，新模型配置将随生命周期恢复生效");
                 } catch (restartErr) {
                     addLog("error", `重启服务失败: ${restartErr}`);
-                    setStartingUp?.(false);
                 }
             }
         } catch (err) {
             setConfigStatus(`[!] 切换失败: ${err}`);
         }
-    }, [addLog, refreshCurrentConfig, running, setRunning, setStartingUp]);
+    }, [addLog, refreshCurrentConfig, running, setRunning]);
 
     const handleUpsertSavedProviderConfig = useCallback(async (payload: {
         providerKey: string;
@@ -164,23 +159,20 @@ export function useConfig({ addLog, running, setRunning, setStartingUp }: UseCon
         setConfigVersion((value) => value + 1);
 
         if (running) {
-            setStartingUp?.(true);
             addLog("info", "正在重启服务以应用新模型配置...");
             try {
                 await invoke("stop_service");
                 setRunning(false);
                 await new Promise((resolve) => setTimeout(resolve, 1000));
                 await invoke("start_service_silent");
-                setRunning(true);
-                addLog("success", "[OK] Workspace 模型配置已更新并重启服务");
+                addLog("success", "[OK] Workspace 模型配置已更新，服务将随生命周期恢复");
             } catch (restartErr) {
                 addLog("error", `重启服务失败: ${restartErr}`);
-                setStartingUp?.(false);
             }
         }
 
         return result;
-    }, [addLog, refreshCurrentConfig, running, setRunning, setStartingUp]);
+    }, [addLog, refreshCurrentConfig, running, setRunning]);
 
     const handleDeleteSavedProviderConfig = useCallback(async (providerKey: string) => {
         const result = await invoke<string>("delete_saved_provider_config", { providerKey });
@@ -193,23 +185,20 @@ export function useConfig({ addLog, running, setRunning, setStartingUp }: UseCon
         setConfigVersion((value) => value + 1);
 
         if (running) {
-            setStartingUp?.(true);
             addLog("info", "正在重启服务以应用删除后的模型配置...");
             try {
                 await invoke("stop_service");
                 setRunning(false);
                 await new Promise((resolve) => setTimeout(resolve, 1000));
                 await invoke("start_service_silent");
-                setRunning(true);
-                addLog("success", "[OK] Workspace 模型配置已删除并重启服务");
+                addLog("success", "[OK] Workspace 模型配置已删除，服务将随生命周期恢复");
             } catch (restartErr) {
                 addLog("error", `重启服务失败: ${restartErr}`);
-                setStartingUp?.(false);
             }
         }
 
         return result;
-    }, [addLog, refreshCurrentConfig, running, setRunning, setStartingUp]);
+    }, [addLog, refreshCurrentConfig, running, setRunning]);
 
     const handleOpenRegister = useCallback(async (providerId: string) => {
         try {

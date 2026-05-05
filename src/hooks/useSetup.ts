@@ -67,7 +67,11 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
       setServicePort(serviceLifecycle.port);
     }
 
-    if (serviceLifecycle?.status === "ready" && !startupFinalizingRef.current) {
+    if (
+      serviceLifecycle?.status === "ready"
+      && phaseRef.current === "launching"
+      && !startupFinalizingRef.current
+    ) {
       void finalizeStartupRef.current(true);
     }
 
@@ -249,7 +253,6 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
 
     try {
       const result = await invoke<string>("start_service_silent");
-      setRunning(true);
 
       if (result.toLowerCase().includes("already running")) {
         await finalizeStartup(true);
@@ -310,35 +313,7 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
       addLog("error", `启动失败: ${err}`);
       setLoading(false);
     }
-  }, [addLog, clearLaunchFallback, finalizeStartup, setRunning, setSetupPhase]);
-
-  const launchServiceInBackground = useCallback(async () => {
-    if (launchStartedRef.current || startupFinalizingRef.current) {
-      return;
-    }
-
-    launchStartedRef.current = true;
-    clearLaunchFallback();
-    setSetupError(null);
-    setLoading(false);
-    setRunning(true);
-    setProgress(100);
-    setProgressMsg("OpenClaw 服务正在后台准备...");
-
-    try {
-      await invoke<string>("start_service_silent");
-      await checkApiKey();
-      startBackgroundOnboardingSkillInstall();
-    } catch (err) {
-      launchStartedRef.current = false;
-      setRunning(false);
-      setSetupError(String(err));
-      addLog("error", `后台启动失败: ${err}`);
-      return;
-    }
-
-    launchStartedRef.current = false;
-  }, [addLog, checkApiKey, clearLaunchFallback, setRunning, startBackgroundOnboardingSkillInstall]);
+  }, [addLog, clearLaunchFallback, finalizeStartup, setSetupPhase]);
 
   const runSetup = useCallback(async () => {
     setLoading(true);
@@ -367,7 +342,8 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
       const openclawOk = await invoke<boolean>("check_openclaw_exists");
       const modulesOk = await invoke<boolean>("check_node_modules_exists");
       const lifecycleSnapshot = await invoke<ServiceLifecycleSnapshot | null>("get_service_lifecycle_snapshot");
-      const serviceRunning = lifecycleSnapshot?.status === "ready" || lifecycleSnapshot?.status === "service-starting";
+      const serviceReady = lifecycleSnapshot?.status === "ready";
+      const serviceStarting = lifecycleSnapshot?.status === "service-starting";
       const environmentReady = nodeOk && openclawOk && modulesOk;
       const configOk = environmentReady
         ? await invoke<boolean>("check_config_exists")
@@ -391,21 +367,23 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
           setServicePort(lifecycleSnapshot.port);
         }
 
-        setRunning(serviceRunning);
+        if (serviceReady) {
+          addLog("info", "Detected an existing OpenClaw service in the background; reusing it now.");
+          await finalizeStartup(true);
+          return;
+        }
+
+        setRunning(false);
         setSetupError(null);
-        setLoading(false);
-        setProgress(100);
-        setProgressMsg("DragonClaw ready");
-        setSetupPhase("ready");
-        addLog("success", "Launcher setup already completed; entering the ready workspace immediately.");
-        addLog(
-          "info",
-          serviceRunning
-            ? "Detected an existing OpenClaw service in the background; reusing it now."
-            : "OpenClaw will continue starting in the background while the ready workspace loads.",
-        );
-        if (!serviceRunning) {
-          void launchServiceInBackground();
+        setSetupPhase("launching");
+        setProgress(98);
+        if (serviceStarting) {
+          setLoading(true);
+          setProgressMsg("OpenClaw 服务正在后台启动，请等待就绪信号...");
+          addLog("info", "Detected an existing OpenClaw service that is still starting; waiting for the structured lifecycle ready signal.");
+        } else {
+          addLog("info", "Environment is ready but the OpenClaw service is not running yet; starting it now.");
+          await launchService();
         }
         return;
       }
@@ -421,8 +399,19 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
             return;
           }
         addLog("success", "[OK] 环境检查通过，所有组件就绪");
-        if (serviceRunning) {
+        if (serviceReady) {
           addLog("info", "检测到已有 OpenClaw 在后台运行，正在复用现有服务...");
+          await finalizeStartup(true);
+          return;
+        }
+        if (serviceStarting) {
+          setRunning(false);
+          setSetupPhase("launching");
+          setLoading(true);
+          setProgress(98);
+          setProgressMsg("OpenClaw 服务正在后台启动，请等待就绪信号...");
+          addLog("info", "检测到 OpenClaw 服务正在后台启动，等待结构化生命周期状态变为 ready...");
+          return;
         }
         await launchService();
         return;
@@ -441,7 +430,6 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
     backfillOnboardingSkillStateIfNeeded,
     configureWorkspace,
     launchService,
-    launchServiceInBackground,
     runSetup,
     setRunning,
     setSetupPhase,

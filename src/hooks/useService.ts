@@ -47,7 +47,6 @@ export function useService({
     const [repairing, setRepairing] = useState(false);
     const uptimeRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const startingUp = serviceLifecycle?.status === "service-starting";
-    const setStartingUp = useCallback((_next: boolean) => {}, []);
 
     // Uptime counter
     useEffect(() => {
@@ -72,14 +71,7 @@ export function useService({
             return;
         }
 
-        if (serviceLifecycle.status === "ready" || serviceLifecycle.status === "service-starting") {
-            setRunning(true);
-            return;
-        }
-
-        if (serviceLifecycle.status === "failed") {
-            setRunning(false);
-        }
+        setRunning(serviceLifecycle.status === "ready");
     }, [serviceLifecycle, setRunning]);
 
     useEffect(() => {
@@ -161,7 +153,7 @@ export function useService({
             await checkApiKey().catch((error) => {
                 addLog("warn", `刷新网关配置失败: ${error}`);
             });
-            addLog("success", "[OK] 连接修复完成，服务已重启");
+            addLog("success", "[OK] 连接修复已提交，服务将重新就绪");
         } catch (err) {
             addLog("error", `修复失败: ${err}`);
         } finally {
@@ -170,7 +162,7 @@ export function useService({
     }, [addLog, checkApiKey, running, setRepairToast, setRunning]);
 
     return {
-        loading, startingUp, setStartingUp,
+        loading, startingUp,
         uptime, servicePort,
         reinstalling, repairing,
         handleStart,

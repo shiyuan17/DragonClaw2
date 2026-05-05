@@ -66,7 +66,6 @@ function ReadyPageFallback() {
 function AppShell() {
   const { pushFeedback } = useFeedback();
   const [running, setRunning] = useState(false);
-  const startingUpRef = useRef<(value: boolean) => void>(() => {});
   const [infoModalTitle, setInfoModalTitle] = useState("");
   const [appVersion, setAppVersion] = useState("0.0.0");
   const updateChecked = useRef(false);
@@ -123,7 +122,7 @@ function AppShell() {
     handleOpenRegister,
     confirmReset,
     configVersion,
-  } = useConfig({ addLog, running, setRunning, setStartingUp: (value) => startingUpRef.current(value) });
+  } = useConfig({ addLog, running, setRunning });
 
   useEffect(() => {
     setInfoModalTitle(legacyInfoModalTitle);
@@ -147,7 +146,6 @@ function AppShell() {
   const {
     loading: serviceLoading,
     startingUp,
-    setStartingUp,
     uptime,
     servicePort,
     handleStart,
@@ -168,7 +166,6 @@ function AppShell() {
   });
 
   const loading = setupLoading || serviceLoading;
-  startingUpRef.current = setStartingUp;
 
   useEffect(() => {
     if (phase !== "ready") {
@@ -418,7 +415,7 @@ function AppShell() {
           <p style={{ color: "var(--text-secondary)", fontSize: 12 }}>根据网络情况，可能需要 3-10 分钟</p>
         </ConfirmModal>
 
-        <StartupOverlay show={phase !== "ready" && startingUp} />
+        <StartupOverlay show={phase === "launching" || startingUp} />
 
         <ApiKeyModal
           show={showKeyModal}
