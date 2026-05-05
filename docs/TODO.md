@@ -18,6 +18,10 @@
 ## Phase 5.47: IA, Test, and Governance Follow-through
 - [ ] 收敛占位信息架构，补启动/配置/渠道/聊天关键自动化护栏，并继续下调大文件 baseline 与编码门禁。
 
+## Phase 5.50: workspace-clone 聊天原始工具/命令回显隐藏
+- [ ] 为 `workspace-clone` 聊天区隐藏原始工具/命令回显气泡，保留精简 live timeline 与最终面向用户的正文回答，不修改网关协议或 `invoke()` 契约。
+## Phase 5.51: 首页聊天连通失败与网关真相修复
+- [ ] 修复首页聊天长期停留在“正在验证网关 / 连接聊天”却始终连不上的问题，统一 ready 真相为 PID 存活 + 端口监听 + RPC/token 校验通过，并在 stale runtime state 或浏览器侧握手失败时返回真实失败态而不是假复用。
 ## Phase 5.41: State and Config Consolidation
 - [ ] 收口 `openclaw.json` 写入口、服务生命周期结构化真源与 Control UI 预构建路径，不改变既有 Tauri command 签名或前端 `invoke()` 协议。
 
