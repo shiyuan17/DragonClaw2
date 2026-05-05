@@ -5,7 +5,9 @@ import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
 interface WorkspaceCloneHeaderProps {
   selectedEntity: WorkspaceEntity | null;
   activeUtilityPanel: WorkspaceUtilityPanel;
+  avatarEditable: boolean;
   onToggleUtilityPanel: (panel: Exclude<WorkspaceUtilityPanel, null>) => void;
+  onOpenAvatarPicker: () => void;
   onOpenAgentInfo: () => void;
   onOpenSessionPanel: () => void;
   onOpenWorkbench: () => void;
@@ -15,7 +17,9 @@ interface WorkspaceCloneHeaderProps {
 export function WorkspaceCloneHeader({
   selectedEntity,
   activeUtilityPanel,
+  avatarEditable,
   onToggleUtilityPanel,
+  onOpenAvatarPicker,
   onOpenAgentInfo,
   onOpenSessionPanel,
   onOpenWorkbench,
@@ -41,13 +45,26 @@ export function WorkspaceCloneHeader({
   return (
     <header className="workspace-clone__header">
       <div className="workspace-clone__header-entity">
-        <button className="workspace-clone__avatar workspace-clone__avatar--button" type="button">
+        <button
+          className={[
+            "workspace-clone__avatar",
+            "workspace-clone__avatar--button",
+            avatarEditable ? "is-interactive" : "",
+          ].join(" ").trim()}
+          type="button"
+          disabled={!avatarEditable}
+          title={avatarEditable ? "头像设置" : undefined}
+          aria-label={avatarEditable ? "打开头像设置" : undefined}
+          onClick={avatarEditable ? onOpenAvatarPicker : undefined}
+        >
           {selectedEntity?.memberLabels?.length ? (
             <span className="workspace-clone__avatar-stack-inline">
               {selectedEntity.memberLabels.slice(0, 3).map((label) => (
                 <span key={`${selectedEntity.id}-${label}`} className="workspace-clone__avatar-stack-chip">{label}</span>
               ))}
             </span>
+          ) : selectedEntity?.avatarUrl ? (
+            <img src={selectedEntity.avatarUrl} alt="" className="workspace-clone__avatar-image" />
           ) : (
             selectedEntity?.avatarLabel || "A"
           )}

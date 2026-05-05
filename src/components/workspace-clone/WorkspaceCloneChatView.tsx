@@ -54,6 +54,14 @@ function WorkspaceCloneDrawerFallback() {
   );
 }
 
+function renderAvatarMarker(entity: WorkspaceEntity | null, fallbackLabel: string) {
+  if (entity?.avatarUrl) {
+    return <img src={entity.avatarUrl} alt="" className="workspace-clone__message-marker-image" />;
+  }
+
+  return fallbackLabel;
+}
+
 interface WorkspaceCloneChatViewProps {
   selectedEntity: WorkspaceEntity | null;
   chatEnabled: boolean;
@@ -299,7 +307,11 @@ export function WorkspaceCloneChatView({
                           message.status ? `is-${message.status}` : "",
                         ].join(" ").trim()}
                       >
-                        <div className="workspace-clone__message-marker">{message.author}</div>
+                        <div className="workspace-clone__message-marker">
+                          {message.role === "assistant"
+                            ? renderAvatarMarker(selectedEntity, message.author)
+                            : message.author}
+                        </div>
                         <div className="workspace-clone__message-content">
                           {isStreaming ? <WorkspaceCloneLiveTimeline steps={liveSteps} /> : null}
                           {showPreview ? <WorkspaceCloneMessagePreview message={message} /> : null}
@@ -310,7 +322,9 @@ export function WorkspaceCloneChatView({
                   })}
                   {liveSteps.length > 0 && !hasStreamingMessage ? (
                     <article className="workspace-clone__message workspace-clone__message--chat is-assistant is-live-status">
-                      <div className="workspace-clone__message-marker">{selectedEntity?.avatarLabel || "A"}</div>
+                      <div className="workspace-clone__message-marker">
+                        {renderAvatarMarker(selectedEntity, selectedEntity?.avatarLabel || "A")}
+                      </div>
                       <div className="workspace-clone__message-content">
                         <WorkspaceCloneLiveTimeline steps={liveSteps} />
                       </div>
@@ -334,7 +348,9 @@ export function WorkspaceCloneChatView({
           ) : (
             <section className="workspace-clone__welcome-state">
               <article className="workspace-clone__message workspace-clone__message--minimal">
-                <div className="workspace-clone__message-marker">{selectedEntity?.avatarLabel || "A"}</div>
+                <div className="workspace-clone__message-marker">
+                  {renderAvatarMarker(selectedEntity, selectedEntity?.avatarLabel || "A")}
+                </div>
                 <div className="workspace-clone__message-content">
                   <p>
                     {historyLoading

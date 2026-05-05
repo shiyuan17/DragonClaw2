@@ -1,9 +1,14 @@
 import { Modal, ModalFooter } from "../ui/Modal";
 import { MAIN_AGENT_DISPLAY_NAME } from "../../data/agencyRoster";
+import { WorkspaceCloneAvatarModal } from "./WorkspaceCloneAvatarModal";
 import { WorkspaceCloneCommandsModal } from "./WorkspaceCloneCommandsModal";
 import { WorkspaceCloneMemoryModal } from "./WorkspaceCloneMemoryModal";
 import { WorkspaceCloneSkillsModal } from "./WorkspaceCloneSkillsModal";
 import { WorkspaceCloneToolPermissionsModal } from "./WorkspaceCloneToolPermissionsModal";
+import type {
+  WorkspaceCloneAvatarCategoryId,
+  WorkspaceCloneAvatarOption,
+} from "./workspaceCloneAvatarPresets";
 import type {
   WorkspaceSlashCommandDefinition,
   WorkspaceSlashCommandDraftInput,
@@ -19,6 +24,7 @@ import type {
 
 interface WorkspaceCloneOverlayStackProps {
   selectedEntity: WorkspaceEntity | null;
+  showAvatarModal: boolean;
   showAgentInfo: boolean;
   showMemoryModal: boolean;
   showSkillsModal: boolean;
@@ -57,9 +63,20 @@ interface WorkspaceCloneOverlayStackProps {
   commandSaving: boolean;
   commandNotice: string;
   commandError: string;
+  avatarCategoryTabs: Array<{ id: WorkspaceCloneAvatarCategoryId; label: string }>;
+  avatarCategory: WorkspaceCloneAvatarCategoryId;
+  avatarPresetOptions: WorkspaceCloneAvatarOption[];
+  selectedAvatarPresetId: string | null;
+  avatarNotice: string;
+  avatarError: string;
   memoryItems: WorkspaceResourceItem[];
   channelItems: WorkspaceResourceItem[];
   scheduleItems: WorkspaceResourceItem[];
+  onCloseAvatarModal: () => void;
+  onSetAvatarCategory: (value: WorkspaceCloneAvatarCategoryId) => void;
+  onApplyAvatarPreset: (option: WorkspaceCloneAvatarOption) => void;
+  onAvatarUploadChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onResetAvatarOverride: () => void;
   onCloseAgentInfo: () => void;
   onCloseMemoryModal: () => void;
   onRefreshMemoryModal: () => void;
@@ -98,6 +115,7 @@ interface WorkspaceCloneOverlayStackProps {
 
 export function WorkspaceCloneOverlayStack({
   selectedEntity,
+  showAvatarModal,
   showAgentInfo,
   showMemoryModal,
   showSkillsModal,
@@ -136,9 +154,20 @@ export function WorkspaceCloneOverlayStack({
   commandSaving,
   commandNotice,
   commandError,
+  avatarCategoryTabs,
+  avatarCategory,
+  avatarPresetOptions,
+  selectedAvatarPresetId,
+  avatarNotice,
+  avatarError,
   memoryItems,
   channelItems,
   scheduleItems,
+  onCloseAvatarModal,
+  onSetAvatarCategory,
+  onApplyAvatarPreset,
+  onAvatarUploadChange,
+  onResetAvatarOverride,
   onCloseAgentInfo,
   onCloseMemoryModal,
   onRefreshMemoryModal,
@@ -187,6 +216,22 @@ export function WorkspaceCloneOverlayStack({
 
   return (
     <>
+      <WorkspaceCloneAvatarModal
+        show={showAvatarModal}
+        selectedEntity={selectedEntity}
+        categoryTabs={avatarCategoryTabs}
+        activeCategory={avatarCategory}
+        presetOptions={avatarPresetOptions}
+        selectedPresetId={selectedAvatarPresetId}
+        notice={avatarNotice}
+        error={avatarError}
+        onClose={onCloseAvatarModal}
+        onSetCategory={onSetAvatarCategory}
+        onApplyPreset={onApplyAvatarPreset}
+        onUploadChange={onAvatarUploadChange}
+        onResetDefault={onResetAvatarOverride}
+      />
+
       <Modal show={showAgentInfo} onClose={onCloseAgentInfo} title="Agent 信息" maxWidth={560}>
         <div className="workspace-clone__dialog-body">
           <div className="workspace-clone__dialog-copy">

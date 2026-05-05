@@ -44,6 +44,7 @@ export interface WorkspaceEntity {
   subtitle: string;
   status: "online" | "busy" | "offline";
   avatarLabel: string;
+  avatarUrl?: string;
   accent: string;
   memberLabels?: string[];
   currentWork?: string;

@@ -80,6 +80,9 @@ interface WorkspaceCloneDirectoryProps {
 }
 
 function renderEntityAvatar(entity: WorkspaceEntity) {
+  if (entity.avatarUrl) {
+    return <img src={entity.avatarUrl} alt="" className="workspace-clone__entity-avatar-image" />;
+  }
   if (entity.iconSrc) {
     return <img src={entity.iconSrc} alt="" className="workspace-clone__entity-avatar-image" />;
   }
@@ -314,7 +317,13 @@ export function WorkspaceCloneDirectory({
                   }}
                 >
                   <span className="workspace-clone__mini-entity-avatar">
-                    {entity.iconSrc ? <img src={entity.iconSrc} alt="" className="workspace-clone__entity-avatar-image" /> : entity.avatarLabel}
+                    {entity.avatarUrl ? (
+                      <img src={entity.avatarUrl} alt="" className="workspace-clone__entity-avatar-image" />
+                    ) : entity.iconSrc ? (
+                      <img src={entity.iconSrc} alt="" className="workspace-clone__entity-avatar-image" />
+                    ) : (
+                      entity.avatarLabel
+                    )}
                   </span>
                   <i className={`workspace-clone__mini-entity-status is-${entity.status}`} />
                 </button>

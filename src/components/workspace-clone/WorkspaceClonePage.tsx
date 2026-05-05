@@ -32,9 +32,12 @@ import {
   WORKSPACE_WORKBENCH,
 } from "./workspaceCloneData";
 import { formatAgentAvatar } from "./workspaceCloneGateway";
+import { workspaceCloneAvatarCategoryTabs } from "./workspaceCloneAvatarPresets";
+import { resolveWorkspaceGatewayAvatarUrl } from "./workspaceCloneAvatarUtils";
 import { WorkspaceCloneChatView } from "./WorkspaceCloneChatView";
 import { WorkspaceCloneComposer } from "./WorkspaceCloneComposer";
 import { WorkspaceCloneDirectory } from "./WorkspaceCloneDirectory";
+import { useWorkspaceCloneAvatarState } from "./useWorkspaceCloneAvatarState";
 import { WorkspaceCloneEmailBindingModal } from "./WorkspaceCloneEmailBindingModal";
 import { WorkspaceCloneHeader } from "./WorkspaceCloneHeader";
 import { WorkspaceCloneCompactView } from "./WorkspaceCloneCompactView";
@@ -51,6 +54,7 @@ import { useWorkspaceChannels } from "../../hooks/workspace-clone/useWorkspaceCh
 import { useWorkspaceEmailBinding } from "../../hooks/workspace-clone/useWorkspaceEmailBinding";
 import type {
   WorkspaceEntity,
+  WorkspaceGatewayAgentRow,
   WorkspaceGatewaySkillStatusResult,
   WorkspaceMemoryFile,
   WorkspaceRelatedResource,
@@ -109,6 +113,13 @@ function resolveWorkspaceModelName(currentConfig: CurrentConfig | null, fallback
     return fallbackModelName;
   }
   return primaryModel.includes("/") ? primaryModel.split("/").slice(1).join("/") : primaryModel;
+}
+
+function resolveWorkspaceGatewayAgentName(agent: WorkspaceGatewayAgentRow) {
+  return resolveWorkspaceAgentDisplayName(
+    agent.id,
+    agent.identity?.name?.trim() || agent.name?.trim() || agent.id,
+  );
 }
 
 function buildWorkspaceMemoryResourceItems(files: WorkspaceMemoryFile[]): WorkspaceResourceItem[] {
@@ -209,6 +220,7 @@ function buildGatewayAgentEntities(params: {
   isGenerating: boolean;
   currentModelName: string;
   currentProviderName: string;
+  resolveAvatarUrl: (agent: WorkspaceGatewayAgentRow) => string;
 }) {
   const {
     agents,
@@ -222,6 +234,7 @@ function buildGatewayAgentEntities(params: {
     isGenerating,
     currentModelName,
     currentProviderName,
+    resolveAvatarUrl,
   } = params;
   const isCachedAgentList = agentListSource === "cache";
 
@@ -237,10 +250,7 @@ function buildGatewayAgentEntities(params: {
     return {
       id: agent.id,
       entityType: "agents",
-      name: resolveWorkspaceAgentDisplayName(
-        agent.id,
-        agent.identity?.name?.trim() || agent.name?.trim() || agent.id,
-      ),
+      name: resolveWorkspaceGatewayAgentName(agent),
       searchText: [agent.id, agent.identity?.name?.trim(), agent.name?.trim()]
         .filter(Boolean)
         .join(" "),
@@ -254,6 +264,7 @@ function buildGatewayAgentEntities(params: {
               ? "busy"
               : "online",
       avatarLabel: formatAgentAvatar(agent),
+      avatarUrl: resolveAvatarUrl(agent) || undefined,
       accent: agent.id,
       currentWork:
         isCachedAgentList
@@ -361,6 +372,61 @@ export function WorkspaceClonePage({
     () => buildWorkspaceEntities(workspaceModelName, workspaceProviderName, running),
     [workspaceModelName, workspaceProviderName, running],
   );
+  const avatarStateSelectedAgent = useMemo(() => {
+    if (activeType !== "agents") {
+      return null;
+    }
+
+    if (homepageChat.agentListSource !== "none" && homepageChat.agents.length > 0) {
+      const targetAgentId = selectedEntityId || homepageChat.selectedAgentId || homepageChat.agents[0]?.id || "";
+      const targetAgent =
+        homepageChat.agents.find((agent) => agent.id === targetAgentId) ?? homepageChat.agents[0] ?? null;
+
+      if (targetAgent) {
+        return {
+          id: targetAgent.id,
+          name: resolveWorkspaceGatewayAgentName(targetAgent),
+          subtitle: homepageChat.agentLastMessageById[targetAgent.id] || "",
+          avatarLabel: formatAgentAvatar(targetAgent),
+          avatarUrl: resolveWorkspaceGatewayAvatarUrl(targetAgent.identity) || undefined,
+        };
+      }
+    }
+
+    const fallbackAgent =
+      staticEntitiesByType.agents.find((entity) => entity.id === selectedEntityId) ??
+      staticEntitiesByType.agents[0] ??
+      null;
+
+    if (!fallbackAgent) {
+      return null;
+    }
+
+    return {
+      id: fallbackAgent.id,
+      name: fallbackAgent.name,
+      subtitle: fallbackAgent.subtitle,
+      avatarLabel: fallbackAgent.avatarLabel,
+      avatarUrl: fallbackAgent.avatarUrl,
+    };
+  }, [
+    activeType,
+    homepageChat.agentLastMessageById,
+    homepageChat.agentListSource,
+    homepageChat.agents,
+    homepageChat.selectedAgentId,
+    selectedEntityId,
+    staticEntitiesByType.agents,
+  ]);
+  const avatarState = useWorkspaceCloneAvatarState(avatarStateSelectedAgent);
+  const staticAgentEntities = useMemo(
+    () =>
+      staticEntitiesByType.agents.map((entity) => ({
+        ...entity,
+        avatarUrl: avatarState.resolvePersistedAgentAvatarUrl(entity.id, entity.avatarUrl) || undefined,
+      })),
+    [avatarState.resolvePersistedAgentAvatarUrl, staticEntitiesByType.agents],
+  );
 
   const gatewayAgentEntities = useMemo(
     () =>
@@ -377,9 +443,15 @@ export function WorkspaceClonePage({
             isGenerating: homepageChat.isGenerating,
             currentModelName: workspaceModelName,
             currentProviderName: workspaceProviderName,
+            resolveAvatarUrl: (agent) =>
+              avatarState.resolvePersistedAgentAvatarUrl(
+                agent.id,
+                resolveWorkspaceGatewayAvatarUrl(agent.identity),
+              ),
           })
-        : staticEntitiesByType.agents,
+        : staticAgentEntities,
     [
+      avatarState.resolvePersistedAgentAvatarUrl,
       workspaceModelName,
       workspaceProviderName,
       homepageChat.agents,
@@ -391,7 +463,7 @@ export function WorkspaceClonePage({
       homepageChat.selectedAgentId,
       homepageChat.sessionsResult,
       running,
-      staticEntitiesByType.agents,
+      staticAgentEntities,
     ],
   );
 
@@ -440,6 +512,12 @@ export function WorkspaceClonePage({
       workspaceEmailBinding.closeEmailBindingModal({ clearStatus: true, force: true });
     }
   }, [activeMenu, setContextMenu, workspaceEmailBinding.closeEmailBindingModal]);
+
+  useEffect(() => {
+    if (activeMenu !== "chat" || activeType !== "agents" || !avatarStateSelectedAgent) {
+      avatarState.closeAvatarModal();
+    }
+  }, [activeMenu, activeType, avatarState.closeAvatarModal, avatarStateSelectedAgent]);
 
   useEffect(() => {
     const handleDocumentClick = () => {
@@ -709,6 +787,7 @@ export function WorkspaceClonePage({
   };
 
   const shouldRenderOverlayStack = Boolean(
+    avatarState.isAvatarModalOpen ||
     showAgentInfo ||
     memoryAdmin.showMemoryModal ||
     skillsAdmin.showSkillsModal ||
@@ -889,7 +968,9 @@ export function WorkspaceClonePage({
                 <WorkspaceCloneHeader
                   selectedEntity={selectedEntity}
                   activeUtilityPanel={utilityPanel}
+                  avatarEditable={activeType === "agents" && Boolean(selectedEntity)}
                   onToggleUtilityPanel={toggleUtilityPanel}
+                  onOpenAvatarPicker={avatarState.openAvatarModal}
                   onOpenAgentInfo={() => setShowAgentInfo(true)}
                   onOpenSessionPanel={() => toggleUtilityPanel("session")}
                   onOpenWorkbench={() => toggleUtilityPanel("workbench")}
@@ -996,107 +1077,119 @@ export function WorkspaceClonePage({
         {shouldRenderOverlayStack ? (
           <Suspense fallback={null}>
             <WorkspaceCloneOverlayStack
-          selectedEntity={selectedEntity}
-          showAgentInfo={showAgentInfo}
-          showMemoryModal={memoryAdmin.showMemoryModal}
-          showSkillsModal={skillsAdmin.showSkillsModal}
-          showToolsModal={toolsAdmin.showToolsModal}
-          showRuntimeLogDetail={showRuntimeLogDetail}
-          showSettingsTextPreview={showSettingsTextPreview}
-          relatedResource={relatedResource}
-          memoryFiles={memoryAdmin.memoryFiles}
-          selectedMemoryFileId={memoryAdmin.selectedMemoryFileId}
-          memoryDraftContent={memoryAdmin.memoryDraftContent}
-          memoryLoading={memoryAdmin.memoryLoading}
-          memorySaving={memoryAdmin.memorySaving}
-          memoryNotice={memoryAdmin.memoryNotice}
-          memoryError={memoryAdmin.memoryError}
-          skillSearch={skillsAdmin.skillSearch}
-          skillCategory={skillsAdmin.skillCategory}
-          skillOptions={skillsAdmin.selectedSkillOptions}
-          skillLoading={skillsAdmin.skillLoading}
-          skillSaving={skillsAdmin.skillSaving}
-          skillNotice={skillsAdmin.skillNotice}
-          skillError={skillsAdmin.skillError}
-          toolCategory={toolsAdmin.toolCategory}
-          toolProfileLabel={toolsAdmin.toolProfileLabel}
-          toolOptions={toolsAdmin.selectedToolOptions}
-          toolLoading={toolsAdmin.toolLoading}
-          toolSaving={toolsAdmin.toolSaving}
-          toolNotice={toolsAdmin.toolNotice}
-          toolError={toolsAdmin.toolError}
-          memoryItems={memoryResourceItems}
-          commandItems={commandsAdmin.slashCommands}
-          activeCommandId={commandsAdmin.activeSlashCommandId}
-          commandSearch={commandsAdmin.commandSearch}
-          commandDraft={commandsAdmin.commandDraft}
-          editingCommandId={commandsAdmin.editingCommandId}
-          commandEditorOpen={commandsAdmin.commandEditorOpen}
-          commandLoading={commandsAdmin.commandLoading}
-          commandSaving={commandsAdmin.commandSaving}
-          commandNotice={commandsAdmin.commandNotice}
-          commandError={commandsAdmin.commandError}
-          channelItems={shouldBuildChannelRows ? workspaceChannels.channelResourceItems : []}
-          scheduleItems={scheduleResourceItems}
-          onCloseAgentInfo={() => setShowAgentInfo(false)}
-          onCloseMemoryModal={closeMemoryModal}
-          onRefreshMemoryModal={() => {
-            memoryAdmin.clearMemoryStatus();
-            void memoryAdmin.refreshMemoryFiles({
-              showLoading: true,
-              preferredId: memoryAdmin.selectedMemoryFileId || undefined,
-            });
-          }}
-          onSelectMemoryFile={memoryAdmin.handleSelectMemoryFile}
-          onUpdateMemoryDraftContent={memoryAdmin.setMemoryDraftContent}
-          onSaveMemoryFile={() => {
-            void memoryAdmin.handleSaveMemoryFile();
-          }}
-          onCloseSkillsModal={closeSkillsModal}
-          onRefreshSkillsModal={() => {
-            skillsAdmin.clearSkillStatus();
-            void skillsAdmin.refreshSkillOptions({ showLoading: true });
-          }}
-          onUpdateSkillSearch={skillsAdmin.setSkillSearch}
-          onChangeSkillCategory={skillsAdmin.setSkillCategory}
-          onToggleSkill={skillsAdmin.handleToggleSkill}
-          onSelectAllSkills={skillsAdmin.handleSelectAllSkills}
-          onClearSkills={skillsAdmin.handleClearSkills}
-          onSaveSkills={() => {
-            void skillsAdmin.handleSaveSkills();
-          }}
-          onCloseToolsModal={closeToolsModal}
-          onRefreshToolsModal={() => {
-            toolsAdmin.clearToolStatus();
-            void toolsAdmin.refreshToolOptions({ showLoading: true });
-          }}
-          onChangeToolCategory={toolsAdmin.setToolCategory}
-          onToggleTool={toolsAdmin.handleToggleTool}
-          onSelectAllTools={toolsAdmin.handleSelectAllTools}
-          onClearTools={toolsAdmin.handleClearTools}
-          onSaveTools={() => {
-            void toolsAdmin.handleSaveTools();
-          }}
-          onCloseCommandsModal={closeCommandsModal}
-          onRefreshCommandsModal={() => {
-            commandsAdmin.clearCommandStatus();
-            void commandsAdmin.refreshSlashCommands({ showLoading: true });
-          }}
-          onUpdateCommandSearch={commandsAdmin.setCommandSearch}
-          onActivateCommand={commandsAdmin.handleActivateSlashCommand}
-          onStartCreateCommand={commandsAdmin.handleStartCreateSlashCommand}
-          onStartEditCommand={commandsAdmin.handleStartEditSlashCommand}
-          onCancelCommandEdit={commandsAdmin.handleCancelSlashCommandEdit}
-          onDeleteCommand={(commandId) => {
-            void commandsAdmin.handleDeleteSlashCommand(commandId);
-          }}
-          onUpdateCommandDraft={commandsAdmin.setCommandDraft}
-          onSaveCommandDraft={() => {
-            void commandsAdmin.handleSaveSlashCommandDraft();
-          }}
-          onCloseRuntimeLogDetail={() => setShowRuntimeLogDetail(false)}
-          onCloseSettingsTextPreview={() => setShowSettingsTextPreview(false)}
-          onCloseRelatedResource={() => setRelatedResource(null)}
+              selectedEntity={selectedEntity}
+              showAvatarModal={avatarState.isAvatarModalOpen}
+              showAgentInfo={showAgentInfo}
+              showMemoryModal={memoryAdmin.showMemoryModal}
+              showSkillsModal={skillsAdmin.showSkillsModal}
+              showToolsModal={toolsAdmin.showToolsModal}
+              showRuntimeLogDetail={showRuntimeLogDetail}
+              showSettingsTextPreview={showSettingsTextPreview}
+              relatedResource={relatedResource}
+              memoryFiles={memoryAdmin.memoryFiles}
+              selectedMemoryFileId={memoryAdmin.selectedMemoryFileId}
+              memoryDraftContent={memoryAdmin.memoryDraftContent}
+              memoryLoading={memoryAdmin.memoryLoading}
+              memorySaving={memoryAdmin.memorySaving}
+              memoryNotice={memoryAdmin.memoryNotice}
+              memoryError={memoryAdmin.memoryError}
+              skillSearch={skillsAdmin.skillSearch}
+              skillCategory={skillsAdmin.skillCategory}
+              skillOptions={skillsAdmin.selectedSkillOptions}
+              skillLoading={skillsAdmin.skillLoading}
+              skillSaving={skillsAdmin.skillSaving}
+              skillNotice={skillsAdmin.skillNotice}
+              skillError={skillsAdmin.skillError}
+              toolCategory={toolsAdmin.toolCategory}
+              toolProfileLabel={toolsAdmin.toolProfileLabel}
+              toolOptions={toolsAdmin.selectedToolOptions}
+              toolLoading={toolsAdmin.toolLoading}
+              toolSaving={toolsAdmin.toolSaving}
+              toolNotice={toolsAdmin.toolNotice}
+              toolError={toolsAdmin.toolError}
+              commandItems={commandsAdmin.slashCommands}
+              activeCommandId={commandsAdmin.activeSlashCommandId}
+              commandSearch={commandsAdmin.commandSearch}
+              commandDraft={commandsAdmin.commandDraft}
+              editingCommandId={commandsAdmin.editingCommandId}
+              commandEditorOpen={commandsAdmin.commandEditorOpen}
+              commandLoading={commandsAdmin.commandLoading}
+              commandSaving={commandsAdmin.commandSaving}
+              commandNotice={commandsAdmin.commandNotice}
+              commandError={commandsAdmin.commandError}
+              avatarCategoryTabs={workspaceCloneAvatarCategoryTabs}
+              avatarCategory={avatarState.avatarCategory}
+              avatarPresetOptions={avatarState.avatarPresetOptions}
+              selectedAvatarPresetId={avatarState.selectedAvatarPresetId}
+              avatarNotice={avatarState.avatarNotice}
+              avatarError={avatarState.avatarError}
+              memoryItems={memoryResourceItems}
+              channelItems={shouldBuildChannelRows ? workspaceChannels.channelResourceItems : []}
+              scheduleItems={scheduleResourceItems}
+              onCloseAvatarModal={avatarState.closeAvatarModal}
+              onSetAvatarCategory={avatarState.setAvatarCategory}
+              onApplyAvatarPreset={avatarState.applyAvatarPreset}
+              onAvatarUploadChange={avatarState.handleAvatarUploadChange}
+              onResetAvatarOverride={avatarState.resetAvatarOverride}
+              onCloseAgentInfo={() => setShowAgentInfo(false)}
+              onCloseMemoryModal={closeMemoryModal}
+              onRefreshMemoryModal={() => {
+                memoryAdmin.clearMemoryStatus();
+                void memoryAdmin.refreshMemoryFiles({
+                  showLoading: true,
+                  preferredId: memoryAdmin.selectedMemoryFileId || undefined,
+                });
+              }}
+              onSelectMemoryFile={memoryAdmin.handleSelectMemoryFile}
+              onUpdateMemoryDraftContent={memoryAdmin.setMemoryDraftContent}
+              onSaveMemoryFile={() => {
+                void memoryAdmin.handleSaveMemoryFile();
+              }}
+              onCloseSkillsModal={closeSkillsModal}
+              onRefreshSkillsModal={() => {
+                skillsAdmin.clearSkillStatus();
+                void skillsAdmin.refreshSkillOptions({ showLoading: true });
+              }}
+              onUpdateSkillSearch={skillsAdmin.setSkillSearch}
+              onChangeSkillCategory={skillsAdmin.setSkillCategory}
+              onToggleSkill={skillsAdmin.handleToggleSkill}
+              onSelectAllSkills={skillsAdmin.handleSelectAllSkills}
+              onClearSkills={skillsAdmin.handleClearSkills}
+              onSaveSkills={() => {
+                void skillsAdmin.handleSaveSkills();
+              }}
+              onCloseToolsModal={closeToolsModal}
+              onRefreshToolsModal={() => {
+                toolsAdmin.clearToolStatus();
+                void toolsAdmin.refreshToolOptions({ showLoading: true });
+              }}
+              onChangeToolCategory={toolsAdmin.setToolCategory}
+              onToggleTool={toolsAdmin.handleToggleTool}
+              onSelectAllTools={toolsAdmin.handleSelectAllTools}
+              onClearTools={toolsAdmin.handleClearTools}
+              onSaveTools={() => {
+                void toolsAdmin.handleSaveTools();
+              }}
+              onCloseCommandsModal={closeCommandsModal}
+              onRefreshCommandsModal={() => {
+                commandsAdmin.clearCommandStatus();
+                void commandsAdmin.refreshSlashCommands({ showLoading: true });
+              }}
+              onUpdateCommandSearch={commandsAdmin.setCommandSearch}
+              onActivateCommand={commandsAdmin.handleActivateSlashCommand}
+              onStartCreateCommand={commandsAdmin.handleStartCreateSlashCommand}
+              onStartEditCommand={commandsAdmin.handleStartEditSlashCommand}
+              onCancelCommandEdit={commandsAdmin.handleCancelSlashCommandEdit}
+              onDeleteCommand={(commandId) => {
+                void commandsAdmin.handleDeleteSlashCommand(commandId);
+              }}
+              onUpdateCommandDraft={commandsAdmin.setCommandDraft}
+              onSaveCommandDraft={() => {
+                void commandsAdmin.handleSaveSlashCommandDraft();
+              }}
+              onCloseRuntimeLogDetail={() => setShowRuntimeLogDetail(false)}
+              onCloseSettingsTextPreview={() => setShowSettingsTextPreview(false)}
+              onCloseRelatedResource={() => setRelatedResource(null)}
             />
           </Suspense>
         ) : null}

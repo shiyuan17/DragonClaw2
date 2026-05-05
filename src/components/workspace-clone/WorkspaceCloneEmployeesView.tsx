@@ -7,6 +7,7 @@ import type { AgencyRosterDivision, AgencyRosterRole } from "../../types";
 import { useFeedback } from "../../hooks/useFeedback";
 import { loadAgencyRoleDefinition, loadAgencyRoster } from "../../data/agencyRoster";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
+import { pickWorkspaceCloneDefaultIllustrationAvatar } from "./workspaceCloneAvatarPresets";
 
 const DIVISION_FILTER_ALL = "__all__";
 
@@ -41,6 +42,14 @@ function buildKeyboardHandler(onOpen: () => void) {
       onOpen();
     }
   };
+}
+
+function renderRoleAvatar(role: AgencyRosterRole) {
+  const avatarUrl = pickWorkspaceCloneDefaultIllustrationAvatar(role.agentId);
+  if (avatarUrl) {
+    return <img src={avatarUrl} alt="" loading="lazy" decoding="async" />;
+  }
+  return role.name.slice(0, 1) || "员";
 }
 
 export function WorkspaceCloneEmployeesView() {
@@ -349,9 +358,7 @@ export function WorkspaceCloneEmployeesView() {
                         onKeyDown={buildKeyboardHandler(() => handleOpenRole(role))}
                       >
                         <div className="workspace-employees__role-card-head">
-                          <div className="workspace-employees__role-avatar">
-                            {role.name.slice(0, 1) || "员"}
-                          </div>
+                          <div className="workspace-employees__role-avatar">{renderRoleAvatar(role)}</div>
                           <div>
                             <strong>{role.name}</strong>
                             <small>{role.agentId}</small>
