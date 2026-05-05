@@ -2,10 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // This file is part of DragonClaw. See LICENSE for details.
 
-use std::fs;
 use std::io::{BufRead, BufReader};
 use std::net::{TcpListener, TcpStream};
-use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -20,6 +18,15 @@ use crate::agency_agents;
 use crate::launcher_state;
 use crate::openclaw_cli;
 use crate::paths;
+#[path = "service_support.rs"]
+mod support;
+use support::{
+    clear_known_process_tracking, clear_runtime_issue, current_runtime_issue,
+    emit_pending_runtime_issue_log, emit_service_log, persist_tracked_process, read_runtime_state,
+    set_runtime_issue, summarize_plugin_config, terminate_owned_child_if_matching_pid,
+    to_tracked_process, validate_existing_process_for_ready, ExistingProcessValidation,
+    TrackedServiceProcess,
+};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -31,21 +38,6 @@ const SERVICE_READY_TIMEOUT_MS: u64 = 90_000;
 const GATEWAY_RPC_CHECK_TIMEOUT_MS: u64 = 8_000;
 const GATEWAY_RPC_CHECK_INTERVAL_MS: u64 = 1_000;
 const WINDOWS_HIDDEN_WINDOW_FLAG: u32 = 0x0800_0000;
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-struct ServiceRuntimeState {
-    pid: u32,
-    port: u16,
-    started_at: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct TrackedServiceProcess {
-    pid: u32,
-    port: u16,
-    started_at: i64,
-}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -88,6 +80,8 @@ pub struct ServiceState {
     pub(crate) port: Mutex<u16>,
     heartbeat_started: AtomicBool,
     lifecycle: Mutex<Option<ServiceLifecycleSnapshot>>,
+    last_runtime_issue: Mutex<Option<String>>,
+    last_logged_runtime_issue: Mutex<Option<String>>,
     manual_stop_requested: AtomicBool,
 }
 
@@ -99,6 +93,8 @@ impl Default for ServiceState {
             port: Mutex::new(DEFAULT_PORT),
             heartbeat_started: AtomicBool::new(false),
             lifecycle: Mutex::new(None),
+            last_runtime_issue: Mutex::new(None),
+            last_logged_runtime_issue: Mutex::new(None),
             manual_stop_requested: AtomicBool::new(false),
         }
     }
@@ -107,7 +103,7 @@ impl Default for ServiceState {
 fn resolve_gateway_token() -> Result<String, String> {
     crate::config::get_current_config()
         .map_err(|error| format!("Failed to read gateway token: {error}"))?
-        .and_then(|config| config.gateway_token)
+        .gateway_token
         .filter(|token| !token.trim().is_empty())
         .ok_or_else(|| "Gateway token missing from openclaw.json".to_string())
 }
@@ -117,72 +113,6 @@ fn now_unix_timestamp() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs() as i64)
         .unwrap_or_default()
-}
-
-fn runtime_state_path() -> Result<PathBuf, String> {
-    paths::openclaw_service_state_path()
-}
-
-fn to_runtime_state(process: &TrackedServiceProcess) -> ServiceRuntimeState {
-    ServiceRuntimeState {
-        pid: process.pid,
-        port: process.port,
-        started_at: process.started_at,
-    }
-}
-
-fn to_tracked_process(runtime: ServiceRuntimeState) -> TrackedServiceProcess {
-    TrackedServiceProcess {
-        pid: runtime.pid,
-        port: runtime.port,
-        started_at: runtime.started_at,
-    }
-}
-
-fn read_runtime_state_from_path(path: &Path) -> Result<Option<ServiceRuntimeState>, String> {
-    if !path.exists() {
-        return Ok(None);
-    }
-
-    let raw = fs::read_to_string(path)
-        .map_err(|error| format!("Failed to read OpenClaw runtime state: {error}"))?;
-    let parsed = serde_json::from_str::<ServiceRuntimeState>(&raw)
-        .map_err(|error| format!("Failed to parse OpenClaw runtime state: {error}"))?;
-    Ok(Some(parsed))
-}
-
-fn write_runtime_state_to_path(path: &Path, runtime: &ServiceRuntimeState) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            format!("Failed to create OpenClaw runtime state directory: {error}")
-        })?;
-    }
-
-    let serialized = serde_json::to_string_pretty(runtime)
-        .map_err(|error| format!("Failed to serialize OpenClaw runtime state: {error}"))?;
-    fs::write(path, serialized)
-        .map_err(|error| format!("Failed to write OpenClaw runtime state: {error}"))
-}
-
-fn remove_runtime_state_file_at(path: &Path) -> Result<(), String> {
-    if !path.exists() {
-        return Ok(());
-    }
-
-    fs::remove_file(path)
-        .map_err(|error| format!("Failed to remove OpenClaw runtime state: {error}"))
-}
-
-fn read_runtime_state() -> Result<Option<ServiceRuntimeState>, String> {
-    read_runtime_state_from_path(&runtime_state_path()?)
-}
-
-fn persist_tracked_process(process: &TrackedServiceProcess) -> Result<(), String> {
-    write_runtime_state_to_path(&runtime_state_path()?, &to_runtime_state(process))
-}
-
-fn clear_persisted_runtime_state() -> Result<(), String> {
-    remove_runtime_state_file_at(&runtime_state_path()?)
 }
 
 fn lifecycle_snapshot(
@@ -401,13 +331,61 @@ fn validate_external_process(process: &TrackedServiceProcess) -> bool {
 }
 
 fn resolve_known_process(state: &ServiceState) -> Result<Option<TrackedServiceProcess>, String> {
+    let manual_stop_requested = state.manual_stop_requested.load(Ordering::SeqCst);
     let child_pid = {
         let mut child_guard = state.child.lock().unwrap();
         if let Some(child) = child_guard.as_mut() {
             match child.try_wait() {
                 Ok(None) => Some(child.id()),
-                Ok(Some(_)) | Err(_) => {
+                Ok(Some(status)) => {
+                    let detail = format!("exit status {status}");
+                    let pid = child.id();
+                    let tracked = state.tracked_process.lock().unwrap().clone();
+                    let fallback_port = tracked
+                        .as_ref()
+                        .map(|process| process.port)
+                        .unwrap_or_else(|| *state.port.lock().unwrap());
                     child_guard.take();
+                    clear_known_process_tracking(state);
+                    if !manual_stop_requested {
+                        let process = tracked.unwrap_or(TrackedServiceProcess {
+                            pid,
+                            port: fallback_port,
+                            started_at: now_unix_timestamp(),
+                        });
+                        set_runtime_issue(
+                            state,
+                            format!(
+                                "child exited unexpectedly: pid={} port={} started_at={} detail={detail}",
+                                process.pid, process.port, process.started_at
+                            ),
+                        );
+                    }
+                    None
+                }
+                Err(error) => {
+                    let pid = child.id();
+                    let tracked = state.tracked_process.lock().unwrap().clone();
+                    let fallback_port = tracked
+                        .as_ref()
+                        .map(|process| process.port)
+                        .unwrap_or_else(|| *state.port.lock().unwrap());
+                    child_guard.take();
+                    clear_known_process_tracking(state);
+                    if !manual_stop_requested {
+                        let process = tracked.unwrap_or(TrackedServiceProcess {
+                            pid,
+                            port: fallback_port,
+                            started_at: now_unix_timestamp(),
+                        });
+                        set_runtime_issue(
+                            state,
+                            format!(
+                                "child exited unexpectedly: pid={} port={} started_at={} detail=try_wait failed: {error}",
+                                process.pid, process.port, process.started_at
+                            ),
+                        );
+                    }
                     None
                 }
             }
@@ -430,25 +408,46 @@ fn resolve_known_process(state: &ServiceState) -> Result<Option<TrackedServicePr
                 started_at: now_unix_timestamp(),
             });
         set_tracked_process(state, Some(existing.clone()));
+        clear_runtime_issue(state);
         return Ok(Some(existing));
     }
 
     if let Some(tracked) = state.tracked_process.lock().unwrap().clone() {
         if validate_external_process(&tracked) {
             *state.port.lock().unwrap() = tracked.port;
+            clear_runtime_issue(state);
             return Ok(Some(tracked));
         }
-        set_tracked_process(state, None);
+        clear_known_process_tracking(state);
+        if !manual_stop_requested {
+            set_runtime_issue(
+                state,
+                format!(
+                    "child exited unexpectedly: pid={} port={} started_at={} detail=tracked process missing",
+                    tracked.pid, tracked.port, tracked.started_at
+                ),
+            );
+        }
     }
 
     if let Some(runtime) = read_runtime_state()? {
         let tracked = to_tracked_process(runtime);
         if validate_external_process(&tracked) {
             set_tracked_process(state, Some(tracked.clone()));
+            clear_runtime_issue(state);
             return Ok(Some(tracked));
         }
 
-        let _ = clear_persisted_runtime_state();
+        clear_known_process_tracking(state);
+        if !manual_stop_requested {
+            set_runtime_issue(
+                state,
+                format!(
+                    "stale runtime state cleared: pid={} port={} started_at={}",
+                    tracked.pid, tracked.port, tracked.started_at
+                ),
+            );
+        }
     }
 
     Ok(None)
@@ -484,8 +483,7 @@ fn cleanup_failed_service_start(state: &ServiceState) {
         let _ = child.kill();
         let _ = child.wait();
     }
-    set_tracked_process(state, None);
-    let _ = clear_persisted_runtime_state();
+    clear_known_process_tracking(state);
 }
 
 async fn wait_for_service_ready(
@@ -587,8 +585,6 @@ fn spawn_heartbeat_monitor(app: tauri::AppHandle, state: &ServiceState) {
     std::thread::spawn(move || {
         let mut last_running: Option<bool> = None;
         loop {
-            std::thread::sleep(Duration::from_secs(5));
-
             let state = app.state::<ServiceState>();
             let process = resolve_known_process(state.inner()).ok().flatten();
             let running = process.is_some();
@@ -604,14 +600,22 @@ fn spawn_heartbeat_monitor(app: tauri::AppHandle, state: &ServiceState) {
                 );
             }
 
-            if !running && last_running == Some(true) {
+            if running {
+                clear_runtime_issue(state.inner());
+            }
+
+            if !running && last_running.unwrap_or(true) {
                 if state
                     .inner()
                     .manual_stop_requested
                     .swap(false, Ordering::SeqCst)
                 {
+                    clear_runtime_issue(state.inner());
                     clear_service_lifecycle(&app, state.inner());
                 } else {
+                    emit_pending_runtime_issue_log(&app, state.inner(), "error");
+                    let detail = current_runtime_issue(state.inner())
+                        .unwrap_or_else(|| "OpenClaw service exited unexpectedly".to_string());
                     let started_at = state
                         .inner()
                         .lifecycle
@@ -625,15 +629,16 @@ fn spawn_heartbeat_monitor(app: tauri::AppHandle, state: &ServiceState) {
                         Some(lifecycle_snapshot(
                             ServiceLifecycleStatus::Failed,
                             port,
-                            Some("OpenClaw service exited unexpectedly".to_string()),
+                            Some(detail.clone()),
                             started_at,
-                            Some("OpenClaw service exited unexpectedly".to_string()),
+                            Some(detail),
                         )),
                     );
                 }
             }
 
             last_running = Some(running);
+            std::thread::sleep(Duration::from_secs(5));
         }
     });
 }
@@ -656,20 +661,64 @@ pub fn is_service_running(state: tauri::State<ServiceState>) -> bool {
 pub fn get_service_lifecycle_snapshot(
     state: tauri::State<ServiceState>,
 ) -> Result<Option<ServiceLifecycleSnapshot>, String> {
-    if let Some(snapshot) = state.lifecycle.lock().unwrap().clone() {
-        return Ok(Some(snapshot));
+    if let Some(existing) = resolve_known_process(state.inner())? {
+        if let Some(snapshot) = state.lifecycle.lock().unwrap().clone() {
+            if snapshot.status == ServiceLifecycleStatus::ServiceStarting {
+                return Ok(Some(snapshot));
+            }
+        }
+
+        return match validate_existing_process_for_ready(state.inner(), existing) {
+            ExistingProcessValidation::Ready(existing) => {
+                let snapshot = lifecycle_snapshot(
+                    ServiceLifecycleStatus::Ready,
+                    existing.port,
+                    Some("Detected an existing OpenClaw service".to_string()),
+                    Some(existing.started_at),
+                    None,
+                );
+                *state.lifecycle.lock().unwrap() = Some(snapshot.clone());
+                clear_runtime_issue(state.inner());
+                Ok(Some(snapshot))
+            }
+            ExistingProcessValidation::Invalid { process, detail } => {
+                let snapshot = lifecycle_snapshot(
+                    ServiceLifecycleStatus::Failed,
+                    process.port,
+                    Some(detail.clone()),
+                    Some(process.started_at),
+                    Some(detail),
+                );
+                *state.lifecycle.lock().unwrap() = Some(snapshot.clone());
+                Ok(Some(snapshot))
+            }
+        };
     }
 
-    if let Some(existing) = resolve_known_process(state.inner())? {
+    if let Some(detail) = current_runtime_issue(state.inner()) {
+        let previous_snapshot = state.lifecycle.lock().unwrap().clone();
+        let port = previous_snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.port)
+            .unwrap_or_else(|| *state.port.lock().unwrap());
+        let started_at = previous_snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.started_at);
         let snapshot = lifecycle_snapshot(
-            ServiceLifecycleStatus::Ready,
-            existing.port,
-            Some("Detected an existing OpenClaw service".to_string()),
-            Some(existing.started_at),
-            None,
+            ServiceLifecycleStatus::Failed,
+            port,
+            Some(detail.clone()),
+            started_at,
+            Some(detail),
         );
         *state.lifecycle.lock().unwrap() = Some(snapshot.clone());
         return Ok(Some(snapshot));
+    }
+
+    if let Some(snapshot) = state.lifecycle.lock().unwrap().clone() {
+        if snapshot.status == ServiceLifecycleStatus::Failed {
+            return Ok(Some(snapshot));
+        }
     }
 
     Ok(None)
@@ -726,47 +775,46 @@ async fn start_service_impl(
     }
 
     if let Some(existing) = resolve_known_process(state.inner())? {
-        let token = resolve_gateway_token()?;
-        if let Err(error) = verify_gateway_rpc_ready(existing.port, &token) {
-            let _ = app.emit(
-                "service-log",
-                serde_json::json!({
-                    "level": "warn",
-                    "message": format!("Existing OpenClaw gateway failed RPC validation; restarting managed process: {error}")
-                }),
-            );
-            let _ = terminate_process_by_pid(existing.pid);
-            set_tracked_process(state.inner(), None);
-            let _ = clear_persisted_runtime_state();
-            std::thread::sleep(Duration::from_millis(500));
-        } else {
-            spawn_heartbeat_monitor(app.clone(), state.inner());
-            emit_service_port(&app, existing.port);
-            set_service_lifecycle(
-                &app,
-                state.inner(),
-                Some(lifecycle_snapshot(
-                    ServiceLifecycleStatus::Ready,
-                    existing.port,
-                    Some("Detected an existing OpenClaw service".to_string()),
-                    Some(existing.started_at),
-                    None,
-                )),
-            );
-            let _ = launcher_state::record_launcher_launch_internal(Some(existing.port));
-            let _ = app.emit(
+        match validate_existing_process_for_ready(state.inner(), existing) {
+            ExistingProcessValidation::Ready(existing) => {
+                let token = resolve_gateway_token()?;
+                spawn_heartbeat_monitor(app.clone(), state.inner());
+                emit_service_port(&app, existing.port);
+                clear_runtime_issue(state.inner());
+                set_service_lifecycle(
+                    &app,
+                    state.inner(),
+                    Some(lifecycle_snapshot(
+                        ServiceLifecycleStatus::Ready,
+                        existing.port,
+                        Some("Detected an existing OpenClaw service".to_string()),
+                        Some(existing.started_at),
+                        None,
+                    )),
+                );
+                let _ = launcher_state::record_launcher_launch_internal(Some(existing.port));
+                let _ = app.emit(
                 "service-log",
                 serde_json::json!({
                     "level": "info",
                     "message": format!("检测到已在后台运行的 OpenClaw，复用端口 {}", existing.port)
                 }),
-            );
-            if open_browser {
+                );
+                if open_browser {
                 open_control_ui_async(app.clone(), existing.port, token.clone());
+                }
+                return Ok("Service is already running".to_string());
             }
-            return Ok("Service is already running".to_string());
+            ExistingProcessValidation::Invalid { process, .. } => {
+                emit_pending_runtime_issue_log(&app, state.inner(), "warn");
+                if terminate_owned_child_if_matching_pid(state.inner(), process.pid) {
+                    std::thread::sleep(Duration::from_millis(500));
+                }
+            }
         }
     }
+
+    emit_pending_runtime_issue_log(&app, state.inner(), "warn");
 
     let openclaw_dir = paths::get_openclaw_dir()?;
     if !openclaw_dir.join("package.json").exists() {
@@ -844,6 +892,10 @@ async fn start_service_impl(
             "message": format!("正在启动 OpenClaw 服务 (端口 {})...", chosen_port)
         }),
     );
+
+    if let Ok(plugin_summary) = summarize_plugin_config() {
+        emit_service_log(&app, "info", plugin_summary);
+    }
 
     let token = resolve_gateway_token()?;
     let mut command = openclaw_cli::create_openclaw_cli_command()
@@ -964,6 +1016,7 @@ async fn start_service_impl(
     if let Err(error) =
         wait_for_service_ready(state.inner(), chosen_port, &token, ready_signal).await
     {
+        set_runtime_issue(state.inner(), error.clone());
         cleanup_failed_service_start(state.inner());
         let _ = app.emit(
             "service-log",
@@ -987,6 +1040,7 @@ async fn start_service_impl(
     }
 
     if let Err(error) = persist_tracked_process(&tracked) {
+        set_runtime_issue(state.inner(), error.clone());
         cleanup_failed_service_start(state.inner());
         let _ = app.emit(
             "service-log",
@@ -1011,6 +1065,7 @@ async fn start_service_impl(
 
     let _ = launcher_state::record_launcher_launch_internal(Some(chosen_port));
     spawn_heartbeat_monitor(app.clone(), state.inner());
+    clear_runtime_issue(state.inner());
     set_service_lifecycle(
         &app,
         state.inner(),
@@ -1062,8 +1117,8 @@ pub fn stop_service(
         }
     }
 
-    set_tracked_process(state.inner(), None);
-    let _ = clear_persisted_runtime_state();
+    clear_known_process_tracking(state.inner());
+    clear_runtime_issue(state.inner());
     clear_service_lifecycle(&app, state.inner());
 
     if stopped {
@@ -1112,101 +1167,8 @@ fn is_service_ready_signal(line: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn unique_temp_path(file_name: &str) -> PathBuf {
-        let mut path = std::env::temp_dir();
-        path.push(format!(
-            "dragonclaw-service-test-{}-{}",
-            std::process::id(),
-            file_name
-        ));
-        path
-    }
-
-    #[test]
-    fn test_port_available_after_release() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        drop(listener);
-        assert!(is_port_available(port));
-    }
-
-    #[test]
-    fn test_port_occupied_detection() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        assert!(!is_port_available(port));
-        drop(listener);
-        assert!(is_port_available(port));
-    }
-
-    #[test]
-    fn test_classify_log_level() {
-        assert_eq!(classify_log_level("npm warn deprecated"), "warn");
-        assert_eq!(classify_log_level("npm error code ENOENT"), "error");
-        assert_eq!(classify_log_level("  ERR_PNPM something failed"), "error");
-        assert_eq!(classify_log_level("added 150 packages"), "info");
-        assert_eq!(classify_log_level("Server started on port 3000"), "success");
-        assert_eq!(classify_log_level("some normal output"), "info");
-    }
-
-    #[test]
-    fn test_service_ready_signal() {
-        assert!(is_service_ready_signal("Server started on port 3000"));
-        assert!(is_service_ready_signal(
-            "Listening on http://localhost:3000"
-        ));
-        assert!(is_service_ready_signal("Gateway ready on 0.0.0.0:3000"));
-        assert!(is_service_ready_signal(
-            "2026-05-03T21:14:39.270+08:00 [gateway] ready"
-        ));
-        assert!(is_service_ready_signal("server is running at port 3000"));
-        assert!(!is_service_ready_signal(
-            "2026-05-03T21:14:11.236+08:00 [gateway] http server listening"
-        ));
-        assert!(!is_service_ready_signal("compiling TypeScript..."));
-        assert!(!is_service_ready_signal("installing dependencies"));
-    }
-
-    #[test]
-    fn runtime_state_round_trip() {
-        let path = unique_temp_path("round-trip.json");
-        let runtime = ServiceRuntimeState {
-            pid: 1234,
-            port: 18789,
-            started_at: 42,
-        };
-
-        write_runtime_state_to_path(&path, &runtime).unwrap();
-        let loaded = read_runtime_state_from_path(&path).unwrap();
-        remove_runtime_state_file_at(&path).unwrap();
-
-        assert_eq!(loaded, Some(runtime));
-    }
-
-    #[test]
-    fn remove_runtime_state_file_is_idempotent() {
-        let path = unique_temp_path("missing.json");
-        remove_runtime_state_file_at(&path).unwrap();
-        remove_runtime_state_file_at(&path).unwrap();
-    }
-
-    #[test]
-    fn stale_runtime_state_detection_fails_for_dead_process() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let unused_port = listener.local_addr().unwrap().port();
-        drop(listener);
-
-        let tracked = TrackedServiceProcess {
-            pid: std::process::id(),
-            port: unused_port,
-            started_at: 1,
-        };
-        assert!(!validate_external_process(&tracked));
-    }
-}
+#[path = "service_tests.rs"]
+mod tests;
 
 
 

@@ -76,6 +76,7 @@ export function useService({
 
     useEffect(() => {
         const unlistenHeartbeat = listen<ServiceHeartbeatPayload>("service-heartbeat", (event) => {
+            setRunning(Boolean(event.payload.running));
             if (typeof event.payload.port === "number") {
                 setServicePort(event.payload.port);
             }

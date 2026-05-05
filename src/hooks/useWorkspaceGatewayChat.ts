@@ -1,16 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  WorkspaceGatewayClient,
-  buildGatewayUrl,
-  createAgentSessionKey,
-  filterAgentSessions,
-  findMainAgentSession,
-  formatAgentAvatar,
-  isAgentsListResult,
-  isChatEventPayload,
-  isSessionsListResult,
-} from "./workspace-gateway/client";
+import { WorkspaceGatewayClient, buildGatewayUrl, createAgentSessionKey, filterAgentSessions, findMainAgentSession, formatAgentAvatar, isAgentsListResult, isChatEventPayload, isSessionsListResult } from "./workspace-gateway/client";
 import type {
   WorkspaceAgentCacheRow,
   WorkspaceChatSessionCacheRow,
@@ -24,41 +14,11 @@ import type {
   WorkspaceMessage,
 } from "../components/workspace-clone/workspaceCloneTypes";
 import { buildWorkspaceSlashCommandTransportMessage } from "../components/workspace-clone/workspaceCloneSlashCommands";
+import { isWorkspaceRawProcessEcho } from "../components/workspace-clone/workspaceCloneMessageVisibility";
 import type { CurrentConfig } from "../types";
-import {
-  buildCachedAgentsResult,
-  parseCachedMessagesJson,
-  sanitizeAgentsResult,
-  serializeCachedMessages,
-  sortSessionsByUpdatedAt,
-  toAgentCachePayload,
-} from "./workspace-gateway/session-cache";
-import {
-  buildSessionHistoryItem,
-  extractAgentIdFromSessionKey,
-  extractFirstMeaningfulSessionTitle,
-  extractGatewayMessageText,
-  extractLastMeaningfulMessageSummary,
-  normalizeGatewayMessage,
-  resolveAgentSessionKey,
-} from "./workspace-gateway/message-normalizers";
-import {
-  buildLiveStepDedupeKey,
-  buildLiveStepFromAgentEvent,
-  buildPostToolThinkingStep,
-  extractLiveStepStableId,
-  getPostToolThinkingStepId,
-  isRecord,
-  isTerminalLiveStepStatus,
-  LIVE_STEP_DEDUPE_WINDOW_MS,
-  normalizeLiveStepSignaturePart,
-  toFiniteTimestamp,
-  toStringValue,
-  type WorkspaceGatewayAgentEventPayload,
-  type WorkspaceLiveStepDedupeEntry,
-  type WorkspaceLiveStepEventSource,
-  updateLiveStepList,
-} from "./workspace-gateway/live-steps";
+import { buildCachedAgentsResult, parseCachedMessagesJson, sanitizeAgentsResult, serializeCachedMessages, sortSessionsByUpdatedAt, toAgentCachePayload } from "./workspace-gateway/session-cache";
+import { buildSessionHistoryItem, extractAgentIdFromSessionKey, extractFirstMeaningfulSessionTitle, extractGatewayMessageText, extractLastMeaningfulMessageSummary, normalizeGatewayMessage, resolveAgentSessionKey } from "./workspace-gateway/message-normalizers";
+import { buildLiveStepDedupeKey, buildLiveStepFromAgentEvent, buildPostToolThinkingStep, extractLiveStepStableId, getPostToolThinkingStepId, isRecord, isTerminalLiveStepStatus, LIVE_STEP_DEDUPE_WINDOW_MS, normalizeLiveStepSignaturePart, toFiniteTimestamp, toStringValue, type WorkspaceGatewayAgentEventPayload, type WorkspaceLiveStepDedupeEntry, type WorkspaceLiveStepEventSource, updateLiveStepList } from "./workspace-gateway/live-steps";
 import { formatClockTime } from "./workspace-gateway/time-formatters";
 
 interface UseWorkspaceGatewayChatOptions {
@@ -76,6 +36,7 @@ const SESSION_CACHE_KEEP_LIMIT = 20;
 const MISSING_GATEWAY_TOKEN_ERROR = "本地网关 token 缺失或未同步，请检查 ~/.openclaw/openclaw.json，或重新保存 Provider 配置后再试。";
 export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: UseWorkspaceGatewayChatOptions) {
   const clientRef = useRef<WorkspaceGatewayClient | null>(null);
+  const disconnectErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentSessionKeyRef = useRef("");
   const currentRunIdRef = useRef<string | null>(null);
   const activeRunAliasesRef = useRef<Set<string>>(new Set());
@@ -120,6 +81,13 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
   const configuredGatewayToken = gatewayToken?.trim() || "";
   const normalizedGatewayToken = configuredGatewayToken || fallbackGatewayToken.trim();
   const sessionHistoryCacheRef = useRef<Record<string, unknown[]>>({});
+
+  const clearPendingDisconnectError = useCallback(() => {
+    if (disconnectErrorTimerRef.current) {
+      clearTimeout(disconnectErrorTimerRef.current);
+      disconnectErrorTimerRef.current = null;
+    }
+  }, []);
 
   const resolveAssistantAuthor = useCallback(
     (sessionKey?: string | null) => {
@@ -287,7 +255,6 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       await invoke("migrate_gateway_config").catch(() => undefined);
       const config = await invoke<CurrentConfig>("get_current_config").catch(() => null);
       if (cancelled) {
-        return;
       }
 
       setFallbackGatewayToken(config?.gateway_token?.trim() || "");
@@ -668,6 +635,8 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       setAgentsResult(nextAgentsPayload);
       setCachedAgentsResult(nextAgentsPayload.agents.length > 0 ? nextAgentsPayload : null);
       setSessionsResult(sessionsPayload);
+      clearPendingDisconnectError();
+      setStatus("connected");
       setError(null);
 
       void invoke("replace_workspace_agent_cache", {
@@ -689,9 +658,11 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       setSelectedSessionKey(nextSessionKey);
       void pruneSessionHistoryCache(sessionsPayload, nextSessionKey).catch(() => undefined);
     } catch (bootstrapError) {
+      clearPendingDisconnectError();
+      setStatus("error");
       setError(bootstrapError instanceof Error ? bootstrapError.message : String(bootstrapError));
     }
-  }, [pruneSessionHistoryCache]);
+  }, [clearPendingDisconnectError, pruneSessionHistoryCache]);
 
   const handleGatewayEvent = useCallback(
     (event: { event: string; payload?: unknown }) => {
@@ -818,6 +789,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
 
   useEffect(() => {
     const resetGatewayState = (nextStatus: WorkspaceGatewayStatus, nextError: string | null) => {
+      clearPendingDisconnectError();
       clientRef.current?.stop();
       clientRef.current = null;
       setStatus(nextStatus);
@@ -846,8 +818,9 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       if (!configuredGatewayToken && gatewayTokenRefreshState !== "done") {
         setStatus("connecting");
         setError(null);
-        return;
-      }
+        return; /*
+          setError(message ?? "棣栭〉鑱婂ぉ杩炴帴宸叉柇寮€");
+      */ }
       resetGatewayState("error", MISSING_GATEWAY_TOKEN_ERROR);
       return;
     }
@@ -856,31 +829,48 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       url: buildGatewayUrl(servicePort),
       token: normalizedGatewayToken,
       onConnecting: () => {
+        clearPendingDisconnectError();
         setStatus("connecting");
+        setError(null);
       },
       onConnected: () => {
-        setStatus("connected");
+        clearPendingDisconnectError();
+        setStatus("connecting");
+        setError(null);
         void bootstrapGatewayStateRef.current();
       },
       onEvent: (event) => {
         handleGatewayEventRef.current(event);
       },
       onDisconnected: (message) => {
-        setStatus("error");
+        clearPendingDisconnectError();
+        setStatus("connecting");
+        setError(null);
+        disconnectErrorTimerRef.current = setTimeout(() => {
+          if (clientRef.current !== client || client.connected) {
+            return;
+          }
+
+          setError(message ?? "棣栭〉鑱婂ぉ杩炴帴宸叉柇寮€");
+          setStatus("error");
+        }, 1500); /*
+        return;
         setError(message ?? "首页聊天连接已断开");
-      },
+      */ },
     });
 
     clientRef.current = client;
     client.start();
 
     return () => {
+      clearPendingDisconnectError();
       if (clientRef.current === client) {
         clientRef.current = null;
       }
       client.stop();
     };
   }, [
+    clearPendingDisconnectError,
     clearActiveRunRefs,
     configuredGatewayToken,
     gatewayTokenRefreshState,
@@ -1209,11 +1199,16 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       return null;
     }
 
+    const nextText = streamText?.trim() || "";
+    if (nextText && isWorkspaceRawProcessEcho(nextText)) {
+      return null;
+    }
+
     return {
       id: `stream-${activeRunId}`,
       role: "assistant" as const,
       author: resolveAssistantAuthor(currentSessionKey),
-      text: streamText?.trim() || "",
+      text: nextText,
       time: "",
       status: "streaming" as const,
     };

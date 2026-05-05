@@ -76,6 +76,14 @@ function resolveStartupPhase(params: {
   connectionStatus: WorkspaceGatewayStatus;
   connectionError: string | null;
 }): WorkspaceServiceStartupPhase | "ready" {
+  if (params.connectionStatus === "error" || params.connectionError) {
+    return "error";
+  }
+
+  if (params.connectionStatus === "connected") {
+    return "ready";
+  }
+
   if (params.loading && !params.running) {
     return "starting";
   }
@@ -86,14 +94,6 @@ function resolveStartupPhase(params: {
 
   if (!params.running) {
     return "stopped";
-  }
-
-  if (params.connectionStatus === "connected") {
-    return "ready";
-  }
-
-  if (params.connectionStatus === "error" || params.connectionError) {
-    return "error";
   }
 
   return "connecting";

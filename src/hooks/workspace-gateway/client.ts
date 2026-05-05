@@ -78,9 +78,32 @@ function buildConnectParams(token: string, _nonce?: string | null) {
   };
 }
 
-function formatGatewayDisconnectMessage(url: string, message?: string | null) {
+function formatGatewayDisconnectMessageLegacy(url: string, message?: string | null) {
   const detail = message?.trim() || "连接已断开";
   return `WebSocket 网关连接不可用：${detail}；url=${url}`;
+}
+
+function formatGatewayDisconnectMessage(url: string, message?: string | null) {
+  formatGatewayDisconnectMessageLegacy(url, message);
+  const detail = message?.trim() || "connection closed";
+  return `Workspace gateway unavailable: ${detail} (url=${url})`;
+}
+
+function normalizeGatewayDisconnectMessage(message?: string | null) {
+  const detail = message?.trim();
+  if (!detail) {
+    return detail;
+  }
+  if (detail.includes("WebSocket error")) {
+    return "browser WebSocket error before gateway handshake completed";
+  }
+  if (detail.includes("{detail}")) {
+    return "connect request failed before gateway handshake completed";
+  }
+  if (detail.includes("connect") && detail.includes("ms")) {
+    return detail.replace(/connect.*?(\d+ms).*$/i, "connect request timed out after $1");
+  }
+  return detail;
 }
 
 export class WorkspaceGatewayClient {
@@ -266,7 +289,10 @@ export class WorkspaceGatewayClient {
     this.ws = null;
     this.activeSocketSeq = 0;
     this.hasConnected = false;
-    const disconnectMessage = formatGatewayDisconnectMessage(this.options.url, errorMessage);
+    const disconnectMessage = formatGatewayDisconnectMessage(
+      this.options.url,
+      normalizeGatewayDisconnectMessage(errorMessage),
+    );
     this.rejectPending(new Error(disconnectMessage));
     this.options.onDisconnected?.(disconnectMessage);
 
