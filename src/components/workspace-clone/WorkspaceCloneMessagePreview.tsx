@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react";
 import type { WorkspaceMessage } from "./workspaceCloneTypes";
+import { shouldHideWorkspaceMessage } from "./workspaceCloneMessageVisibility";
 
 type WorkspaceMessagePreviewKind = "plain" | "markdown" | "json";
 
@@ -12,66 +13,6 @@ const WorkspaceCloneMarkdownMessagePreview = lazy(() =>
     default: module.WorkspaceCloneMarkdownMessagePreview,
   })),
 );
-
-function tryParseJsonRecord(text: string): Record<string, unknown> | null {
-  const trimmed = text.trim();
-  if (!trimmed || !/^[\[{]/.test(trimmed)) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(trimmed);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function looksLikeHiddenProcessPayload(text: string) {
-  const parsed = tryParseJsonRecord(text);
-  if (parsed) {
-    const keys = new Set(Object.keys(parsed));
-    const hasExternalContent = keys.has("externalContent");
-    const hasFetchShape =
-      keys.has("url") &&
-      keys.has("status") &&
-      (keys.has("contentType") || keys.has("extractMode") || keys.has("extractor"));
-    const hasSearchShape =
-      keys.has("provider") &&
-      keys.has("results") &&
-      (keys.has("toolMs") || keys.has("count"));
-    const parsedText = typeof parsed.text === "string" ? parsed.text : "";
-    const parsedTitle = typeof parsed.title === "string" ? parsed.title : "";
-
-    if (
-      hasExternalContent ||
-      hasFetchShape ||
-      hasSearchShape ||
-      /EXTERNAL_UNTRUSTED_CONTENT|SECURITY NOTICE:/i.test(parsedText) ||
-      /EXTERNAL_UNTRUSTED_CONTENT/i.test(parsedTitle)
-    ) {
-      return true;
-    }
-  }
-
-  return /EXTERNAL_UNTRUSTED_CONTENT|SECURITY NOTICE: The following content is from an EXTERNAL, UNTRUSTED source/i.test(
-    text,
-  );
-}
-
-export function shouldHideWorkspaceMessage(message: WorkspaceMessage) {
-  if (message.status === "streaming") {
-    return false;
-  }
-
-  if (message.role === "tool") {
-    return true;
-  }
-
-  return message.role === "assistant" && looksLikeHiddenProcessPayload(message.text);
-}
 
 function tryFormatJsonPreview(text: string) {
   const trimmed = text.trim();

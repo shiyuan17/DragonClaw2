@@ -1,13 +1,10 @@
 import { createAgentSessionKey, filterAgentSessions } from "./client";
 import type { WorkspaceGatewaySessionRow, WorkspaceGatewaySessionsListResult, WorkspaceHistoryItem, WorkspaceMessage } from "../../components/workspace-clone/workspaceCloneTypes";
+import { isWorkspaceRawProcessEcho } from "../../components/workspace-clone/workspaceCloneMessageVisibility";
 import { formatClockTime, formatHistorySessionTime, formatRelativeSessionTime } from "./time-formatters";
 
 const SESSION_TITLE_MAX_LENGTH = 56;
 const AGENT_LAST_MESSAGE_MAX_LENGTH = 44;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object";
-}
 
 export function extractAgentIdFromSessionKey(sessionKey: string) {
   const match = /^agent:([^:]+):/.exec(sessionKey);
@@ -102,57 +99,6 @@ export function extractGatewayMessageText(message: unknown): string {
   return "";
 }
 
-function tryParseJsonRecord(text: string): Record<string, unknown> | null {
-  const trimmed = text.trim();
-  if (!trimmed || !/^[\[{]/.test(trimmed)) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(trimmed);
-    return isRecord(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function looksLikeProcessPayloadJson(text: string) {
-  const parsed = tryParseJsonRecord(text);
-  if (!parsed) {
-    return false;
-  }
-
-  const keys = new Set(Object.keys(parsed));
-  const processSignals = [
-    "results",
-    "externalContent",
-    "toolMs",
-    "provider",
-    "siteName",
-    "snippet",
-    "toolCallId",
-    "itemId",
-    "approvalId",
-    "cwd",
-    "stdout",
-    "stderr",
-    "exitCode",
-  ];
-  const userFacingSignals = [
-    "answer",
-    "reply",
-    "final",
-    "summary",
-    "markdown",
-    "content",
-  ];
-
-  const processSignalCount = processSignals.filter((key) => keys.has(key)).length;
-  const hasUserFacingSignal = userFacingSignals.some((key) => keys.has(key));
-
-  return processSignalCount >= 2 && !hasUserFacingSignal;
-}
-
 export function normalizeGatewayMessage(
   raw: unknown,
   resolveAssistantAuthor: (sessionKey?: string | null) => string,
@@ -184,7 +130,7 @@ export function normalizeGatewayMessage(
     return null;
   }
 
-  if (role === "assistant" && looksLikeProcessPayloadJson(text)) {
+  if (role === "assistant" && isWorkspaceRawProcessEcho(text)) {
     return null;
   }
 
@@ -250,7 +196,7 @@ export function extractLastMeaningfulMessageSummary(messages: unknown[]) {
     }
 
     const text = extractGatewayMessageText(rawMessage).trim();
-    if (!text || looksLikeProcessPayloadJson(text)) {
+    if (!text || isWorkspaceRawProcessEcho(text)) {
       continue;
     }
 

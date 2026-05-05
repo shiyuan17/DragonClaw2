@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { WORKSPACE_HOME_SUGGESTIONS } from "./workspaceCloneData";
+import { shouldHideWorkspaceMessage } from "./workspaceCloneMessageVisibility";
 import type {
   WorkspaceEntity,
   WorkspaceHistoryFilter,
@@ -16,7 +17,7 @@ import type {
 } from "./workspaceCloneTypes";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
 import { WorkspaceCloneLiveTimeline } from "./WorkspaceCloneLiveTimeline";
-import { shouldHideWorkspaceMessage, WorkspaceCloneMessagePreview } from "./WorkspaceCloneMessagePreview";
+import { WorkspaceCloneMessagePreview } from "./WorkspaceCloneMessagePreview";
 import {
   WorkspaceCloneServiceStartupPanel,
   type WorkspaceServiceStartupLogLine,
