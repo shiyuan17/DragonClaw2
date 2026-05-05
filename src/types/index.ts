@@ -197,6 +197,13 @@ export interface OpenClawChannelConfigPayload {
     config: Record<string, string>;
 }
 
+export interface OpenClawFeishuChannelFormValues {
+    appId: string;
+    appSecretConfigured: boolean;
+    dmPolicy: string;
+    allowFrom: string[];
+}
+
 export interface OpenClawChannelBindingPayload {
     channelType: string;
     accountId: string;

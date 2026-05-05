@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 
-import { loadOpenClawChannelFormValues, pollFeishuOpenClawQrResult, requestFeishuOpenClawQr } from "../../api/channels";
+import { loadOpenClawFeishuChannelFormValues, pollFeishuOpenClawQrResult, requestFeishuOpenClawQr } from "../../api/channels";
 import type { OpenClawChannelAccountsSnapshotResponse } from "../../types";
 import type { ChannelBindingModalState } from "../../components/workspace-clone/workspaceCloneTypes";
 import {
@@ -12,6 +12,7 @@ import {
   toMessage,
   validateExternalUrl,
 } from "./workspaceChannelBindingShared";
+import { deriveWorkspaceIntegrationFlowState } from "./workspaceIntegrationFlow";
 
 interface UseWorkspaceFeishuBindingOptions {
   setModal: Dispatch<SetStateAction<ChannelBindingModalState>>;
@@ -204,27 +205,19 @@ export function useWorkspaceFeishuBinding({
   ]);
 
   const loadFeishuBindingValues = useCallback(async (accountId: string) => {
-    const values = await loadOpenClawChannelFormValues({
-      channelType: "feishu",
-      accountId,
-    });
-    const nextAccountId = values.appId?.trim() || accountId;
+    const values = await loadOpenClawFeishuChannelFormValues(accountId);
+    const nextAccountId = values.appId || accountId;
     setModal((current) => ({
       ...current,
       accountId: nextAccountId,
       accountLabel: resolveModalAccountLabel(nextAccountId),
     }));
-    setFeishuAppId(values.appId ?? "");
+    setFeishuAppId(values.appId);
     setFeishuAppSecret("");
-    setFeishuAppSecretConfigured((values.appSecretConfigured ?? "").trim().toLowerCase() === "true");
-    setFeishuDmPolicy((values.dmPolicy ?? "open").trim() || "open");
-    const nextAllowFrom = (values.allowFrom ?? "")
-      .split(/\r?\n|,/)
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .filter((item, index, array) => array.indexOf(item) === index);
-    setFeishuAllowFromSessionIds(nextAllowFrom.filter((item) => item !== "*"));
-    if ((values.appId ?? "").trim() && (values.appSecretConfigured ?? "").trim().toLowerCase() === "true") {
+    setFeishuAppSecretConfigured(values.appSecretConfigured);
+    setFeishuDmPolicy(values.dmPolicy);
+    setFeishuAllowFromSessionIds(values.allowFrom);
+    if (values.appId && values.appSecretConfigured) {
       setModalNotice("已检测到飞书凭证，你可以直接保存绑定，或手动更新凭证。");
     }
   }, [setModal, setModalNotice]);
@@ -257,6 +250,21 @@ export function useWorkspaceFeishuBinding({
   }, []);
 
   const feishuQrVisible = useMemo(() => Boolean(feishuQrTargetUrl.trim()), [feishuQrTargetUrl]);
+  const feishuFlowState = useMemo(
+    () => deriveWorkspaceIntegrationFlowState({
+      loading: feishuQrRequesting || feishuQrChecking,
+      awaitingExternal: feishuQrVisible,
+      readyToSave: Boolean(feishuAppId.trim() && (feishuAppSecretConfigured || feishuAppSecret.trim())),
+    }),
+    [
+      feishuAppId,
+      feishuAppSecret,
+      feishuAppSecretConfigured,
+      feishuQrChecking,
+      feishuQrRequesting,
+      feishuQrVisible,
+    ],
+  );
 
   useEffect(() => clearFeishuQrTimer, [clearFeishuQrTimer]);
 
@@ -264,6 +272,7 @@ export function useWorkspaceFeishuBinding({
     feishuQrRequesting,
     feishuQrChecking,
     feishuQrVisible,
+    feishuFlowState,
     feishuQrTargetUrl,
     feishuQrDeviceCode,
     feishuQrUserCode,

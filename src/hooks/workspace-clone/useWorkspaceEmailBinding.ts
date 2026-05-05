@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { loadImapSmtpEmailBinding, saveImapSmtpEmailBinding } from "../../api/emailSkillBinding";
 import { useFeedback } from "../useFeedback";
 import type { EmailSkillBindingProvider, EmailSkillBindingSnapshot } from "../../types";
+import { deriveWorkspaceIntegrationFlowState } from "./workspaceIntegrationFlow";
 
 type WorkspaceEmailBindingProvider = Exclude<EmailSkillBindingProvider, ""> | "";
 
@@ -170,6 +171,28 @@ export function useWorkspaceEmailBinding() {
         return "请输入邮箱账号";
     }
   }, [provider]);
+  const flowState = useMemo(
+    () => deriveWorkspaceIntegrationFlowState({
+      loading,
+      saving,
+      readyToSave: Boolean(provider && account.trim() && authorizationCode.trim()),
+      successDetail: notice,
+      errorDetail: error,
+      idleDetail: isBound ? `${boundProviderLabel} / ${boundAccount}` : "",
+    }),
+    [
+      account,
+      authorizationCode,
+      boundAccount,
+      boundProviderLabel,
+      error,
+      isBound,
+      loading,
+      notice,
+      provider,
+      saving,
+    ],
+  );
 
   const clearStatus = useCallback(() => {
     setNotice("");
@@ -430,6 +453,7 @@ export function useWorkspaceEmailBinding() {
     isOpen,
     loading,
     saving,
+    flowState,
     notice,
     error,
     provider,

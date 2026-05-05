@@ -5,6 +5,7 @@ import type {
   OpenClawChannelAccountsSnapshotResponse,
   OpenClawChannelBindingPayload,
   OpenClawChannelConfigPayload,
+  OpenClawFeishuChannelFormValues,
   OpenClawChannelQrBindingSessionSnapshot,
 } from "../types";
 
@@ -52,6 +53,18 @@ function readStringArray(candidate: Record<string, unknown>, camelKey: string, s
 function readNumber(candidate: Record<string, unknown>, camelKey: string, snakeKey?: string) {
   const raw = candidate[camelKey] ?? (snakeKey ? candidate[snakeKey] : undefined);
   return typeof raw === "number" && Number.isFinite(raw) ? raw : 0;
+}
+
+function readBooleanString(value: string) {
+  return value.trim().toLowerCase() === "true";
+}
+
+function readDelimitedStringList(value: string) {
+  return value
+    .split(/\r?\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((item, index, list) => list.indexOf(item) === index);
 }
 
 function normalizeOpenClawChannelQrBindingSessionSnapshot(raw: unknown): OpenClawChannelQrBindingSessionSnapshot {
@@ -123,6 +136,19 @@ export async function loadOpenClawChannelFormValues(options: { channelType: stri
   } catch (error) {
     throw new Error(toMessage(error, "频道表单读取失败。"));
   }
+}
+
+export async function loadOpenClawFeishuChannelFormValues(accountId: string): Promise<OpenClawFeishuChannelFormValues> {
+  const values = await loadOpenClawChannelFormValues({
+    channelType: "feishu",
+    accountId,
+  });
+  return {
+    appId: values.appId?.trim() || "",
+    appSecretConfigured: readBooleanString(values.appSecretConfigured ?? ""),
+    dmPolicy: (values.dmPolicy ?? "open").trim() || "open",
+    allowFrom: readDelimitedStringList(values.allowFrom ?? "").filter((item) => item !== "*"),
+  };
 }
 
 export async function saveOpenClawChannelConfig(payload: OpenClawChannelConfigPayload) {
