@@ -380,3 +380,7 @@
 ## Phase 5.31: Homepage Chat Freeze Fix
 - [ ] Fix ready homepage chat freezes by guarding gateway reconnect loops, deduplicating initial history loads, lazy-loading markdown rendering, and batching high-frequency log updates.
 - [ ] 2026-05-03: remove the highlighted placeholder tool icons plus the `记忆` and `技能库` pills from the `workspace-clone` chat composer without changing command/model/send behavior.
+## Phase 5.43b: `workspace-clone` 头像调整功能迁移
+- [ ] 将旧仓库头像调整能力迁移到 `workspace-clone > chat > agents`，支持预设头像、自定义上传、恢复默认，并使用前端本地存储持久化覆盖结果且不改动任何 Tauri command / `invoke()` 契约。
+## Phase 5.48: Workspace 头像弹窗修复与默认头像分配
+- [ ] 修复 `workspace-clone` 聊天回复头像拉伸裁切、头像弹窗显示不全与英文文案残留，并为新加入的数字员工在无自带头像时按 `agentId` 稳定分配默认插画头像，不改任何 Tauri command / `invoke()` 契约。
