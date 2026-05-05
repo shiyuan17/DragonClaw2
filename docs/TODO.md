@@ -382,6 +382,8 @@
 ## Phase 5.30: Homepage Lazy Data Loading
 - [ ] Limit ready homepage eager data to chat essentials; lazy load logs, history title backfill, channels, memory, skills, tools, model config, drawers, and modals after user interaction
 
+- [ ] Phase 5.20.1: fix `workspace-clone > employees` install/remove roster refresh so chat agent directory, channel-binding agent picker, and local cached/offline roster stay in sync without changing Tauri command signatures or frontend `invoke()` contracts.
+
 ## Phase 5.31: Homepage Chat Freeze Fix
 - [ ] Fix ready homepage chat freezes by guarding gateway reconnect loops, deduplicating initial history loads, lazy-loading markdown rendering, and batching high-frequency log updates.
 - [ ] 2026-05-03: remove the highlighted placeholder tool icons plus the `记忆` and `技能库` pills from the `workspace-clone` chat composer without changing command/model/send behavior.
