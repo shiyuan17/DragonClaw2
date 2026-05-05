@@ -484,9 +484,12 @@ export function useWorkspaceChannels({ configVersion, enabled = false }: UseWork
       return;
     }
 
-    if (!snapshot) {
-      await refreshChannels().catch(() => undefined);
-    }
+    const effectiveSnapshot =
+      await refreshChannels().catch(() => snapshot)
+      || snapshot;
+    const effectiveWeixinGroup = effectiveSnapshot?.channels.find(
+      (group) => group.channelType === "weixin",
+    );
 
     await resetWeixinState(true);
     feishuBinding.resetFeishuState();
@@ -514,9 +517,8 @@ export function useWorkspaceChannels({ configVersion, enabled = false }: UseWork
         await feishuBinding.loadFeishuBindingValues(entity.channelAccountId || "default");
       }
       if (entity.channelId === "weixin") {
-        const nextAccountId = entity.channelAccountId || channelGroupMap.get("weixin")?.defaultAccountId || "default";
-        const hasConfiguredAccount = channelGroupMap
-          .get("weixin")
+        const nextAccountId = entity.channelAccountId || effectiveWeixinGroup?.defaultAccountId || "default";
+        const hasConfiguredAccount = effectiveWeixinGroup
           ?.accounts.some((account) => account.accountId === nextAccountId && account.configured) || false;
         setModal((current) => ({
           ...current,
@@ -534,9 +536,8 @@ export function useWorkspaceChannels({ configVersion, enabled = false }: UseWork
     }
 
     if (entity.channelId === "weixin") {
-      const nextAccountId = entity.channelAccountId || channelGroupMap.get("weixin")?.defaultAccountId || "default";
-      const hasConfiguredAccount = channelGroupMap
-        .get("weixin")
+      const nextAccountId = entity.channelAccountId || effectiveWeixinGroup?.defaultAccountId || "default";
+      const hasConfiguredAccount = effectiveWeixinGroup
         ?.accounts.some((account) => account.accountId === nextAccountId && account.configured) || false;
       if (!hasConfiguredAccount) {
         void startWeixinQrBindingFlow();
@@ -544,7 +545,6 @@ export function useWorkspaceChannels({ configVersion, enabled = false }: UseWork
     }
   }, [
     agents,
-    channelGroupMap,
     feishuBinding,
     refreshChannels,
     resetModalFeedback,

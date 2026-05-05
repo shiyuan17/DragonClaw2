@@ -20,9 +20,9 @@ const hardLimits = {
 // They may shrink, but they must not grow without an explicit phase exception.
 const legacyOversizedBaselines = {
   "src/components/workspace-clone/WorkspaceClonePage.tsx": 2021,
-  "src/hooks/useSetup.ts": 593,
+  "src/hooks/useSetup.ts": 573,
   "src/hooks/useWorkspaceGatewayChat.ts": 1293,
-  "src/hooks/workspace-clone/useWorkspaceChannels.ts": 1150,
+  "src/hooks/workspace-clone/useWorkspaceChannels.ts": 836,
   "src-tauri/src/agency_agents.rs": 839,
   "src-tauri/src/channels.rs": 2962,
   "src-tauri/src/onboarding.rs": 1242,
