@@ -1,5 +1,7 @@
 # DragonClaw - 开发任务总表 (AI 开发规范版)
 
+## Phase 5.52: Workspace 真实任务管理接入
+- [ ] 将 `workspace-clone` 右侧任务抽屉切换到真实 OpenClaw `cron` 数据，支持真实列表、编辑、启停、删除、立即运行和最近运行结果展示，不新增任务创建入口，也不改动现有 Tauri command / `invoke()` 契约。
 ## Phase 5.42a: Security Hotfix
 - [ ] 修复邮箱绑定 `.env` 注入、gateway token 暴露边界、敏感凭据落盘与安装/插件完整性校验问题，不改现有 Tauri command 签名或 `invoke()` 契约。
 
@@ -348,6 +350,7 @@
 - [ ] Phase 5.24: add a live process timeline to `workspace-clone` chat, showing thinking, skill/tool calls, command execution, and step completion from existing gateway events without changing backend contracts.
 - [ ] Phase 5.24.1: add a transient `思考中` bridge in `workspace-clone` chat so completed tool/command steps are followed by visible processing feedback until the final assistant reply starts streaming.
 - [ ] Phase 5.24.2: dedupe mirrored `agent` / `session.tool` live timeline entries in `workspace-clone` chat and upgrade running steps to a lightweight full-row sheen state.
+- [ ] Phase 5.24.3: fix duplicate tool-call cards in `workspace-clone` chat by tightening frontend live-step dedupe semantics and guarding stale connection callbacks without changing gateway or `invoke()` contracts.
 - [ ] 2026-05-02: refine the Phase 5.24.2 running sheen so it feels closer to Codex, with a continuous transparency loop instead of a single obvious light block sweep.
 - [ ] 2026-05-02: raise the live sheen visibility further so the animation reads clearly instead of getting washed out by subtle styling or shorthand overrides.
 - [ ] 2026-05-02: strengthen the Phase 5.24.2 running sheen again so the motion reads clearly from left to right, closer to Codex's directional live-processing glow.
