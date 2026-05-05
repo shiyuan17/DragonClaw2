@@ -49,23 +49,38 @@ fn atomic_write_text(path: &Path, content: &str) -> Result<(), String> {
             .unwrap_or("openclaw.json"),
         nonce
     ));
+    let backup_path = parent.join(format!(
+        ".{}.{}.bak",
+        path.file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("openclaw.json"),
+        nonce
+    ));
 
     fs::write(&tmp_path, content).map_err(|error| format!("写入临时配置文件失败: {error}"))?;
 
-    match fs::rename(&tmp_path, path) {
-        Ok(()) => Ok(()),
-        Err(rename_error) => {
-            if path.exists() {
-                fs::remove_file(path)
-                    .map_err(|error| format!("替换旧配置文件失败: {error}"))?;
-                fs::rename(&tmp_path, path).map_err(|error| {
-                    format!("写入 openclaw.json 失败: {error} (rename error: {rename_error})")
-                })?;
-                return Ok(());
-            }
+    if !path.exists() {
+        return fs::rename(&tmp_path, path)
+            .map_err(|error| format!("写入 openclaw.json 失败: {error}"));
+    }
 
+    fs::rename(path, &backup_path)
+        .map_err(|error| format!("备份旧配置文件失败: {error}"))?;
+
+    match fs::rename(&tmp_path, path) {
+        Ok(()) => {
+            let _ = fs::remove_file(&backup_path);
+            Ok(())
+        }
+        Err(write_error) => {
+            let restore_result = fs::rename(&backup_path, path);
             let _ = fs::remove_file(&tmp_path);
-            Err(format!("写入 openclaw.json 失败: {rename_error}"))
+            match restore_result {
+                Ok(()) => Err(format!("写入 openclaw.json 失败: {write_error}")),
+                Err(restore_error) => Err(format!(
+                    "写入 openclaw.json 失败: {write_error}; 恢复旧配置失败: {restore_error}"
+                )),
+            }
         }
     }
 }

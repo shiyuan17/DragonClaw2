@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // This file is part of DragonClaw. See LICENSE for details.
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 use tauri::Emitter;
@@ -47,6 +47,50 @@ pub(crate) fn ensure_gateway_config(config: &mut Value) {
 
 pub(crate) fn ensure_default_workspace(config: &mut Value) {
     ConfigRepository::ensure_default_workspace(config);
+}
+
+fn main_agent_dir() -> Result<PathBuf, String> {
+    Ok(get_user_openclaw_dir()?
+        .join("agents")
+        .join("main")
+        .join("agent"))
+}
+
+fn load_json_file_or_default(path: &Path) -> Result<Value, String> {
+    if !path.exists() {
+        return Ok(json!({}));
+    }
+
+    let content = fs::read_to_string(path)
+        .map_err(|error| format!("读取 {} 失败: {error}", path.display()))?;
+    serde_json::from_str(&content)
+        .map_err(|error| format!("解析 {} 失败: {error}", path.display()))
+}
+
+fn save_pretty_json_file(path: &Path, value: &Value) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("JSON 文件路径无效: {}", path.display()))?;
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("创建目录失败 ({}): {error}", parent.display()))?;
+
+    let content = serde_json::to_string_pretty(value)
+        .map_err(|error| format!("序列化 {} 失败: {error}", path.display()))?;
+    fs::write(path, content).map_err(|error| format!("写入 {} 失败: {error}", path.display()))
+}
+
+fn sync_main_agent_provider_models(provider: &str, provider_entry: &Value) -> Result<(), String> {
+    let models_path = main_agent_dir()?.join("models.json");
+    let mut agent_models = load_json_file_or_default(&models_path)?;
+    if !agent_models.is_object() {
+        agent_models = json!({});
+    }
+    if agent_models.get("providers").is_none() || !agent_models["providers"].is_object() {
+        agent_models["providers"] = json!({});
+    }
+
+    agent_models["providers"][provider] = provider_entry.clone();
+    save_pretty_json_file(&models_path, &agent_models)
 }
 
 #[tauri::command]
@@ -195,31 +239,7 @@ pub fn save_api_config(
         Ok(())
     })?;
 
-    let agent_dir = get_user_openclaw_dir()?
-        .join("agents")
-        .join("main")
-        .join("agent");
-    let _ = fs::create_dir_all(&agent_dir);
-    let models_path = agent_dir.join("models.json");
-    let mut agent_models: Value = if models_path.exists() {
-        let content = fs::read_to_string(&models_path).unwrap_or_default();
-        serde_json::from_str(&content).unwrap_or(json!({}))
-    } else {
-        json!({})
-    };
-    if agent_models.get("providers").is_none() {
-        agent_models["providers"] = json!({});
-    }
-    agent_models["providers"][&provider] = json!({
-        "baseUrl": effective_base_url,
-        "apiKey": api_key,
-        "api": api_type,
-        "models": model_defs,
-    });
-    let _ = fs::write(
-        &models_path,
-        serde_json::to_string_pretty(&agent_models).unwrap_or_default(),
-    );
+    sync_main_agent_provider_models(&provider, &new_provider_entry)?;
 
     let _ = app.emit(
         "config-updated",
