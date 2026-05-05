@@ -104,12 +104,12 @@ impl Default for ServiceState {
     }
 }
 
-fn resolve_gateway_token() -> String {
+fn resolve_gateway_token() -> Result<String, String> {
     crate::config::get_current_config()
-        .ok()
+        .map_err(|error| format!("Failed to read gateway token: {error}"))?
         .and_then(|config| config.gateway_token)
         .filter(|token| !token.trim().is_empty())
-        .unwrap_or_else(|| crate::config::DEFAULT_GATEWAY_TOKEN.to_string())
+        .ok_or_else(|| "Gateway token missing from openclaw.json".to_string())
 }
 
 fn now_unix_timestamp() -> i64 {
@@ -726,7 +726,7 @@ async fn start_service_impl(
     }
 
     if let Some(existing) = resolve_known_process(state.inner())? {
-        let token = resolve_gateway_token();
+        let token = resolve_gateway_token()?;
         if let Err(error) = verify_gateway_rpc_ready(existing.port, &token) {
             let _ = app.emit(
                 "service-log",
@@ -845,7 +845,7 @@ async fn start_service_impl(
         }),
     );
 
-    let token = resolve_gateway_token();
+    let token = resolve_gateway_token()?;
     let mut command = openclaw_cli::create_openclaw_cli_command()
         .map_err(|error| format!("构建 OpenClaw 启动命令失败: {error}"))?;
     command

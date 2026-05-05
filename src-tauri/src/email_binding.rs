@@ -1,6 +1,7 @@
 // Copyright (C) 2026 shiyuan
 // SPDX-License-Identifier: GPL-3.0-only
 // This file is part of DragonClaw. See LICENSE for details.
+mod env_safety;
 
 use std::collections::HashMap;
 use std::fs;
@@ -9,6 +10,10 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+
+use env_safety::{
+    push_env_assignment, validate_host_input, validate_multiline_safe_input,
+};
 
 use crate::paths;
 
@@ -311,15 +316,13 @@ fn resolve_imap_smtp_config_from_payload(
         return Err("请选择邮箱类型。".to_string());
     }
 
-    let email_account = payload.email_account.trim().to_string();
-    if email_account.is_empty() {
-        return Err("请输入邮箱账号。".to_string());
-    }
+    let email_account =
+        validate_multiline_safe_input(payload.email_account.as_str(), "email account")?;
 
-    let authorization_code = payload.authorization_code.trim().to_string();
-    if authorization_code.is_empty() {
-        return Err("请输入授权码或应用专用密码。".to_string());
-    }
+    let authorization_code = validate_multiline_safe_input(
+        payload.authorization_code.as_str(),
+        "authorization code",
+    )?;
 
     let imap_reject_unauthorized =
         parse_bool_value(existing_values.get("IMAP_REJECT_UNAUTHORIZED"), true);
@@ -336,14 +339,8 @@ fn resolve_imap_smtp_config_from_payload(
             .custom_config
             .as_ref()
             .ok_or_else(|| "其他邮箱需要填写 IMAP/SMTP 服务配置。".to_string())?;
-        let imap_host = custom_config.imap_host.trim().to_string();
-        if imap_host.is_empty() {
-            return Err("请输入 IMAP Host。".to_string());
-        }
-        let smtp_host = custom_config.smtp_host.trim().to_string();
-        if smtp_host.is_empty() {
-            return Err("请输入 SMTP Host。".to_string());
-        }
+        let imap_host = validate_host_input(custom_config.imap_host.as_str(), "IMAP host")?;
+        let smtp_host = validate_host_input(custom_config.smtp_host.as_str(), "SMTP host")?;
         let imap_port = parse_port_input(custom_config.imap_port.as_str(), "IMAP 端口")?;
         let smtp_port = parse_port_input(custom_config.smtp_port.as_str(), "SMTP 端口")?;
 
@@ -394,7 +391,7 @@ fn build_imap_smtp_env_content(
     config: &ResolvedImapSmtpConfig,
     parsed_existing: &ParsedImapSmtpEnv,
     home_dir: &Path,
-) -> String {
+) -> Result<String, String> {
     let (default_allowed_read_dirs, default_allowed_write_dirs) =
         build_default_allowed_dirs(home_dir);
     let allowed_read_dirs = if parsed_existing.allowed_read_dirs.trim().is_empty() {
@@ -410,36 +407,79 @@ fn build_imap_smtp_env_content(
 
     let mut content = String::new();
     content.push_str("# Default account\n");
-    content.push_str(format!("IMAP_HOST={}\n", config.imap_host).as_str());
-    content.push_str(format!("IMAP_PORT={}\n", config.imap_port).as_str());
-    content.push_str(format!("IMAP_USER={}\n", config.email_account).as_str());
-    content.push_str(format!("IMAP_PASS={}\n", config.authorization_code).as_str());
-    content.push_str(format!("IMAP_TLS={}\n", config.imap_tls).as_str());
-    content.push_str(
-        format!(
-            "IMAP_REJECT_UNAUTHORIZED={}\n",
-            config.imap_reject_unauthorized
-        )
-        .as_str(),
-    );
-    content.push_str(format!("IMAP_MAILBOX={}\n", config.imap_mailbox).as_str());
-    content.push_str(format!("SMTP_HOST={}\n", config.smtp_host).as_str());
-    content.push_str(format!("SMTP_PORT={}\n", config.smtp_port).as_str());
-    content.push_str(format!("SMTP_SECURE={}\n", config.smtp_secure).as_str());
-    content.push_str(format!("SMTP_USER={}\n", config.email_account).as_str());
-    content.push_str(format!("SMTP_PASS={}\n", config.authorization_code).as_str());
-    content.push_str(format!("SMTP_FROM={}\n", config.email_account).as_str());
-    content.push_str(
-        format!(
-            "SMTP_REJECT_UNAUTHORIZED={}\n",
-            config.smtp_reject_unauthorized
-        )
-        .as_str(),
-    );
+    push_env_assignment(&mut content, "IMAP_HOST", &config.imap_host, "IMAP host")?;
+    push_env_assignment(
+        &mut content,
+        "IMAP_PORT",
+        config.imap_port.to_string().as_str(),
+        "IMAP port",
+    )?;
+    push_env_assignment(&mut content, "IMAP_USER", &config.email_account, "email account")?;
+    push_env_assignment(
+        &mut content,
+        "IMAP_PASS",
+        &config.authorization_code,
+        "authorization code",
+    )?;
+    push_env_assignment(
+        &mut content,
+        "IMAP_TLS",
+        config.imap_tls.to_string().as_str(),
+        "IMAP TLS",
+    )?;
+    push_env_assignment(
+        &mut content,
+        "IMAP_REJECT_UNAUTHORIZED",
+        config.imap_reject_unauthorized.to_string().as_str(),
+        "IMAP TLS validation",
+    )?;
+    push_env_assignment(
+        &mut content,
+        "IMAP_MAILBOX",
+        &config.imap_mailbox,
+        "IMAP mailbox",
+    )?;
+    push_env_assignment(&mut content, "SMTP_HOST", &config.smtp_host, "SMTP host")?;
+    push_env_assignment(
+        &mut content,
+        "SMTP_PORT",
+        config.smtp_port.to_string().as_str(),
+        "SMTP port",
+    )?;
+    push_env_assignment(
+        &mut content,
+        "SMTP_SECURE",
+        config.smtp_secure.to_string().as_str(),
+        "SMTP secure",
+    )?;
+    push_env_assignment(&mut content, "SMTP_USER", &config.email_account, "email account")?;
+    push_env_assignment(
+        &mut content,
+        "SMTP_PASS",
+        &config.authorization_code,
+        "authorization code",
+    )?;
+    push_env_assignment(&mut content, "SMTP_FROM", &config.email_account, "email account")?;
+    push_env_assignment(
+        &mut content,
+        "SMTP_REJECT_UNAUTHORIZED",
+        config.smtp_reject_unauthorized.to_string().as_str(),
+        "SMTP TLS validation",
+    )?;
     content.push('\n');
     content.push_str("# File access whitelist (security)\n");
-    content.push_str(format!("ALLOWED_READ_DIRS={allowed_read_dirs}\n").as_str());
-    content.push_str(format!("ALLOWED_WRITE_DIRS={allowed_write_dirs}\n").as_str());
+    push_env_assignment(
+        &mut content,
+        "ALLOWED_READ_DIRS",
+        &allowed_read_dirs,
+        "allowed read dirs",
+    )?;
+    push_env_assignment(
+        &mut content,
+        "ALLOWED_WRITE_DIRS",
+        &allowed_write_dirs,
+        "allowed write dirs",
+    )?;
 
     if !parsed_existing.named_account_lines.is_empty() {
         content.push('\n');
@@ -450,7 +490,7 @@ fn build_imap_smtp_env_content(
         }
     }
 
-    content
+    Ok(content)
 }
 
 fn build_snapshot_from_content(
@@ -553,7 +593,7 @@ pub fn save_imap_smtp_email_binding(
 
     let parsed = parse_existing_imap_smtp_env(existing_content.as_str());
     let resolved = resolve_imap_smtp_config_from_payload(&payload, &parsed.values)?;
-    let next_content = build_imap_smtp_env_content(&resolved, &parsed, home_dir.as_path());
+    let next_content = build_imap_smtp_env_content(&resolved, &parsed, home_dir.as_path())?;
 
     let config_dir = config_path
         .parent()
@@ -658,7 +698,8 @@ WORK_SMTP_HOST=smtp.company.com
         let resolved = resolve_imap_smtp_config_from_payload(&payload, &existing.values)
             .expect("gmail template payload should resolve");
         let home_dir = PathBuf::from("/Users/dev");
-        let content = build_imap_smtp_env_content(&resolved, &existing, &home_dir);
+        let content = build_imap_smtp_env_content(&resolved, &existing, &home_dir)
+            .expect("env content should build");
         let expected_read_dirs = format!(
             "{},{}",
             home_dir.join("Downloads").to_string_lossy(),
@@ -667,10 +708,10 @@ WORK_SMTP_HOST=smtp.company.com
         let expected_write_dirs = home_dir.join("Downloads").to_string_lossy().to_string();
 
         assert!(content.contains("# Default account"));
-        assert!(content.contains("IMAP_HOST=imap.gmail.com"));
-        assert!(content.contains("SMTP_HOST=smtp.gmail.com"));
-        assert!(content.contains(format!("ALLOWED_READ_DIRS={expected_read_dirs}").as_str()));
-        assert!(content.contains(format!("ALLOWED_WRITE_DIRS={expected_write_dirs}").as_str()));
+        assert!(content.contains("IMAP_HOST=\"imap.gmail.com\""));
+        assert!(content.contains("SMTP_HOST=\"smtp.gmail.com\""));
+        assert!(content.contains(format!("ALLOWED_READ_DIRS=\"{expected_read_dirs}\"").as_str()));
+        assert!(content.contains(format!("ALLOWED_WRITE_DIRS=\"{expected_write_dirs}\"").as_str()));
         assert!(content.contains("WORK_IMAP_HOST=imap.company.com"));
         assert!(content.contains("WORK_SMTP_HOST=smtp.company.com"));
     }

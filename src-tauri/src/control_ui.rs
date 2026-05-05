@@ -37,7 +37,11 @@ pub async fn open_control_ui(
     token: String,
 ) -> Result<(), String> {
     ensure_control_ui_built_nonblocking(app).await?;
-    open::that(format!("http://127.0.0.1:{port}?token={token}"))
+    let normalized_token = token.trim();
+    if normalized_token.is_empty() {
+        return Err("Control UI is missing a gateway token.".to_string());
+    }
+    open::that(format!("http://127.0.0.1:{port}#token={normalized_token}"))
         .map_err(|error| format!("打开 Control UI 失败: {error}"))?;
     Ok(())
 }

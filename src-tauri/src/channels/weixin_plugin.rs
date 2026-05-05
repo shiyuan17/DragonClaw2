@@ -1,4 +1,52 @@
 ﻿use super::*;
+fn package_name_from_npm_spec(npm_spec: &str) -> &str {
+    if let Some((name, _version)) = npm_spec.rsplit_once('@') {
+        if name.starts_with('@') {
+            return name;
+        }
+    }
+
+    npm_spec
+}
+
+fn validate_weixin_plugin_package(
+    package_dir: &Path,
+    install_plan: &WeixinPluginInstallPlan,
+) -> Result<(), String> {
+    let package_json_path = package_dir.join("package.json");
+    let raw = std::fs::read_to_string(&package_json_path)
+        .map_err(|error| channel_error(format!("读取微信插件 package.json 失败: {error}")))?;
+    let parsed = serde_json::from_str::<Value>(&raw)
+        .map_err(|error| channel_error(format!("解析微信插件 package.json 失败: {error}")))?;
+
+    let expected_name = package_name_from_npm_spec(install_plan.npm_spec);
+    let actual_name = parsed
+        .get("name")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default();
+    if !actual_name.eq_ignore_ascii_case(expected_name) {
+        return Err(channel_error(format!(
+            "微信插件包校验失败: 期望包名 {expected_name}，实际为 {actual_name}"
+        )));
+    }
+
+    if let Some(expected_version) = install_plan.expected_version {
+        let actual_version = parsed
+            .get("version")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .unwrap_or_default();
+        if actual_version != expected_version {
+            return Err(channel_error(format!(
+                "微信插件包校验失败: 期望版本 {expected_version}，实际为 {actual_version}"
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 pub(super) fn resolve_weixin_plugin_install_plan() -> Result<WeixinPluginInstallPlan, String> {
     let engine_version = openclaw_cli::read_openclaw_engine_version()
         .map_err(|error| channel_error(format!("读取 OpenClaw 版本失败: {error}")))?;
@@ -226,6 +274,7 @@ pub(super) fn manually_install_weixin_plugin(
             package_dir.display()
         )));
     }
+    validate_weixin_plugin_package(&package_dir, install_plan)?;
 
     if target_dir.exists() {
         std::fs::remove_dir_all(&target_dir)

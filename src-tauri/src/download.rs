@@ -14,6 +14,7 @@ use crate::environment;
 use crate::paths;
 
 const OPENCLAW_REPO: &str = "openclaw/openclaw";
+const ALLOWED_DOWNLOAD_HOSTS: &[&str] = &["github.com", "ghfast.top", "mirror.ghproxy.com"];
 
 /// Pinned OpenClaw version validated against DragonClaw's local gateway/chat flow.
 /// See: https://github.com/openclaw/openclaw/releases/tag/v2026.4.27
@@ -27,6 +28,53 @@ pub async fn test_url_reachable(url: &str) -> bool {
         .unwrap_or_default();
 
     client.head(url).send().await.is_ok()
+}
+
+fn validate_download_url(url: &str) -> Result<(), String> {
+    let parsed = reqwest::Url::parse(url).map_err(|error| format!("下载地址格式无效: {error}"))?;
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| "下载地址缺少主机名".to_string())?;
+    if !ALLOWED_DOWNLOAD_HOSTS
+        .iter()
+        .any(|allowed| host.eq_ignore_ascii_case(allowed))
+    {
+        return Err(format!("下载地址主机未在允许列表中: {host}"));
+    }
+
+    let url_text = parsed.as_str().to_ascii_lowercase();
+    let expected_suffix = format!(
+        "/{}/archive/refs/tags/{}.zip",
+        OPENCLAW_REPO,
+        PINNED_VERSION.to_ascii_lowercase()
+    );
+    if !url_text.contains(expected_suffix.as_str()) {
+        return Err("下载地址未指向当前锁定的 OpenClaw tag zip。".to_string());
+    }
+
+    Ok(())
+}
+
+fn validate_extracted_openclaw_dir(openclaw_dir: &std::path::Path) -> Result<(), String> {
+    let package_path = openclaw_dir.join("package.json");
+    if !package_path.exists() {
+        return Err("解压结果缺少 package.json".to_string());
+    }
+
+    let raw = std::fs::read_to_string(&package_path)
+        .map_err(|error| format!("读取 OpenClaw package.json 失败: {error}"))?;
+    let parsed = serde_json::from_str::<serde_json::Value>(&raw)
+        .map_err(|error| format!("解析 OpenClaw package.json 失败: {error}"))?;
+    let package_name = parsed
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default();
+    if !package_name.eq_ignore_ascii_case("openclaw") {
+        return Err(format!("下载内容校验失败：package.json name={package_name}"));
+    }
+
+    Ok(())
 }
 
 /// Extract a ZIP file (shared utility)
@@ -63,6 +111,8 @@ pub fn needs_download() -> Result<bool, String> {
     if !openclaw_dir.join("package.json").exists() {
         return Ok(true);
     }
+    validate_extracted_openclaw_dir(&openclaw_dir)?;
+
     let version_file = openclaw_dir.join(".openclaw_version");
     if !version_file.exists() {
         return Ok(true); // Old installation without version marker
@@ -113,6 +163,7 @@ fn materialize_openclaw_from_downloaded_zip(
     if !openclaw_dir.join("package.json").exists() {
         return Err("解压成功但未找到 package.json，源码可能不完整".to_string());
     }
+    validate_extracted_openclaw_dir(&openclaw_dir)?;
 
     let version_file = openclaw_dir.join(".openclaw_version");
     let _ = std::fs::write(&version_file, pinned_version);
@@ -198,6 +249,8 @@ pub async fn download_openclaw_source(app: tauri::AppHandle) -> Result<String, S
     };
 
     // Download ZIP
+    validate_download_url(&download_url)?;
+
     let response = reqwest::get(&download_url)
         .await
         .map_err(|e| environment::humanize_network_error(&e.to_string()))?;
