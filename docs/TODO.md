@@ -340,6 +340,7 @@
 - [x] 2026-05-02: unify the workspace-clone sidebar and directory collapse toggles, pin both to 25% divider height, and reveal them only on divider hover/focus.
 - [x] 2026-05-02: reduce the shared custom window titlebar height to 45px and keep narrow-width layouts aligned with the same token source.
 - [ ] 2026-05-02: compact the workspace-clone home suggestion cards so the scene card row takes less space above the composer.
+- [ ] 2026-05-05: change the `workspace-clone` composer model pill to open a flat saved-model list first, and only open the model config modal from a dedicated “configure custom model” action.
 - [ ] 2026-05-02: optimize the workspace-clone skill market install-target modal so its header hierarchy, multi-select cards, and footer actions feel denser and clearer without changing install behavior.
 - [ ] Phase 5.25: support clickable history session switching in `workspace-clone`, replace raw session-key titles with frontend-derived first-intent summaries, and refine the history drawer to a compact title + time list with `全部 / 今天 / 昨天` filters.
 - [ ] Phase 5.25.1: move `workspace-clone` session history caching to a local SQLite store so visited sessions switch instantly, survive app restarts, and refresh in the background without clearing the chat view first.
