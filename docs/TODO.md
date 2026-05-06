@@ -1,13 +1,14 @@
 # DragonClaw - 开发任务总表 (AI 开发规范版)
 
 ## Phase 5.53: Workspace 任务抽屉样式收敛
-- [ ] 收敛 `workspace-clone` 右侧任务抽屉的列表样式与操作入口，改为紧凑任务行、轻量运行 footer 与更多菜单，不扩展任务创建能力，也不改动现有真实 cron / `invoke()` 契约。
+- [x] 收敛 `workspace-clone` 右侧任务抽屉的列表样式与操作入口，改为紧凑任务行、轻量运行 footer 与更多菜单，不扩展任务创建能力，也不改动现有真实 cron / `invoke()` 契约。
 
 ## Phase 5.52: Workspace 真实任务管理接入
 - [ ] 将 `workspace-clone` 右侧任务抽屉切换到真实 OpenClaw `cron` 数据，支持真实列表、编辑、启停、删除、立即运行和最近运行结果展示，不新增任务创建入口，也不改动现有 Tauri command / `invoke()` 契约。
 ## Phase 5.42a: Security Hotfix
 - [ ] 修复邮箱绑定 `.env` 注入、gateway token 暴露边界、敏感凭据落盘与安装/插件完整性校验问题，不改现有 Tauri command 签名或 `invoke()` 契约。
 
+- [ ] 本轮按保守热修执行：只修 `workspace-clone` cron 空 agent 误绑、模型切换 busy 卡死、`--dc-workspace-accent-border` 缺失；Control UI `#token=` 与聊天缓存明文落盘改为下一阶段专项，不在本轮直接改动高风险链路。
 ## Phase 5.43: Startup Truth Source and Encoding Cleanup
 - [ ] 统一服务生命周期真源，移除前端 optimistic ready / 日志文案 ready 判定，并修复启动、设置、聊天、绑定与服务提示中的高曝光乱码文本。
 
