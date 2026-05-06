@@ -2,14 +2,14 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   formatWorkspaceCronPayloadPreview,
-  formatWorkspaceCronScheduleSummary,
   formatWorkspaceCronTimestamp,
   getWorkspaceCronDisplayStatus,
   getWorkspaceCronEditDisabledReason,
-  getWorkspaceCronStatusLabel,
   getWorkspaceCronStatusTone,
 } from "./workspaceCloneCron";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
+import { formatWorkspaceTaskScheduleLine } from "./workspaceCloneTaskScheduleDisplay";
+import { resolveWorkspaceTaskScheduleView } from "./workspaceCloneTaskSchedule";
 import type {
   WorkspaceCronJob,
   WorkspaceCronRunRecord,
@@ -95,47 +95,32 @@ const TASK_FILTERS = [
 
 type TaskFilterKey = typeof TASK_FILTERS[number]["key"];
 
-function buildCalendarKey(date: Date) {
-  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+function looksLikeWorkspaceTaskSlug(value: string) {
+  return /^[a-z0-9]+(?:[-_][a-z0-9]+)+$/i.test(value.trim());
 }
 
-function getRunSummary(run: WorkspaceCronRunRecord | undefined, task?: WorkspaceCronJob) {
-  if (!run) {
-    if (task?.state.lastError?.trim()) {
-      return task.state.lastError.trim();
-    }
-
-    const fallbackStatus = task?.state.lastRunStatus ?? task?.state.lastStatus;
-    switch (fallbackStatus) {
-      case "error":
-        return "最近一次运行失败";
-      case "skipped":
-        return "最近一次运行被跳过";
-      case "ok":
-        return "最近一次运行完成";
-      default:
-        return "暂无运行记录";
-    }
+function getWorkspaceTaskCardTitle(task: WorkspaceCronJob) {
+  const description = task.description?.trim() ?? "";
+  if (description && !looksLikeWorkspaceTaskSlug(description)) {
+    return description;
   }
 
-  if (run.summary?.trim()) {
-    return run.summary.trim();
+  const normalizedName = task.name.trim();
+  if (normalizedName && !looksLikeWorkspaceTaskSlug(normalizedName)) {
+    return normalizedName;
   }
 
-  if (run.error?.trim()) {
-    return run.error.trim();
-  }
+  const payloadPreview = formatWorkspaceCronPayloadPreview(task).trim();
+  const payloadTitle = payloadPreview
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
 
-  switch (run.status) {
-    case "error":
-      return "最近一次运行失败";
-    case "skipped":
-      return "最近一次运行被跳过";
-    case "ok":
-      return "最近一次运行完成";
-    default:
-      return "最近一次运行已结束";
-  }
+  return payloadTitle || normalizedName || task.id;
+}
+
+function buildCalendarKey(date: Date) {
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 }
 
 export function WorkspaceCloneUtilityDrawer({
@@ -146,13 +131,10 @@ export function WorkspaceCloneUtilityDrawer({
   logs,
   tasks,
   selectedTaskId,
-  selectedTaskRuns,
   taskLoading,
   taskNotice,
   taskError,
   taskRunsError,
-  taskRunsLoading,
-  taskRunsLoadingId,
   taskActionJobId,
   gatewayConnected,
   workbenchItems,
@@ -180,22 +162,29 @@ export function WorkspaceCloneUtilityDrawer({
   const [taskFilter, setTaskFilter] = useState<TaskFilterKey>("enabled");
   const [openTaskMenuId, setOpenTaskMenuId] = useState<string | null>(null);
   const taskMenuRef = useRef<HTMLDivElement | null>(null);
+  const enabledTaskCount = tasks.filter((task) => task.enabled).length;
+  const disabledTaskCount = tasks.length - enabledTaskCount;
 
   useEffect(() => {
     if (panel !== "schedule") {
       return;
     }
 
-    if (taskFilter === "enabled" && tasks.some((task) => task.enabled)) {
+    if (taskFilter === "enabled") {
+      if (enabledTaskCount > 0 || disabledTaskCount === 0) {
+        return;
+      }
+
+      setTaskFilter("disabled");
       return;
     }
 
-    if (taskFilter === "disabled" && tasks.some((task) => !task.enabled)) {
+    if (disabledTaskCount > 0 || enabledTaskCount === 0) {
       return;
     }
 
-    setTaskFilter(tasks.some((task) => task.enabled) ? "enabled" : "disabled");
-  }, [panel, taskFilter, tasks]);
+    setTaskFilter("enabled");
+  }, [disabledTaskCount, enabledTaskCount, panel, taskFilter]);
 
   useEffect(() => {
     if (!openTaskMenuId) {
@@ -232,7 +221,6 @@ export function WorkspaceCloneUtilityDrawer({
 
   const enabledSkillCount = skillItems.filter((item) => item.tag === "已启用").length;
   const enabledToolCount = toolItems.filter((item) => item.enabled).length;
-  const enabledTaskCount = tasks.filter((item) => item.enabled).length;
   const now = new Date();
   const todayKey = buildCalendarKey(now);
   const yesterdayDate = new Date(now);
@@ -268,7 +256,6 @@ export function WorkspaceCloneUtilityDrawer({
   const visibleTasks = taskFilter === "enabled"
     ? tasks.filter((task) => task.enabled)
     : tasks.filter((task) => !task.enabled);
-  const selectedTask = visibleTasks.find((task) => task.id === selectedTaskId) ?? null;
 
   return (
     <aside className="workspace-clone__drawer">
@@ -303,12 +290,12 @@ export function WorkspaceCloneUtilityDrawer({
           </div>
         ) : null}
         {panel === "schedule" ? (
-          <div className="workspace-clone__drawer-filters" role="tablist" aria-label="任务启停筛选">
+          <div className="workspace-clone__drawer-filters workspace-clone__drawer-filters--task" role="tablist" aria-label="任务启停筛选">
             {TASK_FILTERS.map((filter) => (
               <button
                 key={filter.key}
                 type="button"
-                className={`workspace-clone__drawer-filter ${taskFilter === filter.key ? "is-active" : ""}`}
+                className={`workspace-clone__drawer-filter workspace-clone__drawer-filter--task ${taskFilter === filter.key ? "is-active" : ""}`}
                 onClick={() => setTaskFilter(filter.key)}
               >
                 {filter.label}
@@ -438,17 +425,17 @@ export function WorkspaceCloneUtilityDrawer({
                 {visibleTasks.map((task) => {
                   const displayStatus = getWorkspaceCronDisplayStatus(task);
                   const statusTone = getWorkspaceCronStatusTone(displayStatus);
-                  const editDisabledReason = getWorkspaceCronEditDisabledReason(task);
-                  const taskRuns = selectedTask?.id === task.id ? selectedTaskRuns.slice(0, 3) : [];
-                  const latestRun = selectedTask?.id === task.id ? selectedTaskRuns[0] : undefined;
-                  const expanded = selectedTask?.id === task.id;
+                  const scheduleView = resolveWorkspaceTaskScheduleView(task.schedule);
+                  const editDisabledReason = getWorkspaceCronEditDisabledReason(task)
+                    || (!scheduleView.editable ? "当前高级 Cron 规则暂不支持在此弹窗编辑" : null);
+                  const selected = selectedTaskId === task.id;
                   const busy = taskActionJobId === task.id;
                   const menuOpen = openTaskMenuId === task.id;
 
                   return (
                     <section
                       key={task.id}
-                      className={`workspace-clone__drawer-card workspace-clone__task-card ${expanded ? "is-expanded" : ""}`}
+                      className={`workspace-clone__drawer-card workspace-clone__task-card is-${statusTone} ${selected ? "is-selected" : ""} ${menuOpen ? "is-menu-open" : ""}`}
                     >
                       <div className="workspace-clone__task-card-row">
                         <button
@@ -459,30 +446,24 @@ export function WorkspaceCloneUtilityDrawer({
                             onSelectTask(task.id);
                           }}
                         >
-                          <div className="workspace-clone__task-card-head">
-                            <div className="workspace-clone__task-card-copy">
-                              <strong>{task.name}</strong>
-                              <small className="workspace-clone__task-card-summary">
-                                {task.description?.trim() || formatWorkspaceCronPayloadPreview(task)}
-                              </small>
-                            </div>
-                            <span className={`workspace-clone__status-inline workspace-clone__task-status is-${statusTone}`}>
-                              {getWorkspaceCronStatusLabel(displayStatus)}
-                            </span>
+                          <div className="workspace-clone__task-card-icon">
+                            <WorkspaceCloneIcon name="calendar-clock" size={16} strokeWidth={1.9} />
                           </div>
 
-                          <div className="workspace-clone__task-card-meta">
-                            <div className="workspace-clone__task-card-meta-item">
-                              <span>调度</span>
-                              <strong>{formatWorkspaceCronScheduleSummary(task.schedule)}</strong>
+                          <div className="workspace-clone__task-card-copy">
+                            <div className="workspace-clone__task-card-head">
+                              <strong>{getWorkspaceTaskCardTitle(task)}</strong>
                             </div>
-                            <div className="workspace-clone__task-card-meta-item">
-                              <span>下次运行</span>
-                              <strong>{formatWorkspaceCronTimestamp(task.state.nextRunAtMs)}</strong>
-                            </div>
-                            <div className="workspace-clone__task-card-meta-item workspace-clone__task-card-meta-item--wide">
-                              <span>结果摘要</span>
-                              <strong>{getRunSummary(latestRun, task)}</strong>
+
+                            <div className="workspace-clone__task-card-meta">
+                              <span className="workspace-clone__task-card-meta-line">
+                                <span className="workspace-clone__task-card-meta-label">下次执行</span>
+                                <strong>{formatWorkspaceCronTimestamp(task.state.nextRunAtMs)}</strong>
+                              </span>
+                              <span className="workspace-clone__task-card-meta-line">
+                                <span className="workspace-clone__task-card-meta-label">循环</span>
+                                <strong>{formatWorkspaceTaskScheduleLine(task.schedule)}</strong>
+                              </span>
                             </div>
                           </div>
                         </button>
@@ -496,8 +477,9 @@ export function WorkspaceCloneUtilityDrawer({
                               onRunTask(task);
                             }}
                             disabled={busy}
+                            aria-label={`立即执行 ${task.name}`}
                           >
-                            立即运行
+                            <WorkspaceCloneIcon name="play" size={14} strokeWidth={2} />
                           </button>
 
                           <div className="workspace-clone__more-wrap" ref={menuOpen ? taskMenuRef : null}>
@@ -514,21 +496,37 @@ export function WorkspaceCloneUtilityDrawer({
                             </button>
 
                             {menuOpen ? (
-                              <div className="workspace-clone__more-menu workspace-clone__task-more-menu" role="menu">
+                              <div className="workspace-clone__task-more-menu" role="menu">
                                 <button
                                   type="button"
                                   role="menuitem"
+                                  className="workspace-clone__task-menu-item"
+                                  onClick={() => {
+                                    setOpenTaskMenuId(null);
+                                    onRunTask(task);
+                                  }}
+                                  disabled={busy}
+                                >
+                                  <WorkspaceCloneIcon name="play" size={14} strokeWidth={2} />
+                                  <span>立即执行</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  className="workspace-clone__task-menu-item"
                                   onClick={() => {
                                     setOpenTaskMenuId(null);
                                     onToggleTaskEnabled(task);
                                   }}
                                   disabled={busy}
                                 >
-                                  {task.enabled ? "停用" : "启用"}
+                                  <WorkspaceCloneIcon name={task.enabled ? "pause" : "play"} size={14} strokeWidth={2} />
+                                  <span>{task.enabled ? "暂停" : "启用"}</span>
                                 </button>
                                 <button
                                   type="button"
                                   role="menuitem"
+                                  className="workspace-clone__task-menu-item"
                                   onClick={() => {
                                     setOpenTaskMenuId(null);
                                     onEditTask(task);
@@ -536,68 +534,27 @@ export function WorkspaceCloneUtilityDrawer({
                                   disabled={Boolean(editDisabledReason) || busy}
                                   title={editDisabledReason || undefined}
                                 >
-                                  编辑
+                                  <WorkspaceCloneIcon name="edit" size={14} strokeWidth={2} />
+                                  <span>编辑</span>
                                 </button>
                                 <button
                                   type="button"
                                   role="menuitem"
-                                  className="workspace-clone__task-menu-danger"
+                                  className="workspace-clone__task-menu-item workspace-clone__task-menu-danger"
                                   onClick={() => {
                                     setOpenTaskMenuId(null);
                                     onDeleteTask(task);
                                   }}
                                   disabled={busy}
                                 >
-                                  删除
+                                  <WorkspaceCloneIcon name="trash" size={14} strokeWidth={2} />
+                                  <span>删除</span>
                                 </button>
                               </div>
                             ) : null}
                           </div>
                         </div>
                       </div>
-
-                      {expanded ? (
-                        <div className="workspace-clone__task-footer">
-                          <div className="workspace-clone__task-runs-head">
-                            <strong>最近运行</strong>
-                            {taskRunsLoading && taskRunsLoadingId === task.id ? (
-                              <small>正在同步...</small>
-                            ) : taskRuns.length > 0 ? (
-                              <small>展示最近 {taskRuns.length} 条</small>
-                            ) : null}
-                          </div>
-
-                          {taskRuns.length === 0 ? (
-                            <div className="workspace-clone__task-run-empty">暂无运行记录</div>
-                          ) : (
-                            <div className="workspace-clone__task-run-list">
-                              {taskRuns.map((run) => {
-                                const runTone = getWorkspaceCronStatusTone(
-                                  run.status === "error"
-                                    ? "error"
-                                    : run.status === "skipped"
-                                      ? "skipped"
-                                      : "ok",
-                                );
-
-                                return (
-                                  <div key={`${run.jobId}-${run.ts}`} className="workspace-clone__task-run-row">
-                                    <div className="workspace-clone__task-run-copy">
-                                      <div className="workspace-clone__task-run-head">
-                                        <strong>{formatWorkspaceCronTimestamp(run.runAtMs ?? run.ts)}</strong>
-                                        <span className={`workspace-clone__status-inline is-${runTone}`}>
-                                          {run.status === "error" ? "异常" : run.status === "skipped" ? "已跳过" : "正常"}
-                                        </span>
-                                      </div>
-                                      <small>{getRunSummary(run)}</small>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      ) : null}
                     </section>
                   );
                 })}

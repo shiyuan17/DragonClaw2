@@ -877,6 +877,35 @@ export function WorkspaceClonePage({
     () => cronTasks.tasks.find((task) => task.id === editingTaskId) ?? null,
     [cronTasks.tasks, editingTaskId],
   );
+  const editingTaskAgentLabel = useMemo(() => {
+    const targetAgentId =
+      editingTask?.agentId?.trim()
+      || currentMemoryAgentId
+      || homepageChat.selectedAgentId
+      || selectedEntity?.runtimeAgentId
+      || selectedEntity?.id
+      || "main";
+
+    const matchedAgent = mergedGatewayAgents.find((agent) => agent.id === targetAgentId);
+    if (matchedAgent) {
+      return resolveWorkspaceGatewayAgentName(matchedAgent);
+    }
+
+    if (selectedEntity?.entityType === "agents" && selectedEntity.id === targetAgentId && selectedEntity.name.trim()) {
+      return selectedEntity.name.trim();
+    }
+
+    return resolveWorkspaceAgentDisplayName(targetAgentId, targetAgentId);
+  }, [
+    currentMemoryAgentId,
+    editingTask?.agentId,
+    homepageChat.selectedAgentId,
+    mergedGatewayAgents,
+    selectedEntity?.entityType,
+    selectedEntity?.id,
+    selectedEntity?.name,
+    selectedEntity?.runtimeAgentId,
+  ]);
 
   const handleSelectTask = useCallback((taskId: string) => {
     cronTasks.setSelectedTaskId(taskId);
@@ -1369,6 +1398,7 @@ export function WorkspaceClonePage({
         <WorkspaceCloneTaskEditorModal
           show={Boolean(editingTask)}
           job={editingTask}
+          agentLabel={editingTaskAgentLabel}
           saving={cronTasks.taskActionJobId === editingTask?.id && cronTasks.taskActionType === "save"}
           notice={cronTasks.taskNotice}
           error={cronTasks.taskError}
