@@ -27,7 +27,12 @@
 ### 2. Task Filter and Dropdown Closeout
 
 - Fix the `enabled / disabled` filter tabs so they render as stable horizontal pill tabs and can always be switched manually.
-- Respect the user-selected filter after refreshes and panel rerenders; only auto-fallback when the currently selected bucket becomes empty and the other bucket still has tasks.
+- Keep `taskFilter` as the single source of truth for the visible task bucket.
+- Initialize the filter only when entering the `schedule` panel or switching to a different Agent:
+  - prefer `enabled` when that Agent has enabled tasks
+  - otherwise initialize to `disabled`
+- After the user clicks `enabled` or `disabled`, preserve that selection across task refreshes and rerenders.
+- When the current bucket has no tasks, keep the selected tab active and show the corresponding empty state instead of auto-switching back.
 - Isolate the task `more` dropdown from the shared generic menu button styling.
 - Render the task menu as one dark floating panel with full-width row items:
   - `Run now`
@@ -76,6 +81,9 @@
   - `npm run tauri dev`
 - Manual task drawer verification:
   - `enabled / disabled` tabs switch normally
+  - clicking `disabled` always switches to the disabled bucket immediately
+  - while `disabled` is selected, refreshing the task list does not force the UI back to `enabled`
+  - when an Agent has no disabled tasks, the `disabled` tab still stays selected and shows an empty state
   - no inline recent-runs block appears in the drawer
   - task cards stay fixed-height and compact
   - the more-actions menu opens correctly and keeps the real task actions working
