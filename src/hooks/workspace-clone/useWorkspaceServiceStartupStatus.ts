@@ -190,7 +190,7 @@ export function useWorkspaceServiceStartupStatus({
       steps: resolveStartupSteps(phase, running),
       logs: recentLogs,
       error,
-      showPanel: phase !== "ready",
+      showPanel: phase === "stopped" || phase === "error",
     };
   }, [connectionError, connectionStatus, loading, logs, running]);
 }

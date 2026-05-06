@@ -14,7 +14,6 @@ import { ConfirmModal } from "./components/ConfirmModal";
 import { Header } from "./components/Header";
 import { ModelSwitchModal } from "./components/ModelSwitchModal";
 import { SetupWizard } from "./components/SetupWizard";
-import { StartupOverlay } from "./components/StartupOverlay";
 import { Modal } from "./components/ui/Modal";
 import { useConfig } from "./hooks/useConfig";
 import { FeedbackProvider, useFeedback } from "./hooks/useFeedback";
@@ -24,28 +23,6 @@ import { useServiceLifecycle } from "./hooks/useServiceLifecycle";
 import { useSetup } from "./hooks/useSetup";
 
 const WorkspaceCloneReadyPage = lazy(() => import("./components/ready/WorkspaceCloneReadyPage"));
-
-function dismissBootSplash() {
-  if (typeof document === "undefined") return;
-
-  const bootSplash = document.getElementById("boot-splash");
-  if (!bootSplash || bootSplash.dataset.dismissed === "true") {
-    return;
-  }
-
-  bootSplash.dataset.dismissed = "true";
-
-  const removeBootSplash = () => {
-    bootSplash.removeEventListener("transitionend", removeBootSplash);
-    bootSplash.remove();
-  };
-
-  requestAnimationFrame(() => {
-    bootSplash.classList.add("is-leaving");
-    bootSplash.addEventListener("transitionend", removeBootSplash, { once: true });
-    window.setTimeout(removeBootSplash, 320);
-  });
-}
 
 function ReadyPageFallback() {
   return (
@@ -72,10 +49,6 @@ function AppShell() {
 
   useEffect(() => {
     getVersion().then((version) => setAppVersion(version)).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    dismissBootSplash();
   }, []);
 
   const {
@@ -145,7 +118,6 @@ function AppShell() {
 
   const {
     loading: serviceLoading,
-    startingUp,
     uptime,
     servicePort,
     handleStart,
@@ -414,8 +386,6 @@ function AppShell() {
           </ul>
           <p style={{ color: "var(--text-secondary)", fontSize: 12 }}>根据网络情况，可能需要 3-10 分钟</p>
         </ConfirmModal>
-
-        <StartupOverlay show={phase === "launching" || startingUp} />
 
         <ApiKeyModal
           show={showKeyModal}

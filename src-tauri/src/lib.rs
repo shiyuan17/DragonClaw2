@@ -109,6 +109,8 @@ pub fn run() {
                             let _ = app.emit("tray-restart-service", ());
                         }
                         "quit" => {
+                            // Keep OpenClaw alive for the next DragonClaw launch; users can stop
+                            // it explicitly from the service controls or the restart action.
                             app.exit(0);
                         }
                         _ => {}
