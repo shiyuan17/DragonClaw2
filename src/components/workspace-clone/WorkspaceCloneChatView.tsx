@@ -81,9 +81,6 @@ interface WorkspaceCloneChatViewProps {
   selectedTaskId: string | null;
   selectedTaskRuns: WorkspaceCronRunRecord[];
   taskLoading: boolean;
-  taskNotice: string;
-  taskError: string;
-  taskRunsError: string;
   taskRunsLoading: boolean;
   taskRunsLoadingId: string | null;
   taskActionJobId: string | null;
@@ -139,9 +136,6 @@ export function WorkspaceCloneChatView({
   selectedTaskId,
   selectedTaskRuns,
   taskLoading,
-  taskNotice,
-  taskError,
-  taskRunsError,
   taskRunsLoading,
   taskRunsLoadingId,
   taskActionJobId,
@@ -438,9 +432,6 @@ export function WorkspaceCloneChatView({
             selectedTaskId={selectedTaskId}
             selectedTaskRuns={selectedTaskRuns}
             taskLoading={taskLoading}
-            taskNotice={taskNotice}
-            taskError={taskError}
-            taskRunsError={taskRunsError}
             taskRunsLoading={taskRunsLoading}
             taskRunsLoadingId={taskRunsLoadingId}
             taskActionJobId={taskActionJobId}

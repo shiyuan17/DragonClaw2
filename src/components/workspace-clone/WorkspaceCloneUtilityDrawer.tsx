@@ -34,9 +34,6 @@ interface WorkspaceCloneUtilityDrawerProps {
   selectedTaskId: string | null;
   selectedTaskRuns: WorkspaceCronRunRecord[];
   taskLoading: boolean;
-  taskNotice: string;
-  taskError: string;
-  taskRunsError: string;
   taskRunsLoading: boolean;
   taskRunsLoadingId: string | null;
   taskActionJobId: string | null;
@@ -132,9 +129,6 @@ export function WorkspaceCloneUtilityDrawer({
   tasks,
   selectedTaskId,
   taskLoading,
-  taskNotice,
-  taskError,
-  taskRunsError,
   taskActionJobId,
   gatewayConnected,
   workbenchItems,
@@ -386,20 +380,6 @@ export function WorkspaceCloneUtilityDrawer({
 
         {panel === "schedule" ? (
           <>
-            {(taskNotice.trim() || taskError.trim() || taskRunsError.trim()) && (
-              <div className="workspace-clone__task-feedback">
-                {taskNotice.trim() ? (
-                  <div className="workspace-clone__task-feedback-card is-notice">{taskNotice}</div>
-                ) : null}
-                {taskError.trim() ? (
-                  <div className="workspace-clone__task-feedback-card is-error">{taskError}</div>
-                ) : null}
-                {!taskError.trim() && taskRunsError.trim() ? (
-                  <div className="workspace-clone__task-feedback-card is-error">{taskRunsError}</div>
-                ) : null}
-              </div>
-            )}
-
             {!gatewayConnected ? (
               <section className="workspace-clone__empty-card workspace-clone__drawer-empty">
                 <strong>无法读取任务</strong>

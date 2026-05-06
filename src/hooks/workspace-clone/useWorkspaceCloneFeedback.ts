@@ -17,6 +17,15 @@ interface UseWorkspaceCloneFeedbackOptions {
   channelNotice: string;
   channelError: string;
   channelErrorTitle: string;
+  taskFeedbackEvent?: {
+    id: number;
+    tone: "success" | "error" | "warning" | "info";
+    title?: string;
+    message: string;
+    dedupeKey: string;
+    autoCloseMs?: number;
+    persistent?: boolean;
+  } | null;
   activeChannelId: string | null;
   weixinQrStarting: boolean;
   weixinQrPolling: boolean;
@@ -39,6 +48,7 @@ export function useWorkspaceCloneFeedback({
   channelNotice,
   channelError,
   channelErrorTitle,
+  taskFeedbackEvent,
   activeChannelId,
   weixinQrStarting,
   weixinQrPolling,
@@ -214,4 +224,19 @@ export function useWorkspaceCloneFeedback({
       autoCloseMs: 3600,
     });
   }, [channelError, channelErrorTitle, pushFeedback]);
+
+  useEffect(() => {
+    if (!taskFeedbackEvent?.message.trim()) {
+      return;
+    }
+
+    pushFeedback({
+      tone: taskFeedbackEvent.tone,
+      title: taskFeedbackEvent.title,
+      message: taskFeedbackEvent.message,
+      dedupeKey: taskFeedbackEvent.dedupeKey,
+      persistent: taskFeedbackEvent.persistent,
+      autoCloseMs: taskFeedbackEvent.autoCloseMs,
+    });
+  }, [pushFeedback, taskFeedbackEvent]);
 }

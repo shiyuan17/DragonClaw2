@@ -5,6 +5,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { invoke } from "@tauri-apps/api/core";
 import { motion } from "framer-motion";
 import { resolveWorkspaceAgentDisplayName } from "../../data/agencyRoster";
+import { useFeedback } from "../../hooks/useFeedback";
 import type {
   CurrentConfig,
   LogEntry,
@@ -54,6 +55,7 @@ import {
 import { useWorkspaceChannels } from "../../hooks/workspace-clone/useWorkspaceChannels";
 import { useWorkspaceComposerModelMenu } from "../../hooks/workspace-clone/useWorkspaceComposerModelMenu";
 import { useWorkspaceEmailBinding } from "../../hooks/workspace-clone/useWorkspaceEmailBinding";
+import { createAgentSessionKey } from "../../hooks/workspace-gateway/client";
 import { loadLocalAgentRoster } from "../../hooks/workspace-gateway/local-agent-roster";
 import type {
   WorkspaceCronJob,
@@ -148,6 +150,43 @@ function buildCommandSummaryItems(
     subtitle: item.description || item.name,
     tag: item.source === "builtin" ? "\u53ea\u8bfb" : item.id === activeCommandId ? "\u5df2\u6fc0\u6d3b" : "\u81ea\u5b9a\u4e49",
   }));
+}
+
+function resolveTaskRunFallbackSessionKey(
+  task: WorkspaceCronJob,
+  currentSessionKey: string,
+  fallbackAgentId: string,
+) {
+  if (task.sessionTarget === "current") {
+    return currentSessionKey || task.sessionKey?.trim() || null;
+  }
+
+  if (task.sessionTarget === "main") {
+    return createAgentSessionKey(fallbackAgentId);
+  }
+
+  if (task.sessionTarget.startsWith("session:")) {
+    return task.sessionTarget.slice("session:".length).trim() || task.sessionKey?.trim() || null;
+  }
+
+  return task.sessionKey?.trim() || null;
+}
+
+function resolveTaskRunSessionKey(
+  outcome: Awaited<ReturnType<ReturnType<typeof useWorkspaceCronTasks>["runTaskNow"]>>,
+  sessionsResult: ReturnType<typeof useWorkspaceGatewayChat>["sessionsResult"],
+) {
+  const directSessionKey = outcome?.sessionKey?.trim();
+  if (directSessionKey) {
+    return directSessionKey;
+  }
+
+  const targetSessionId = outcome?.sessionId?.trim();
+  if (!targetSessionId) {
+    return null;
+  }
+
+  return sessionsResult?.sessions.find((session) => session.sessionId === targetSessionId)?.key?.trim() || null;
 }
 
 /* function WorkspaceCloneSectionFallback({ label }: { label: string }) {
@@ -325,6 +364,7 @@ export function WorkspaceClonePage({
   const [scenePresetOpenStateByKey, setScenePresetOpenStateByKey] = useState<Record<string, boolean>>(
     () => loadWorkspaceScenePresetOpenState(),
   );
+  const { pushFeedback } = useFeedback();
   const homepageChat = useWorkspaceGatewayChat({ running, servicePort, gatewayToken });
   const savedProvidersLoadSeqRef = useRef(0);
   const modelConfigOpenRef = useRef(false);
@@ -664,6 +704,7 @@ export function WorkspaceClonePage({
     channelNotice: workspaceChannels.modalNotice,
     channelError: workspaceChannels.modalError,
     channelErrorTitle: "频道绑定",
+    taskFeedbackEvent: cronTasks.taskFeedbackEvent,
     activeChannelId: workspaceChannels.modal.channelId,
     weixinQrStarting: workspaceChannels.weixinQrStarting,
     weixinQrPolling: workspaceChannels.weixinQrPolling,
@@ -926,6 +967,57 @@ export function WorkspaceClonePage({
     void cronTasks.deleteTask(task.id);
   }, [cronTasks]);
 
+  const handleRunTask = useCallback(async (task: WorkspaceCronJob) => {
+    const outcome = await cronTasks.runTaskNow(task.id);
+    if (!outcome || outcome.status === "skipped") {
+      return;
+    }
+
+    const taskAgentId =
+      task.agentId?.trim()
+      || currentMemoryAgentId
+      || homepageChat.selectedAgentId
+      || selectedEntity?.runtimeAgentId
+      || selectedEntity?.id
+      || "main";
+    const targetSessionKey = resolveTaskRunSessionKey(outcome, homepageChat.sessionsResult)
+      || resolveTaskRunFallbackSessionKey(task, homepageChat.currentSessionKey, taskAgentId);
+
+    if (!targetSessionKey) {
+      return;
+    }
+
+    setUtilityPanel(null);
+
+    if (targetSessionKey === homepageChat.currentSessionKey) {
+      await homepageChat.refreshSessionHistory(targetSessionKey, taskAgentId).catch(() => false);
+      pushFeedback({
+        tone: "info",
+        title: "任务",
+        message: "任务结果会显示在当前会话中",
+        dedupeKey: "workspace-task-run-open-session",
+        persistent: false,
+      });
+      return;
+    }
+
+    homepageChat.selectSession(targetSessionKey, taskAgentId);
+    pushFeedback({
+      tone: "info",
+      title: "任务",
+      message: "已切换到任务结果会话",
+      dedupeKey: "workspace-task-run-open-session",
+      persistent: false,
+    });
+  }, [
+    cronTasks,
+    currentMemoryAgentId,
+    homepageChat,
+    pushFeedback,
+    selectedEntity?.id,
+    selectedEntity?.runtimeAgentId,
+  ]);
+
   const handleSaveEditingTask = useCallback(async (patch: Parameters<typeof cronTasks.updateTask>[1]) => {
     if (!editingTask) {
       return;
@@ -1143,9 +1235,6 @@ export function WorkspaceClonePage({
                 selectedTaskId={cronTasks.selectedTaskId}
                 selectedTaskRuns={cronTasks.selectedTaskRuns}
                 taskLoading={cronTasks.taskLoading}
-                taskNotice={cronTasks.taskNotice}
-                taskError={cronTasks.taskError}
-                taskRunsError={cronTasks.taskRunsError}
                 taskRunsLoading={cronTasks.taskRunsLoading}
                 taskRunsLoadingId={cronTasks.taskRunsLoadingId}
                 taskActionJobId={cronTasks.taskActionJobId}
@@ -1178,7 +1267,7 @@ export function WorkspaceClonePage({
                 }}
                 onEditTask={handleEditTask}
                 onRunTask={(task) => {
-                  void cronTasks.runTaskNow(task.id);
+                  void handleRunTask(task);
                 }}
                 onDeleteTask={handleDeleteTask}
               />

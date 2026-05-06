@@ -1017,15 +1017,18 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     setSelectedSessionKey(resolveAgentSessionKey(sessionsResult, agentId));
   }, [sessionsResult]);
 
-  const selectSession = useCallback((sessionKey: string) => {
-    const agentId = extractAgentIdFromSessionKey(sessionKey);
-    if (!agentId) {
-      return;
+  const selectSession = useCallback((sessionKey: string, fallbackAgentId?: string | null) => {
+    const agentId = extractAgentIdFromSessionKey(sessionKey) || fallbackAgentId?.trim();
+    if (agentId) {
+      setSelectedAgentId(agentId); setSelectedSessionKey(sessionKey);
     }
-
-    setSelectedAgentId(agentId);
-    setSelectedSessionKey(sessionKey);
   }, []);
+  const refreshSessionHistory = useCallback((sessionKey: string, agentId?: string | null) => {
+    const nextAgentId = extractAgentIdFromSessionKey(sessionKey) || agentId?.trim() || selectedAgentId;
+    return connected && sessionKey && nextAgentId
+      ? loadHistory(sessionKey, { agentId: nextAgentId, connectionGeneration: connectionGenerationRef.current }).then(() => true)
+      : Promise.resolve(false);
+  }, [connected, loadHistory, selectedAgentId]);
 
   const sendMessage = useCallback(
     async (
@@ -1279,6 +1282,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     isGenerating: Boolean(activeRunId),
     selectAgent,
     selectSession,
+    refreshSessionHistory,
     request,
     sendMessage,
     abortMessage,
