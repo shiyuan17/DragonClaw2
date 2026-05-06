@@ -3,6 +3,9 @@
 ## Phase 5.55.1: Gateway RPC Readiness Grace
 - [ ] Prevent false OpenClaw startup failure while gateway sidecars are warming up by separating true `gateway ready` log detection from HTTP listening, widening RPC probe timeouts, and preserving persistent-service reuse without changing Tauri command or `invoke()` contracts.
 
+## Phase 5.56: Workspace 任务卡片与编辑弹窗重做
+- [ ] Rebuild the `workspace-clone` task drawer cards and task editor modal into the new compact reference layout, remove the inline recent-runs module, map visual schedule editing to `单次 / 每天 / 每周 / 每月`, and keep real cron / Gateway / `invoke()` contracts unchanged.
+
 ## Phase 5.55: Startup Flow Single Source and Persistent Service
 - [ ] Unify startup into the React guide/setup surface, remove the static Booting splash and duplicate OpenClaw startup overlay, keep homepage chat from replaying the normal startup checklist, and leave OpenClaw running across DragonClaw quits for fast reuse without changing Tauri command or `invoke()` contracts.
 
