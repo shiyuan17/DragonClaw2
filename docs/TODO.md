@@ -1,5 +1,8 @@
 # DragonClaw - 开发任务总表 (AI 开发规范版)
 
+## Phase 5.55: Startup Flow Single Source and Persistent Service
+- [ ] Unify startup into the React guide/setup surface, remove the static Booting splash and duplicate OpenClaw startup overlay, keep homepage chat from replaying the normal startup checklist, and leave OpenClaw running across DragonClaw quits for fast reuse without changing Tauri command or `invoke()` contracts.
+
 ## Phase 5.54: 内置 OpenClaw 升级到 v2026.5.4
 - [ ] 将 DragonClaw 内置 OpenClaw 锁定版本从 `v2026.4.27` 升级到 `v2026.5.4`，保持 `.openclaw_version` 自动重装、`pnpm install` + 条件 `pnpm build` 安装链路，以及本地 gateway / Control UI / 首页聊天回归可用，不改任何 Tauri command 签名或前端 `invoke()` 契约。
 
