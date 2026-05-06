@@ -18,7 +18,8 @@ import { isWorkspaceRawProcessEcho } from "../components/workspace-clone/workspa
 import type { CurrentConfig } from "../types";
 import { buildCachedAgentsResult, parseCachedMessagesJson, sanitizeAgentsResult, serializeCachedMessages, sortSessionsByUpdatedAt, toAgentCachePayload } from "./workspace-gateway/session-cache";
 import { buildSessionHistoryItem, extractAgentIdFromSessionKey, extractFirstMeaningfulSessionTitle, extractGatewayMessageText, extractLastMeaningfulMessageSummary, normalizeGatewayMessage, resolveAgentSessionKey } from "./workspace-gateway/message-normalizers";
-import { buildLiveStepDedupeKey, buildLiveStepFromAgentEvent, buildPostToolThinkingStep, extractLiveStepStableId, getPostToolThinkingStepId, isRecord, isTerminalLiveStepStatus, LIVE_STEP_DEDUPE_WINDOW_MS, normalizeLiveStepSignaturePart, toFiniteTimestamp, toStringValue, type WorkspaceGatewayAgentEventPayload, type WorkspaceLiveStepDedupeEntry, type WorkspaceLiveStepEventSource, updateLiveStepList } from "./workspace-gateway/live-steps";
+import { shouldSkipMirroredWorkspaceLiveStep } from "./workspace-gateway/live-step-dedupe";
+import { buildLiveStepFromAgentEvent, buildPostToolThinkingStep, getPostToolThinkingStepId, isRecord, isTerminalLiveStepStatus, toFiniteTimestamp, toStringValue, type WorkspaceGatewayAgentEventPayload, type WorkspaceLiveStepDedupeEntry, type WorkspaceLiveStepEventSource, updateLiveStepList } from "./workspace-gateway/live-steps";
 import { formatClockTime } from "./workspace-gateway/time-formatters";
 
 interface UseWorkspaceGatewayChatOptions {
@@ -37,6 +38,7 @@ const MISSING_GATEWAY_TOKEN_ERROR = "本地网关 token 缺失或未同步，请
 export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: UseWorkspaceGatewayChatOptions) {
   const clientRef = useRef<WorkspaceGatewayClient | null>(null);
   const disconnectErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connectionGenerationRef = useRef(0);
   const currentSessionKeyRef = useRef("");
   const currentRunIdRef = useRef<string | null>(null);
   const activeRunAliasesRef = useRef<Set<string>>(new Set());
@@ -44,7 +46,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
   const historyTitleFetchesRef = useRef<Set<string>>(new Set());
   const historyLoadSeqRef = useRef(0);
   const selectedAgentIdRef = useRef("");
-  const bootstrapGatewayStateRef = useRef<() => Promise<void>>(async () => {});
+  const bootstrapGatewayStateRef = useRef<(connectionGeneration?: number) => Promise<void>>(async () => {});
   const handleGatewayEventRef = useRef<(event: { event: string; payload?: unknown }) => void>(() => {});
   const hasObservedNonThinkingStepRef = useRef(false);
   const hasAssistantTextDeltaRef = useRef(false);
@@ -68,26 +70,32 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
   const [cachedAgentLastMessageById, setCachedAgentLastMessageById] = useState<Record<string, string>>({});
   const [fallbackGatewayToken, setFallbackGatewayToken] = useState("");
   const [gatewayTokenRefreshState, setGatewayTokenRefreshState] = useState<"idle" | "loading" | "done">("idle");
-
   const connected = status === "connected";
   const effectiveAgentsResult = agentsResult ?? cachedAgentsResult;
   const agentListSource = agentsResult ? "gateway" : cachedAgentsResult ? "cache" : "none";
   const agents = effectiveAgentsResult?.agents ?? [];
-  const selectedAgent = useMemo(
-    () => agents.find((agent) => agent.id === selectedAgentId) ?? null,
-    [agents, selectedAgentId],
-  );
+  const selectedAgent = useMemo(() => agents.find((agent) => agent.id === selectedAgentId) ?? null, [agents, selectedAgentId]);
   const currentSessionKey = selectedSessionKey || (selectedAgentId ? createAgentSessionKey(selectedAgentId) : "");
   const configuredGatewayToken = gatewayToken?.trim() || "";
   const normalizedGatewayToken = configuredGatewayToken || fallbackGatewayToken.trim();
   const sessionHistoryCacheRef = useRef<Record<string, unknown[]>>({});
-
   const clearPendingDisconnectError = useCallback(() => {
     if (disconnectErrorTimerRef.current) {
       clearTimeout(disconnectErrorTimerRef.current);
       disconnectErrorTimerRef.current = null;
     }
   }, []);
+
+  const isStaleConnectionGeneration = useCallback((expectedGeneration?: number, client?: WorkspaceGatewayClient | null) => (
+    (expectedGeneration !== undefined && connectionGenerationRef.current !== expectedGeneration) ||
+    Boolean(client && clientRef.current !== client)
+  ), []);
+
+  const isCurrentHistoryLoad = useCallback((requestId: number, sessionKey: string, connectionGeneration?: number) => (
+    !isStaleConnectionGeneration(connectionGeneration) &&
+    historyLoadSeqRef.current === requestId &&
+    currentSessionKeyRef.current === sessionKey
+  ), [isStaleConnectionGeneration]);
 
   const resolveAssistantAuthor = useCallback(
     (sessionKey?: string | null) => {
@@ -98,7 +106,6 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
           return formatAgentAvatar(match);
         }
       }
-
       return selectedAgent ? formatAgentAvatar(selectedAgent) : "A";
     },
     [agents, selectedAgent],
@@ -123,93 +130,42 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
         ) {
           return next;
         }
-
-        return updateLiveStepList(
-          next,
-          buildPostToolThinkingStep(options.bridgeRunId, options.bridgeTimestamp),
-        );
+        return updateLiveStepList(next, buildPostToolThinkingStep(options.bridgeRunId, options.bridgeTimestamp));
       });
     },
     [],
   );
 
   const removeTransientThinkingBridge = useCallback((runId?: string | null) => {
-    if (!runId) {
-      return;
-    }
-
-    const bridgeStepId = getPostToolThinkingStepId(runId);
-    setLiveSteps((current) => current.filter((step) => step.id !== bridgeStepId));
+    if (!runId) return;
+    setLiveSteps((current) => current.filter((step) => step.id !== getPostToolThinkingStepId(runId)));
   }, []);
 
-  const shouldSkipMirroredLiveStep = useCallback(
-    (params: {
-      step: WorkspaceLiveStep;
-      payload: WorkspaceGatewayAgentEventPayload;
-      source: WorkspaceLiveStepEventSource;
-      runId: string;
-      timestampMs: number;
-    }) => {
-      if (params.step.kind === "thinking") {
-        return false;
-      }
-
-      const data = isRecord(params.payload.data) ? params.payload.data : {};
-      const stableId = extractLiveStepStableId(data);
-      if (stableId) {
-        liveStepDedupeRef.current.set(`stable:${normalizeLiveStepSignaturePart(stableId)}`, {
-          source: params.source,
-          timestampMs: params.timestampMs,
-        });
-        return false;
-      }
-
-      const dedupeKey = buildLiveStepDedupeKey({
-        step: params.step,
-        payload: params.payload,
-        runId: params.runId,
-      });
-      const previous = liveStepDedupeRef.current.get(dedupeKey);
-
-      if (
-        previous &&
-        previous.source !== params.source &&
-        Math.abs(params.timestampMs - previous.timestampMs) <= LIVE_STEP_DEDUPE_WINDOW_MS
-      ) {
-        return true;
-      }
-
-      liveStepDedupeRef.current.set(dedupeKey, {
-        source: params.source,
-        timestampMs: params.timestampMs,
-      });
-      return false;
-    },
-    [],
-  );
+  const shouldSkipMirroredLiveStep = useCallback((params: {
+    step: WorkspaceLiveStep;
+    payload: WorkspaceGatewayAgentEventPayload;
+    source: WorkspaceLiveStepEventSource;
+    runId: string;
+    timestampMs: number;
+  }) => shouldSkipMirroredWorkspaceLiveStep({ cache: liveStepDedupeRef.current, ...params }), []);
 
   const finishLiveSteps = useCallback((status: WorkspaceLiveStepStatus) => {
-    setLiveSteps((current) =>
-      current.map((step) =>
-        step.status === "running" || step.status === "pending"
-          ? { ...step, status }
-          : step,
-      ),
-    );
+    setLiveSteps((current) => current.map((step) => (
+      step.status === "running" || step.status === "pending"
+        ? { ...step, status }
+        : step
+    )));
   }, []);
 
   useEffect(() => {
     currentSessionKeyRef.current = currentSessionKey;
   }, [currentSessionKey]);
-
   useEffect(() => {
     currentRunIdRef.current = activeRunId;
   }, [activeRunId]);
-
   useEffect(() => {
     selectedAgentIdRef.current = selectedAgentId;
   }, [selectedAgentId]);
-
   useEffect(() => {
     if (agents.length === 0) {
       return;
@@ -230,11 +186,9 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       setSelectedSessionKey(createAgentSessionKey(nextAgentId));
     }
   }, [agents, effectiveAgentsResult?.defaultId, selectedAgentId, selectedSessionKey]);
-
   useEffect(() => {
     sessionHistoryCacheRef.current = sessionHistoryCache;
   }, [sessionHistoryCache]);
-
   useEffect(() => {
     if (!running) {
       setFallbackGatewayToken("");
@@ -507,6 +461,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       sessionKey: string,
       options?: {
         agentId?: string;
+        connectionGeneration?: number;
       },
     ) => {
       const agentId = options?.agentId || extractAgentIdFromSessionKey(sessionKey) || selectedAgentId;
@@ -524,7 +479,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       if (!hasAnyCache) {
         try {
           const cachedRow = await loadPersistedSessionHistoryCache(sessionKey, agentId);
-          if (historyLoadSeqRef.current !== requestId || currentSessionKeyRef.current !== sessionKey) {
+          if (!isCurrentHistoryLoad(requestId, sessionKey, options?.connectionGeneration)) {
             return;
           }
 
@@ -548,7 +503,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
         }
       }
 
-      if (historyLoadSeqRef.current !== requestId || currentSessionKeyRef.current !== sessionKey) {
+      if (!isCurrentHistoryLoad(requestId, sessionKey, options?.connectionGeneration)) {
         return;
       }
 
@@ -564,7 +519,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       try {
         const messages = await loadSessionHistoryMessages(sessionKey, INITIAL_HISTORY_LIMIT);
 
-        if (historyLoadSeqRef.current !== requestId || currentSessionKeyRef.current !== sessionKey) {
+        if (!isCurrentHistoryLoad(requestId, sessionKey, options?.connectionGeneration)) {
           return;
         }
 
@@ -589,17 +544,19 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
         ).catch(() => undefined);
         setError(null);
       } catch (loadError) {
-        if (!hasAnyCache && historyLoadSeqRef.current === requestId && currentSessionKeyRef.current === sessionKey) {
+        if (!hasAnyCache && isCurrentHistoryLoad(requestId, sessionKey, options?.connectionGeneration)) {
           setError(loadError instanceof Error ? loadError.message : String(loadError));
         }
       } finally {
-        if (historyLoadSeqRef.current === requestId && currentSessionKeyRef.current === sessionKey) {
+        if (isCurrentHistoryLoad(requestId, sessionKey, options?.connectionGeneration)) {
           setHistoryLoading(false);
         }
       }
     },
     [
       connected,
+      isCurrentHistoryLoad,
+      isStaleConnectionGeneration,
       loadPersistedSessionHistoryCache,
       loadSessionHistoryMessages,
       saveSessionHistoryCache,
@@ -609,9 +566,9 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     ],
   );
 
-  const bootstrapGatewayState = useCallback(async () => {
+  const bootstrapGatewayState = useCallback(async (expectedGeneration?: number) => {
     const client = clientRef.current;
-    if (!client?.connected) {
+    if (!client?.connected || isStaleConnectionGeneration(expectedGeneration, client)) {
       return;
     }
 
@@ -622,6 +579,10 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
         client.request("agents.list", {}),
         client.request("sessions.list", {}),
       ]);
+
+      if (isStaleConnectionGeneration(expectedGeneration, client)) {
+        return;
+      }
 
       if (!isAgentsListResult(agentsPayload)) {
         throw new Error("agents.list 返回格式不正确");
@@ -654,15 +615,23 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
         ? resolveAgentSessionKey(sessionsPayload, nextAgentId, currentSessionKeyRef.current)
         : "";
 
+      if (isStaleConnectionGeneration(expectedGeneration, client)) {
+        return;
+      }
+
       setSelectedAgentId(nextAgentId);
       setSelectedSessionKey(nextSessionKey);
       void pruneSessionHistoryCache(sessionsPayload, nextSessionKey).catch(() => undefined);
     } catch (bootstrapError) {
+      if (isStaleConnectionGeneration(expectedGeneration, client)) {
+        return;
+      }
+
       clearPendingDisconnectError();
       setStatus("error");
       setError(bootstrapError instanceof Error ? bootstrapError.message : String(bootstrapError));
     }
-  }, [clearPendingDisconnectError, pruneSessionHistoryCache]);
+  }, [clearPendingDisconnectError, isStaleConnectionGeneration, pruneSessionHistoryCache]);
 
   const handleGatewayEvent = useCallback(
     (event: { event: string; payload?: unknown }) => {
@@ -773,7 +742,10 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
           }
         }
         void loadSessions();
-        void loadHistory(currentSessionKeyRef.current, { agentId: extractAgentIdFromSessionKey(currentSessionKeyRef.current) || selectedAgentId });
+        void loadHistory(currentSessionKeyRef.current, {
+          agentId: extractAgentIdFromSessionKey(currentSessionKeyRef.current) || selectedAgentId,
+          connectionGeneration: connectionGenerationRef.current,
+        });
       }
     },
     [applyLiveStep, clearActiveRunRefs, finishLiveSteps, isKnownActiveRunId, loadHistory, loadSessions, removeTransientThinkingBridge, selectedAgentId, shouldSkipMirroredLiveStep],
@@ -789,6 +761,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
 
   useEffect(() => {
     const resetGatewayState = (nextStatus: WorkspaceGatewayStatus, nextError: string | null) => {
+      connectionGenerationRef.current += 1;
       clearPendingDisconnectError();
       clientRef.current?.stop();
       clientRef.current = null;
@@ -808,6 +781,9 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       clearActiveRunRefs();
       setLiveSteps([]);
     };
+
+    const connectionGeneration = connectionGenerationRef.current + 1;
+    connectionGenerationRef.current = connectionGeneration;
 
     if (!running || !servicePort) {
       resetGatewayState("idle", null);
@@ -829,25 +805,37 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       url: buildGatewayUrl(servicePort),
       token: normalizedGatewayToken,
       onConnecting: () => {
+        if (isStaleConnectionGeneration(connectionGeneration, client)) {
+          return;
+        }
         clearPendingDisconnectError();
         setStatus("connecting");
         setError(null);
       },
       onConnected: () => {
+        if (isStaleConnectionGeneration(connectionGeneration, client)) {
+          return;
+        }
         clearPendingDisconnectError();
         setStatus("connecting");
         setError(null);
-        void bootstrapGatewayStateRef.current();
+        void bootstrapGatewayStateRef.current(connectionGeneration);
       },
       onEvent: (event) => {
+        if (isStaleConnectionGeneration(connectionGeneration, client)) {
+          return;
+        }
         handleGatewayEventRef.current(event);
       },
       onDisconnected: (message) => {
+        if (isStaleConnectionGeneration(connectionGeneration, client)) {
+          return;
+        }
         clearPendingDisconnectError();
         setStatus("connecting");
         setError(null);
         disconnectErrorTimerRef.current = setTimeout(() => {
-          if (clientRef.current !== client || client.connected) {
+          if (isStaleConnectionGeneration(connectionGeneration, client) || client.connected) {
             return;
           }
 
@@ -864,6 +852,9 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
 
     return () => {
       clearPendingDisconnectError();
+      if (connectionGenerationRef.current === connectionGeneration) {
+        connectionGenerationRef.current += 1;
+      }
       if (clientRef.current === client) {
         clientRef.current = null;
       }
@@ -874,6 +865,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     clearActiveRunRefs,
     configuredGatewayToken,
     gatewayTokenRefreshState,
+    isStaleConnectionGeneration,
     normalizedGatewayToken,
     running,
     servicePort,
@@ -889,7 +881,10 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     setActiveRunId(null);
     clearActiveRunRefs();
     setLiveSteps([]);
-    void loadHistory(currentSessionKey, { agentId: selectedAgentId });
+    void loadHistory(currentSessionKey, {
+      agentId: selectedAgentId,
+      connectionGeneration: connectionGenerationRef.current,
+    });
   }, [clearActiveRunRefs, connected, currentSessionKey, loadHistory, selectedAgentId]);
 
   useEffect(() => {
@@ -1152,7 +1147,13 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
         null,
         null,
       ).catch(() => undefined);
-      await Promise.all([loadSessions(), loadHistory(currentSessionKey, { agentId: selectedAgentId })]);
+      await Promise.all([
+        loadSessions(),
+        loadHistory(currentSessionKey, {
+          agentId: selectedAgentId,
+          connectionGeneration: connectionGenerationRef.current,
+        }),
+      ]);
       return true;
     } catch (resetError) {
       setError(resetError instanceof Error ? resetError.message : String(resetError));

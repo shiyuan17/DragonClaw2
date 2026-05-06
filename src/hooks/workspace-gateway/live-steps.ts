@@ -12,12 +12,16 @@ export type WorkspaceGatewayAgentEventPayload = {
 const LIVE_STEP_LIMIT = 12;
 const POST_TOOL_THINKING_STEP_SUFFIX = "post-tool-thinking";
 export const LIVE_STEP_DEDUPE_WINDOW_MS = 1500;
+export const LIVE_STEP_DEDUPE_ENTRY_TTL_MS = 10000;
 
 export type WorkspaceLiveStepEventSource = "agent" | "session.tool";
 
 export interface WorkspaceLiveStepDedupeEntry {
   source: WorkspaceLiveStepEventSource;
   timestampMs: number;
+  canonicalStepId: string;
+  operationKey: string;
+  signatureKey: string;
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -42,6 +46,11 @@ export function isTerminalLiveStepStatus(status: WorkspaceLiveStepStatus) {
 
 export function extractLiveStepStableId(data: Record<string, unknown>) {
   return firstNonEmptyString(data.itemId, data.toolCallId, data.tool_call_id, data.id);
+}
+
+export function buildLiveStepStableKey(data: Record<string, unknown>) {
+  const stableId = extractLiveStepStableId(data);
+  return stableId ? `stable:${normalizeLiveStepSignaturePart(stableId)}` : "";
 }
 
 export function normalizeLiveStepSignaturePart(value: string | undefined) {
@@ -300,25 +309,38 @@ export function buildPostToolThinkingStep(runId: string, timestamp?: number | nu
   };
 }
 
-export function buildLiveStepDedupeKey(params: {
+export function buildLiveStepOperationKey(params: {
   step: WorkspaceLiveStep;
   payload: WorkspaceGatewayAgentEventPayload;
   runId: string;
 }) {
   const { step, payload, runId } = params;
-  const data = isRecord(payload.data) ? payload.data : {};
-  const stableId = extractLiveStepStableId(data);
-  if (stableId) {
-    return `stable:${normalizeLiveStepSignaturePart(stableId)}`;
-  }
-
   const sessionScope = toStringValue(payload.sessionKey) || runId;
   return [
-    "mirror",
+    "operation",
     step.kind,
     normalizeLiveStepSignaturePart(step.title),
     normalizeLiveStepSignaturePart(step.detail),
-    step.status,
     normalizeLiveStepSignaturePart(sessionScope),
   ].join(":");
+}
+
+export function buildLiveStepSignatureKey(params: {
+  step: WorkspaceLiveStep;
+  payload: WorkspaceGatewayAgentEventPayload;
+  runId: string;
+}) {
+  const { step } = params;
+  return [
+    buildLiveStepOperationKey(params),
+    step.status,
+  ].join(":");
+}
+
+export function buildLiveStepDedupeKey(params: {
+  step: WorkspaceLiveStep;
+  payload: WorkspaceGatewayAgentEventPayload;
+  runId: string;
+}) {
+  return buildLiveStepSignatureKey(params);
 }
