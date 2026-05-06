@@ -59,6 +59,7 @@ export interface WorkspaceEntity {
   name: string;
   searchText?: string;
   subtitle: string;
+  recentSessions?: WorkspaceHistoryItem[];
   status: "online" | "busy" | "offline";
   avatarLabel: string;
   avatarUrl?: string;
@@ -135,6 +136,8 @@ export interface WorkspaceHistoryItem {
   sessionKey?: string;
   active?: boolean;
   isMain?: boolean;
+  kind?: "gateway" | "task-run";
+  boundSessionKey?: string | null;
 }
 
 export interface WorkspaceScheduleItem {

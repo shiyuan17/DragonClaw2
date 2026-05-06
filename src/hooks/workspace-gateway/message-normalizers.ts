@@ -250,6 +250,7 @@ export function buildSessionHistoryItem(
     updatedAt: session.updatedAt,
     active: session.key === params.currentSessionKey,
     isMain: session.key.endsWith(":main"),
+    kind: "gateway",
     title: params.cachedTitle || resolveSessionFallbackTitle(session),
     subtitle: buildSessionHistorySubtitle(session),
     time: formatHistorySessionTime(session.updatedAt),

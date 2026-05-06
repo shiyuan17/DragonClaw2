@@ -5,7 +5,6 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { invoke } from "@tauri-apps/api/core";
 import { motion } from "framer-motion";
 import { resolveWorkspaceAgentDisplayName } from "../../data/agencyRoster";
-import { useFeedback } from "../../hooks/useFeedback";
 import type {
   CurrentConfig,
   LogEntry,
@@ -45,6 +44,7 @@ import { WorkspaceCloneCompactView } from "./WorkspaceCloneCompactView";
 import { WorkspaceCloneScenePresetSwitcher } from "./WorkspaceCloneScenePresetSwitcher";
 import { WorkspaceCloneSidebar } from "./WorkspaceCloneSidebar";
 import { WorkspaceCloneTaskEditorModal } from "./WorkspaceCloneTaskEditorModal";
+import { resolveWorkspaceTaskDisplayTitle } from "./workspaceCloneTaskTitle";
 import {
   buildWorkspaceScenePresetStateKey,
   loadWorkspaceScenePresetOpenState,
@@ -55,7 +55,6 @@ import {
 import { useWorkspaceChannels } from "../../hooks/workspace-clone/useWorkspaceChannels";
 import { useWorkspaceComposerModelMenu } from "../../hooks/workspace-clone/useWorkspaceComposerModelMenu";
 import { useWorkspaceEmailBinding } from "../../hooks/workspace-clone/useWorkspaceEmailBinding";
-import { createAgentSessionKey } from "../../hooks/workspace-gateway/client";
 import { loadLocalAgentRoster } from "../../hooks/workspace-gateway/local-agent-roster";
 import type {
   WorkspaceCronJob,
@@ -113,7 +112,6 @@ export interface WorkspaceClonePageProps {
   }) => Promise<string>;
   handleDeleteSavedProviderConfig: (providerKey: string) => Promise<string>;
 }
-
 function resolveWorkspaceModelName(currentConfig: CurrentConfig | null, fallbackModelName: string) {
   const primaryModel = currentConfig?.model || fallbackModelName;
   if (!primaryModel) {
@@ -151,65 +149,6 @@ function buildCommandSummaryItems(
     tag: item.source === "builtin" ? "\u53ea\u8bfb" : item.id === activeCommandId ? "\u5df2\u6fc0\u6d3b" : "\u81ea\u5b9a\u4e49",
   }));
 }
-
-function resolveTaskRunFallbackSessionKey(
-  task: WorkspaceCronJob,
-  currentSessionKey: string,
-  fallbackAgentId: string,
-) {
-  if (task.sessionTarget === "current") {
-    return currentSessionKey || task.sessionKey?.trim() || null;
-  }
-
-  if (task.sessionTarget === "main") {
-    return createAgentSessionKey(fallbackAgentId);
-  }
-
-  if (task.sessionTarget.startsWith("session:")) {
-    return task.sessionTarget.slice("session:".length).trim() || task.sessionKey?.trim() || null;
-  }
-
-  return task.sessionKey?.trim() || null;
-}
-
-function resolveTaskRunSessionKey(
-  outcome: Awaited<ReturnType<ReturnType<typeof useWorkspaceCronTasks>["runTaskNow"]>>,
-  sessionsResult: ReturnType<typeof useWorkspaceGatewayChat>["sessionsResult"],
-) {
-  const directSessionKey = outcome?.sessionKey?.trim();
-  if (directSessionKey) {
-    return directSessionKey;
-  }
-
-  const targetSessionId = outcome?.sessionId?.trim();
-  if (!targetSessionId) {
-    return null;
-  }
-
-  return sessionsResult?.sessions.find((session) => session.sessionId === targetSessionId)?.key?.trim() || null;
-}
-
-/* function WorkspaceCloneSectionFallback({ label }: { label: string }) {
-  return (
-    <section className="workspace-clone__loading-shell" aria-busy="true" aria-label={`${label} 加载中`}>
-      <div className="workspace-clone__loading-panel">
-        <div className="workspace-clone__loading-kicker">{label}</div>
-        <div className="workspace-clone__loading-lines" aria-hidden="true">
-          <span className="workspace-clone__loading-line workspace-clone__loading-line--wide" />
-          <span className="workspace-clone__loading-line workspace-clone__loading-line--full" />
-          <span className="workspace-clone__loading-line workspace-clone__loading-line--full" />
-          <span className="workspace-clone__loading-line workspace-clone__loading-line--medium" />
-        </div>
-        <div className="workspace-clone__loading-footer" aria-hidden="true">
-          <span className="workspace-clone__loading-divider" />
-          <span className="workspace-clone__loading-chevron" />
-        </div>
-      </div>
-    </section>
-  );
-}
-
-*/
 
 function WorkspaceCloneSectionFallback({ label }: { label: string }) {
   return (
@@ -364,7 +303,6 @@ export function WorkspaceClonePage({
   const [scenePresetOpenStateByKey, setScenePresetOpenStateByKey] = useState<Record<string, boolean>>(
     () => loadWorkspaceScenePresetOpenState(),
   );
-  const { pushFeedback } = useFeedback();
   const homepageChat = useWorkspaceGatewayChat({ running, servicePort, gatewayToken });
   const savedProvidersLoadSeqRef = useRef(0);
   const modelConfigOpenRef = useRef(false);
@@ -959,7 +897,8 @@ export function WorkspaceClonePage({
   }, [cronTasks]);
 
   const handleDeleteTask = useCallback((task: WorkspaceCronJob) => {
-    const confirmed = window.confirm(`确认删除任务“${task.name}”吗？这会直接删除 OpenClaw 中的真实任务配置。`);
+    const taskDisplayTitle = resolveWorkspaceTaskDisplayTitle(task);
+    const confirmed = window.confirm(`确认删除任务“${taskDisplayTitle}”吗？这会直接删除 OpenClaw 中的真实任务配置。`);
     if (!confirmed) {
       return;
     }
@@ -968,11 +907,7 @@ export function WorkspaceClonePage({
   }, [cronTasks]);
 
   const handleRunTask = useCallback(async (task: WorkspaceCronJob) => {
-    const outcome = await cronTasks.runTaskNow(task.id);
-    if (!outcome || outcome.status === "skipped") {
-      return;
-    }
-
+    const taskDisplayTitle = resolveWorkspaceTaskDisplayTitle(task);
     const taskAgentId =
       task.agentId?.trim()
       || currentMemoryAgentId
@@ -980,40 +915,64 @@ export function WorkspaceClonePage({
       || selectedEntity?.runtimeAgentId
       || selectedEntity?.id
       || "main";
-    const targetSessionKey = resolveTaskRunSessionKey(outcome, homepageChat.sessionsResult)
-      || resolveTaskRunFallbackSessionKey(task, homepageChat.currentSessionKey, taskAgentId);
-
-    if (!targetSessionKey) {
-      return;
-    }
+    const taskRunSessionKey = homepageChat.createTaskRunConversation({
+      agentId: taskAgentId,
+      taskId: task.id,
+      taskName: task.name,
+      taskDisplayTitle,
+      initialMessage: `任务「${taskDisplayTitle}」正在执行中…`,
+    });
 
     setUtilityPanel(null);
 
-    if (targetSessionKey === homepageChat.currentSessionKey) {
-      await homepageChat.refreshSessionHistory(targetSessionKey, taskAgentId).catch(() => false);
-      pushFeedback({
-        tone: "info",
-        title: "任务",
-        message: "任务结果会显示在当前会话中",
-        dedupeKey: "workspace-task-run-open-session",
-        persistent: false,
-      });
-      return;
-    }
-
-    homepageChat.selectSession(targetSessionKey, taskAgentId);
-    pushFeedback({
-      tone: "info",
-      title: "任务",
-      message: "已切换到任务结果会话",
-      dedupeKey: "workspace-task-run-open-session",
-      persistent: false,
+    await cronTasks.runTaskNow(task.id, {
+      onAccepted: ({ runId }) => {
+        homepageChat.setTaskRunConversationStatus(
+          taskRunSessionKey,
+          "pending",
+          `任务「${taskDisplayTitle}」正在执行中…`,
+        );
+        if (runId) {
+          homepageChat.beginTaskRunConversationExecution(taskRunSessionKey, runId);
+        }
+      },
+      onSkipped: ({ reason }) => {
+        const reasonMessage =
+          reason === "already-running"
+            ? `任务「${taskDisplayTitle}」未执行：该任务已在运行中`
+            : reason === "invalid-spec"
+              ? `任务「${taskDisplayTitle}」未执行：任务配置当前不可执行，请检查任务规则`
+              : `任务「${taskDisplayTitle}」未执行：当前未到执行时机`;
+        homepageChat.setTaskRunConversationStatus(taskRunSessionKey, "skipped", reasonMessage);
+      },
+      onError: ({ message }) => {
+        homepageChat.setTaskRunConversationStatus(
+          taskRunSessionKey,
+          "error",
+          `任务「${taskDisplayTitle}」执行失败：${message}`,
+        );
+      },
+      onTerminalRunResolved: ({ status, summary, error }) => {
+        const resolvedMessage =
+          status === "ok"
+            ? `任务「${taskDisplayTitle}」执行完成${summary?.trim() ? `：${summary.trim()}` : ""}`
+            : status === "skipped"
+              ? `任务「${taskDisplayTitle}」未执行：${error?.trim() || "该任务已跳过"}`
+              : `任务「${taskDisplayTitle}」执行失败：${error?.trim() || "未返回更多错误信息"}`;
+        homepageChat.setTaskRunConversationStatus(
+          taskRunSessionKey,
+          status === "ok" ? "resolved" : status === "skipped" ? "skipped" : "error",
+          resolvedMessage,
+        );
+      },
+      onSessionResolved: ({ sessionKey, sessionId }) => {
+        void homepageChat.bindTaskRunConversationToResult(taskRunSessionKey, { sessionKey, sessionId });
+      },
     });
   }, [
     cronTasks,
     currentMemoryAgentId,
     homepageChat,
-    pushFeedback,
     selectedEntity?.id,
     selectedEntity?.runtimeAgentId,
   ]);
@@ -1238,6 +1197,7 @@ export function WorkspaceClonePage({
                 taskRunsLoading={cronTasks.taskRunsLoading}
                 taskRunsLoadingId={cronTasks.taskRunsLoadingId}
                 taskActionJobId={cronTasks.taskActionJobId}
+                optimisticRunningTaskIds={cronTasks.optimisticRunningTaskIds}
                 gatewayConnected={homepageChat.connected}
                 workbenchItems={WORKSPACE_WORKBENCH}
                 memoryItems={memoryResourceItems}
@@ -1394,6 +1354,7 @@ export function WorkspaceClonePage({
               tasks={cronTasks.tasks}
               selectedTaskId={cronTasks.selectedTaskId}
               selectedTaskRuns={cronTasks.selectedTaskRuns}
+              optimisticRunningTaskIds={cronTasks.optimisticRunningTaskIds}
               taskLoading={cronTasks.taskLoading}
               taskError={cronTasks.taskError}
               taskRunsError={cronTasks.taskRunsError}

@@ -84,6 +84,7 @@ interface WorkspaceCloneChatViewProps {
   taskRunsLoading: boolean;
   taskRunsLoadingId: string | null;
   taskActionJobId: string | null;
+  optimisticRunningTaskIds: string[];
   gatewayConnected: boolean;
   workbenchItems: WorkspaceWorkbenchItem[];
   memoryItems: WorkspaceResourceItem[];
@@ -139,6 +140,7 @@ export function WorkspaceCloneChatView({
   taskRunsLoading,
   taskRunsLoadingId,
   taskActionJobId,
+  optimisticRunningTaskIds,
   gatewayConnected,
   workbenchItems,
   memoryItems,
@@ -435,6 +437,7 @@ export function WorkspaceCloneChatView({
             taskRunsLoading={taskRunsLoading}
             taskRunsLoadingId={taskRunsLoadingId}
             taskActionJobId={taskActionJobId}
+            optimisticRunningTaskIds={optimisticRunningTaskIds}
             gatewayConnected={gatewayConnected}
             workbenchItems={workbenchItems}
             memoryItems={memoryItems}

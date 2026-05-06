@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 
 import {
-  formatWorkspaceCronPayloadPreview,
   formatWorkspaceCronTimestamp,
   getWorkspaceCronDisplayStatus,
   getWorkspaceCronEditDisabledReason,
@@ -10,6 +9,7 @@ import {
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
 import { formatWorkspaceTaskScheduleLine } from "./workspaceCloneTaskScheduleDisplay";
 import { resolveWorkspaceTaskScheduleView } from "./workspaceCloneTaskSchedule";
+import { resolveWorkspaceTaskDisplayTitle } from "./workspaceCloneTaskTitle";
 import type {
   WorkspaceCronJob,
   WorkspaceCronRunRecord,
@@ -37,6 +37,7 @@ interface WorkspaceCloneUtilityDrawerProps {
   taskRunsLoading: boolean;
   taskRunsLoadingId: string | null;
   taskActionJobId: string | null;
+  optimisticRunningTaskIds: string[];
   gatewayConnected: boolean;
   workbenchItems: WorkspaceWorkbenchItem[];
   memoryItems: WorkspaceResourceItem[];
@@ -92,30 +93,6 @@ const TASK_FILTERS = [
 
 type TaskFilterKey = typeof TASK_FILTERS[number]["key"];
 
-function looksLikeWorkspaceTaskSlug(value: string) {
-  return /^[a-z0-9]+(?:[-_][a-z0-9]+)+$/i.test(value.trim());
-}
-
-function getWorkspaceTaskCardTitle(task: WorkspaceCronJob) {
-  const description = task.description?.trim() ?? "";
-  if (description && !looksLikeWorkspaceTaskSlug(description)) {
-    return description;
-  }
-
-  const normalizedName = task.name.trim();
-  if (normalizedName && !looksLikeWorkspaceTaskSlug(normalizedName)) {
-    return normalizedName;
-  }
-
-  const payloadPreview = formatWorkspaceCronPayloadPreview(task).trim();
-  const payloadTitle = payloadPreview
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find(Boolean);
-
-  return payloadTitle || normalizedName || task.id;
-}
-
 function buildCalendarKey(date: Date) {
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 }
@@ -130,6 +107,7 @@ export function WorkspaceCloneUtilityDrawer({
   selectedTaskId,
   taskLoading,
   taskActionJobId,
+  optimisticRunningTaskIds,
   gatewayConnected,
   workbenchItems,
   memoryItems,
@@ -398,7 +376,8 @@ export function WorkspaceCloneUtilityDrawer({
             ) : (
               <div className="workspace-clone__task-list">
                 {visibleTasks.map((task) => {
-                  const displayStatus = getWorkspaceCronDisplayStatus(task);
+                  const optimisticRunning = optimisticRunningTaskIds.includes(task.id);
+                  const displayStatus = getWorkspaceCronDisplayStatus(task, { optimisticRunning });
                   const statusTone = getWorkspaceCronStatusTone(displayStatus);
                   const scheduleView = resolveWorkspaceTaskScheduleView(task.schedule);
                   const editDisabledReason = getWorkspaceCronEditDisabledReason(task)
@@ -406,6 +385,7 @@ export function WorkspaceCloneUtilityDrawer({
                   const selected = selectedTaskId === task.id;
                   const busy = taskActionJobId === task.id;
                   const menuOpen = openTaskMenuId === task.id;
+                  const showRunningIndicator = displayStatus === "running";
 
                   return (
                     <section
@@ -427,7 +407,7 @@ export function WorkspaceCloneUtilityDrawer({
 
                           <div className="workspace-clone__task-card-copy">
                             <div className="workspace-clone__task-card-head">
-                              <strong>{getWorkspaceTaskCardTitle(task)}</strong>
+                              <strong className="workspace-clone__task-card-title">{resolveWorkspaceTaskDisplayTitle(task)}</strong>
                             </div>
 
                             <div className="workspace-clone__task-card-meta">
@@ -444,6 +424,12 @@ export function WorkspaceCloneUtilityDrawer({
                         </button>
 
                         <div className="workspace-clone__task-card-actions">
+                          {showRunningIndicator ? (
+                            <span className="workspace-clone__task-running-indicator" aria-label="正在运行" title="正在运行">
+                              <span className="workspace-clone__task-running-dot" aria-hidden="true" />
+                              <span>运行中</span>
+                            </span>
+                          ) : null}
                           <button
                             type="button"
                             className="workspace-clone__task-action workspace-clone__task-action--run"
@@ -452,7 +438,7 @@ export function WorkspaceCloneUtilityDrawer({
                               onRunTask(task);
                             }}
                             disabled={busy}
-                            aria-label={`立即执行 ${task.name}`}
+                            aria-label={`立即执行 ${resolveWorkspaceTaskDisplayTitle(task)}`}
                           >
                             <WorkspaceCloneIcon name="play" size={14} strokeWidth={2} />
                           </button>
@@ -461,7 +447,7 @@ export function WorkspaceCloneUtilityDrawer({
                             <button
                               type="button"
                               className={`workspace-clone__task-more-button ${menuOpen ? "is-active" : ""}`}
-                              aria-label={`打开 ${task.name} 更多操作`}
+                              aria-label={`打开 ${resolveWorkspaceTaskDisplayTitle(task)} 更多操作`}
                               aria-haspopup="menu"
                               aria-expanded={menuOpen}
                               onClick={() => setOpenTaskMenuId((current) => (current === task.id ? null : task.id))}

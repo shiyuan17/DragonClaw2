@@ -17,16 +17,17 @@ import {
   buildRunRecordTimestamp,
   getRunSkipNotice,
   getRunSkipTone,
+  pollResolvedRunSession,
   resolveNewRunRecord,
-  RUN_RESULT_SESSION_POLL_ATTEMPTS,
-  RUN_RESULT_SESSION_POLL_DELAY_MS,
   TASK_FEEDBACK_TITLE,
   TASK_GATEWAY_OFFLINE_ERROR,
   UNBOUND_AGENT_TASK_ERROR,
-  waitForDelay,
+  type WorkspaceCronRunFollowUpOptions,
+  type WorkspaceCronRunLifecycleCallbacks,
   type WorkspaceCronRunOutcome,
   type WorkspaceCronTaskFeedbackEvent,
 } from "./workspaceCronTaskRunHelpers";
+import { useWorkspaceCronOptimisticRuns } from "./useWorkspaceCronOptimisticRuns";
 
 type WorkspaceCronTaskAction = "refresh" | "toggle" | "save" | "run" | "delete" | "runs";
 
@@ -63,22 +64,19 @@ export function useWorkspaceCronTasks({
   const followUpRefreshTimerRef = useRef<number | null>(null);
   const loadSeqRef = useRef(0);
   const taskFeedbackSeqRef = useRef(0);
+  const {
+    optimisticRunningTaskIds,
+    clearOptimisticRunState,
+    clearAllOptimisticRunStates,
+    markOptimisticRunState,
+    reconcileOptimisticRunStateWithEntries,
+    reconcileOptimisticRunStateWithTasks,
+  } = useWorkspaceCronOptimisticRuns(normalizedAgentId);
 
-  useEffect(() => {
-    currentAgentIdRef.current = normalizedAgentId;
-  }, [normalizedAgentId]);
-
-  useEffect(() => {
-    selectedTaskIdRef.current = selectedTaskId;
-  }, [selectedTaskId]);
-
-  useEffect(() => {
-    taskRunsByIdRef.current = taskRunsById;
-  }, [taskRunsById]);
-
-  useEffect(() => {
-    gatewayConnectedRef.current = gatewayConnected;
-  }, [gatewayConnected]);
+  useEffect(() => { currentAgentIdRef.current = normalizedAgentId; }, [normalizedAgentId]);
+  useEffect(() => { selectedTaskIdRef.current = selectedTaskId; }, [selectedTaskId]);
+  useEffect(() => { taskRunsByIdRef.current = taskRunsById; }, [taskRunsById]);
+  useEffect(() => { gatewayConnectedRef.current = gatewayConnected; }, [gatewayConnected]);
 
   const emitTaskFeedback = useCallback((payload: Omit<WorkspaceCronTaskFeedbackEvent, "id">) => {
     taskFeedbackSeqRef.current += 1;
@@ -100,12 +98,9 @@ export function useWorkspaceCronTasks({
     setTaskRunsError("");
   }, []);
 
-  const fetchTaskRuns = useCallback(async (jobId: string) => {
-    const result = normalizeWorkspaceCronRunPageResult(
-      await request("cron.runs", { jobId, limit: 6, sortDir: "desc" }),
-    );
-    return result.entries;
-  }, [request]);
+  const fetchTaskRuns = useCallback(async (jobId: string) => normalizeWorkspaceCronRunPageResult(
+    await request("cron.runs", { jobId, limit: 6, sortDir: "desc" }),
+  ).entries, [request]);
 
   const loadTaskRuns = useCallback(async (jobId: string, options?: { force?: boolean }) => {
     if (!enabled || !gatewayConnected || !normalizedAgentId || !jobId) {
@@ -124,6 +119,7 @@ export function useWorkspaceCronTasks({
 
     try {
       const entries = await fetchTaskRuns(jobId);
+      reconcileOptimisticRunStateWithEntries(jobId, entries);
       setTaskRunsById((current) => ({ ...current, [jobId]: entries }));
       return entries;
     } catch (error) {
@@ -141,15 +137,17 @@ export function useWorkspaceCronTasks({
     } finally {
       setTaskRunsLoadingId((current) => (current === jobId ? null : current));
     }
-  }, [emitTaskFeedback, enabled, fetchTaskRuns, gatewayConnected, normalizedAgentId]);
+  }, [emitTaskFeedback, enabled, fetchTaskRuns, gatewayConnected, normalizedAgentId, reconcileOptimisticRunStateWithEntries]);
 
   const refreshTasks = useCallback(async (options?: { showLoading?: boolean; keepNotice?: boolean }) => {
     if (!enabled) {
+      clearAllOptimisticRunStates();
       return [];
     }
 
     if (!normalizedAgentId || !gatewayConnected) {
       clearScheduledRefresh();
+      clearAllOptimisticRunStates();
       setTasks([]);
       setSelectedTaskId(null);
       setTaskRunsById({});
@@ -191,6 +189,7 @@ export function useWorkspaceCronTasks({
 
       const listResult = normalizeWorkspaceCronListResult(listPayload);
       const nextTasks = listResult.jobs.filter((job) => resolveWorkspaceCronAgentId(job) === normalizedAgentId);
+      reconcileOptimisticRunStateWithTasks(nextTasks);
       const validTaskIds = new Set(nextTasks.map((job) => job.id));
       const nextSelectedTaskId = validTaskIds.has(selectedTaskIdRef.current || "")
         ? selectedTaskIdRef.current
@@ -199,9 +198,7 @@ export function useWorkspaceCronTasks({
       setTasks(nextTasks);
       setCronStatus(normalizeWorkspaceCronStatusSummary(statusPayload));
       setSelectedTaskId(nextSelectedTaskId);
-      setTaskRunsById((current) => Object.fromEntries(
-        Object.entries(current).filter(([jobId]) => validTaskIds.has(jobId)),
-      ));
+      setTaskRunsById((current) => Object.fromEntries(Object.entries(current).filter(([jobId]) => validTaskIds.has(jobId))));
       setTaskRunsError("");
       setTaskError("");
 
@@ -225,17 +222,29 @@ export function useWorkspaceCronTasks({
         setTaskLoading(false);
       }
     }
-  }, [clearScheduledRefresh, enabled, gatewayConnected, loadTaskRuns, normalizedAgentId, request]);
+  }, [clearAllOptimisticRunStates, clearScheduledRefresh, enabled, gatewayConnected, loadTaskRuns, normalizedAgentId, reconcileOptimisticRunStateWithTasks, request]);
 
-  const scheduleFollowUpRefresh = useCallback((jobId: string) => {
+  const scheduleFollowUpRefresh = useCallback((jobId: string, options?: WorkspaceCronRunFollowUpOptions) => {
     clearScheduledRefresh();
     followUpRefreshTimerRef.current = window.setTimeout(() => {
       if (!gatewayConnectedRef.current || currentAgentIdRef.current !== normalizedAgentId) {
         return;
       }
 
-      void refreshTasks({ keepNotice: true });
-      void loadTaskRuns(jobId, { force: true });
+      void (async () => {
+        await refreshTasks({ keepNotice: true });
+        const entries = await loadTaskRuns(jobId, { force: true });
+        const latestRun = options ? resolveNewRunRecord(entries, options.previousTopSignature, options.previousLatestTimestamp) : null;
+
+        if (latestRun?.sessionKey || latestRun?.sessionId) {
+          options?.callbacks?.onSessionResolved?.({ sessionKey: latestRun.sessionKey ?? null, sessionId: latestRun.sessionId ?? null });
+          return;
+        }
+
+        if (latestRun) {
+          options?.callbacks?.onTerminalRunResolved?.({ status: latestRun.status, summary: latestRun.summary ?? null, error: latestRun.error ?? null });
+        }
+      })();
     }, 1500);
   }, [clearScheduledRefresh, loadTaskRuns, normalizedAgentId, refreshTasks]);
 
@@ -246,6 +255,7 @@ export function useWorkspaceCronTasks({
 
     if (!normalizedAgentId || !gatewayConnected) {
       clearScheduledRefresh();
+      clearAllOptimisticRunStates();
       setTasks([]);
       setSelectedTaskId(null);
       setTaskRunsById({});
@@ -260,7 +270,7 @@ export function useWorkspaceCronTasks({
 
     clearTaskStatus();
     void refreshTasks({ showLoading: true });
-  }, [clearScheduledRefresh, clearTaskStatus, enabled, gatewayConnected, normalizedAgentId, refreshTasks]);
+  }, [clearAllOptimisticRunStates, clearScheduledRefresh, clearTaskStatus, enabled, gatewayConnected, normalizedAgentId, refreshTasks]);
 
   const runTaskAction = useCallback(async <T,>(
     jobId: string,
@@ -276,33 +286,6 @@ export function useWorkspaceCronTasks({
       setTaskActionType((current) => (current === action ? null : current));
     }
   }, []);
-
-  const resolveRunSession = useCallback(async (
-    jobId: string,
-    previousTopSignature: string,
-    previousLatestTimestamp: number,
-  ) => {
-    let entries = await loadTaskRuns(jobId, { force: true });
-    let latestRun = resolveNewRunRecord(entries, previousTopSignature, previousLatestTimestamp);
-    if (latestRun?.sessionKey || latestRun?.sessionId) {
-      return { sessionKey: latestRun.sessionKey ?? null, sessionId: latestRun.sessionId ?? null };
-    }
-
-    for (let attempt = 1; attempt < RUN_RESULT_SESSION_POLL_ATTEMPTS; attempt += 1) {
-      if (!gatewayConnectedRef.current || currentAgentIdRef.current !== normalizedAgentId) {
-        break;
-      }
-
-      await waitForDelay(RUN_RESULT_SESSION_POLL_DELAY_MS);
-      entries = await loadTaskRuns(jobId, { force: true });
-      latestRun = resolveNewRunRecord(entries, previousTopSignature, previousLatestTimestamp);
-      if (latestRun?.sessionKey || latestRun?.sessionId) {
-        return { sessionKey: latestRun.sessionKey ?? null, sessionId: latestRun.sessionId ?? null };
-      }
-    }
-
-    return null;
-  }, [loadTaskRuns, normalizedAgentId]);
 
   const finishTaskMutation = useCallback(async (
     jobId: string,
@@ -387,14 +370,11 @@ export function useWorkspaceCronTasks({
     );
   }, [finishTaskMutation, refreshTasks, request]);
 
-  const runTaskNow = useCallback(async (jobId: string) => {
+  const runTaskNow = useCallback(async (jobId: string, callbacks?: WorkspaceCronRunLifecycleCallbacks) => {
     const previousTopRun = taskRunsByIdRef.current[jobId]?.[0] ?? null;
     const previousTask = tasks.find((task) => task.id === jobId) ?? null;
     const previousTopSignature = buildRunRecordSignature(previousTopRun);
-    const previousLatestTimestamp = Math.max(
-      buildRunRecordTimestamp(previousTopRun),
-      previousTask?.state.lastRunAtMs ?? 0,
-    );
+    const previousLatestTimestamp = Math.max(buildRunRecordTimestamp(previousTopRun), previousTask?.state.lastRunAtMs ?? 0);
 
     return runTaskAction(jobId, "run", async (): Promise<WorkspaceCronRunOutcome | null> => {
       clearTaskStatus();
@@ -407,7 +387,9 @@ export function useWorkspaceCronTasks({
       }
 
       if ("reason" in result) {
+        clearOptimisticRunState(jobId);
         const message = getRunSkipNotice(result.reason);
+        callbacks?.onSkipped?.({ reason: result.reason, message });
         setTaskNotice(message);
         emitTaskFeedback({
           tone: getRunSkipTone(result.reason),
@@ -425,6 +407,12 @@ export function useWorkspaceCronTasks({
       const message = "enqueued" in result && result.enqueued
         ? "任务已进入执行队列，正在定位结果会话"
         : "任务已立即触发，正在定位结果会话";
+      callbacks?.onAccepted?.({
+        message,
+        enqueued: "enqueued" in result && result.enqueued,
+        runId: "runId" in result ? result.runId : null,
+      });
+      markOptimisticRunState(jobId, { previousTopSignature, previousLatestTimestamp });
       setTaskNotice(message);
       emitTaskFeedback({
         tone: "enqueued" in result && result.enqueued ? "info" : "success",
@@ -435,14 +423,25 @@ export function useWorkspaceCronTasks({
       });
 
       await refreshTasks({ keepNotice: true });
-      const resolvedSession = await resolveRunSession(jobId, previousTopSignature, previousLatestTimestamp);
-      scheduleFollowUpRefresh(jobId);
+      const resolvedSession = await pollResolvedRunSession({
+        jobId,
+        previousTopSignature,
+        previousLatestTimestamp,
+        loadTaskRuns,
+        isStillActive: () => gatewayConnectedRef.current && currentAgentIdRef.current === normalizedAgentId,
+      });
+      if (resolvedSession?.sessionKey || resolvedSession?.sessionId) {
+        callbacks?.onSessionResolved?.({ sessionKey: resolvedSession.sessionKey ?? null, sessionId: resolvedSession.sessionId ?? null });
+      } else if (resolvedSession?.latestRun) {
+        callbacks?.onTerminalRunResolved?.({ status: resolvedSession.latestRun.status, summary: resolvedSession.latestRun.summary ?? null, error: resolvedSession.latestRun.error ?? null });
+      }
+      scheduleFollowUpRefresh(jobId, { previousTopSignature, previousLatestTimestamp, callbacks });
 
-      return resolvedSession?.sessionKey || resolvedSession?.sessionId
-        ? { status: "session-resolved", sessionKey: resolvedSession.sessionKey, sessionId: resolvedSession.sessionId }
-        : { status: "accepted" };
+      return resolvedSession?.sessionKey || resolvedSession?.sessionId ? { status: "session-resolved", sessionKey: resolvedSession.sessionKey, sessionId: resolvedSession.sessionId } : { status: "accepted" };
     }).catch((error) => {
+      clearOptimisticRunState(jobId);
       const message = error instanceof Error ? error.message : "触发任务失败";
+      callbacks?.onError?.({ message });
       setTaskError(message);
       emitTaskFeedback({
         tone: "error",
@@ -454,12 +453,9 @@ export function useWorkspaceCronTasks({
       });
       return null;
     });
-  }, [clearTaskStatus, emitTaskFeedback, loadTaskRuns, refreshTasks, request, resolveRunSession, runTaskAction, scheduleFollowUpRefresh, tasks]);
+  }, [clearOptimisticRunState, clearTaskStatus, emitTaskFeedback, loadTaskRuns, markOptimisticRunState, normalizedAgentId, refreshTasks, request, runTaskAction, scheduleFollowUpRefresh, tasks]);
 
-  const selectedTask = useMemo(
-    () => tasks.find((task) => task.id === selectedTaskId) ?? tasks[0] ?? null,
-    [selectedTaskId, tasks],
-  );
+  const selectedTask = useMemo(() => tasks.find((task) => task.id === selectedTaskId) ?? tasks[0] ?? null, [selectedTaskId, tasks]);
 
   return {
     tasks,
@@ -473,6 +469,7 @@ export function useWorkspaceCronTasks({
     taskNotice,
     taskError,
     taskRunsError,
+    optimisticRunningTaskIds,
     taskRunsLoading: Boolean(taskRunsLoadingId),
     taskRunsLoadingId,
     taskActionJobId,

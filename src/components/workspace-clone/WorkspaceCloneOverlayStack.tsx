@@ -15,6 +15,7 @@ import { WorkspaceCloneCommandsModal } from "./WorkspaceCloneCommandsModal";
 import { WorkspaceCloneMemoryModal } from "./WorkspaceCloneMemoryModal";
 import { WorkspaceCloneSkillsModal } from "./WorkspaceCloneSkillsModal";
 import { WorkspaceCloneToolPermissionsModal } from "./WorkspaceCloneToolPermissionsModal";
+import { resolveWorkspaceTaskDisplayTitle } from "./workspaceCloneTaskTitle";
 import type {
   WorkspaceCloneAvatarCategoryId,
   WorkspaceCloneAvatarOption,
@@ -86,6 +87,7 @@ interface WorkspaceCloneOverlayStackProps {
   tasks: WorkspaceCronJob[];
   selectedTaskId: string | null;
   selectedTaskRuns: WorkspaceCronRunRecord[];
+  optimisticRunningTaskIds: string[];
   taskLoading: boolean;
   taskError: string;
   taskRunsError: string;
@@ -205,6 +207,7 @@ export function WorkspaceCloneOverlayStack({
   tasks,
   selectedTaskId,
   selectedTaskRuns,
+  optimisticRunningTaskIds,
   taskLoading,
   taskError,
   taskRunsError,
@@ -250,7 +253,9 @@ export function WorkspaceCloneOverlayStack({
   onCloseRelatedResource,
 }: WorkspaceCloneOverlayStackProps) {
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? tasks[0] ?? null;
-  const selectedTaskStatus = selectedTask ? getWorkspaceCronDisplayStatus(selectedTask) : "disabled";
+  const selectedTaskStatus = selectedTask
+    ? getWorkspaceCronDisplayStatus(selectedTask, { optimisticRunning: optimisticRunningTaskIds.includes(selectedTask.id) })
+    : "disabled";
 
   return (
     <>
@@ -448,7 +453,7 @@ export function WorkspaceCloneOverlayStack({
                   <div className="workspace-clone__task-detail-card">
                     <div className="workspace-clone__task-detail-head">
                       <div>
-                        <strong>{selectedTask.name}</strong>
+                        <strong>{resolveWorkspaceTaskDisplayTitle(selectedTask)}</strong>
                         <small>{selectedTask.description?.trim() || formatWorkspaceCronPayloadPreview(selectedTask)}</small>
                       </div>
                       <span className={`workspace-clone__status-inline is-${getWorkspaceCronStatusTone(selectedTaskStatus)}`}>

@@ -1,10 +1,9 @@
-import { invoke } from "@tauri-apps/api/core";
+﻿import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { WorkspaceGatewayClient, buildGatewayUrl, createAgentSessionKey, filterAgentSessions, findMainAgentSession, formatAgentAvatar, isAgentsListResult, isChatEventPayload, isSessionsListResult } from "./workspace-gateway/client";
 import type {
   WorkspaceAgentCacheRow,
   WorkspaceChatSessionCacheRow,
-  WorkspaceChatSessionCacheSummary,
   WorkspaceGatewayAgentsListResult,
   WorkspaceGatewaySessionsListResult,
   WorkspaceGatewayStatus,
@@ -18,6 +17,11 @@ import { isWorkspaceRawProcessEcho } from "../components/workspace-clone/workspa
 import type { CurrentConfig } from "../types";
 import { buildCachedAgentsResult, parseCachedMessagesJson, sanitizeAgentsResult, serializeCachedMessages, sortSessionsByUpdatedAt, toAgentCachePayload } from "./workspace-gateway/session-cache";
 import { buildSessionHistoryItem, extractAgentIdFromSessionKey, extractFirstMeaningfulSessionTitle, extractGatewayMessageText, extractLastMeaningfulMessageSummary, normalizeGatewayMessage, resolveAgentSessionKey } from "./workspace-gateway/message-normalizers";
+import { loadWorkspaceHistoryTitles } from "./workspace-gateway/history-titles";
+import { buildTaskRunHistoryItem } from "./workspace-gateway/task-run-sessions";
+import { clearWorkspaceActiveRunRefs, initializeWorkspaceActiveRun, resolveTaskRunBoundSessionKey } from "./workspace-gateway/task-run-bridge";
+import { useWorkspaceCachedAgentLastMessages } from "./workspace-gateway/useWorkspaceCachedAgentLastMessages";
+import { useWorkspaceTaskRunSessions } from "./workspace-gateway/useWorkspaceTaskRunSessions";
 import { shouldSkipMirroredWorkspaceLiveStep } from "./workspace-gateway/live-step-dedupe";
 import { buildLiveStepFromAgentEvent, buildPostToolThinkingStep, getPostToolThinkingStepId, isRecord, isTerminalLiveStepStatus, toFiniteTimestamp, toStringValue, type WorkspaceGatewayAgentEventPayload, type WorkspaceLiveStepDedupeEntry, type WorkspaceLiveStepEventSource, updateLiveStepList } from "./workspace-gateway/live-steps";
 import { formatClockTime } from "./workspace-gateway/time-formatters";
@@ -27,11 +31,9 @@ interface UseWorkspaceGatewayChatOptions {
   servicePort: number;
   gatewayToken?: string | null;
 }
-
 interface ChatHistoryPayload {
   messages?: unknown[];
 }
-
 const INITIAL_HISTORY_LIMIT = 50;
 const SESSION_CACHE_KEEP_LIMIT = 20;
 const MISSING_GATEWAY_TOKEN_ERROR = "本地网关 token 缺失或未同步，请检查 ~/.openclaw/openclaw.json，或重新保存 Provider 配置后再试。";
@@ -67,7 +69,6 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
   const [pendingUserMessage, setPendingUserMessage] = useState<WorkspaceMessage | null>(null);
   const [streamText, setStreamText] = useState<string | null>(null);
   const [liveSteps, setLiveSteps] = useState<WorkspaceLiveStep[]>([]);
-  const [cachedAgentLastMessageById, setCachedAgentLastMessageById] = useState<Record<string, string>>({});
   const [fallbackGatewayToken, setFallbackGatewayToken] = useState("");
   const [gatewayTokenRefreshState, setGatewayTokenRefreshState] = useState<"idle" | "loading" | "done">("idle");
   const connected = status === "connected";
@@ -76,6 +77,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
   const agents = effectiveAgentsResult?.agents ?? [];
   const selectedAgent = useMemo(() => agents.find((agent) => agent.id === selectedAgentId) ?? null, [agents, selectedAgentId]);
   const currentSessionKey = selectedSessionKey || (selectedAgentId ? createAgentSessionKey(selectedAgentId) : "");
+  const { taskRunSessions, currentTaskRunSession, currentGatewaySessionKey, currentGatewaySessionKeyRef, resolveTaskRunSession, patchTaskRunSession, createTaskRunConversation: createTaskRunConversationState, setTaskRunConversationStatus, resolveSessionContext } = useWorkspaceTaskRunSessions(currentSessionKey);
   const configuredGatewayToken = gatewayToken?.trim() || "";
   const normalizedGatewayToken = configuredGatewayToken || fallbackGatewayToken.trim();
   const sessionHistoryCacheRef = useRef<Record<string, unknown[]>>({});
@@ -252,13 +254,41 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     };
   }, []);
 
-  const clearActiveRunRefs = useCallback(() => {
-    currentRunIdRef.current = null;
-    activeRunAliasesRef.current.clear();
-    liveStepDedupeRef.current.clear();
-    hasObservedNonThinkingStepRef.current = false;
-    hasAssistantTextDeltaRef.current = false;
-  }, []);
+  const clearActiveRunRefs = useCallback(() => clearWorkspaceActiveRunRefs({
+    currentRunIdRef,
+    activeRunAliasesRef,
+    liveStepDedupeRef,
+    hasObservedNonThinkingStepRef,
+    hasAssistantTextDeltaRef,
+  }), []);
+
+  const createTaskRunConversation = useCallback((params: {
+    agentId: string;
+    taskId: string;
+    taskName: string;
+    taskDisplayTitle: string;
+    initialMessage: string;
+  }) => createTaskRunConversationState({ ...params, onSelect: (agentId, sessionKey) => {
+    setSelectedAgentId(agentId);
+    setSelectedSessionKey(sessionKey);
+  } }), [createTaskRunConversationState]);
+
+  const initializeActiveRun = useCallback((params: {
+    runId: string;
+    sessionKey?: string;
+    pendingUserMessage?: WorkspaceMessage | null;
+  }) => initializeWorkspaceActiveRun({
+    ...params,
+    refs: { currentRunIdRef, activeRunAliasesRef, liveStepDedupeRef, hasObservedNonThinkingStepRef, hasAssistantTextDeltaRef },
+    setters: { setSelectedSessionKey, setPendingUserMessage, setStreamText, setActiveRunId, setLiveSteps, setError },
+  }), []);
+
+  const beginTaskRunConversationExecution = useCallback((sessionKey: string, runId?: string | null) => {
+    const normalizedRunId = runId?.trim();
+    if (!sessionKey || !normalizedRunId) return false;
+    initializeActiveRun({ runId: normalizedRunId, sessionKey, pendingUserMessage: null });
+    return true;
+  }, [initializeActiveRun]);
 
   const updateSessionHistoryCache = useCallback((sessionKey: string, messages: unknown[]) => {
     if (!sessionKey) {
@@ -301,78 +331,11 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     [],
   );
 
-  const loadPersistedSessionHistoryCache = useCallback(
-    async (sessionKey: string, agentId: string) => {
-      if (!sessionKey || !agentId) {
-        return null;
-      }
-
-      return invoke<WorkspaceChatSessionCacheRow | null>(
-        "load_workspace_chat_session_cache",
-        {
-          sessionKey,
-          agentId,
-        },
-      );
-    },
-    [],
-  );
-
-  useEffect(() => {
-    if (agents.length === 0) {
-      setCachedAgentLastMessageById({});
-      return;
-    }
-
-    let cancelled = false;
-
-    async function loadAgentLastMessages() {
-      const entries = await Promise.all(
-        agents.map(async (agent) => {
-          const rows = await invoke<WorkspaceChatSessionCacheSummary[]>("list_workspace_chat_session_cache", {
-            agentId: agent.id,
-          }).catch(() => []);
-
-          const sortedRows = [...rows].sort(
-            (left, right) => (right.updatedAt ?? right.cachedAt ?? 0) - (left.updatedAt ?? left.cachedAt ?? 0),
-          );
-
-          for (const row of sortedRows) {
-            const cachedRow = await loadPersistedSessionHistoryCache(row.sessionKey, agent.id).catch(() => null);
-            const summary = cachedRow ? extractLastMeaningfulMessageSummary(parseCachedMessagesJson(cachedRow.messagesJson)) : null;
-            if (summary) {
-              return [agent.id, summary] as const;
-            }
-          }
-
-          return [agent.id, ""] as const;
-        }),
-      );
-
-      if (cancelled) {
-        return;
-      }
-
-      setCachedAgentLastMessageById((current) => {
-        const next = { ...current };
-        for (const agent of agents) {
-          delete next[agent.id];
-        }
-        for (const [agentId, summary] of entries) {
-          if (summary) {
-            next[agentId] = summary;
-          }
-        }
-        return next;
-      });
-    }
-
-    void loadAgentLastMessages();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [agents, loadPersistedSessionHistoryCache]);
+  const loadPersistedSessionHistoryCache = useCallback(async (sessionKey: string, agentId: string) => {
+    if (!sessionKey || !agentId) return null;
+    return invoke<WorkspaceChatSessionCacheRow | null>("load_workspace_chat_session_cache", { sessionKey, agentId });
+  }, []);
+  const cachedAgentLastMessageById = useWorkspaceCachedAgentLastMessages(agents, loadPersistedSessionHistoryCache);
 
   const pruneSessionHistoryCache = useCallback(
     async (
@@ -435,7 +398,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     }
 
     setSessionsResult(payload);
-    void pruneSessionHistoryCache(payload, currentSessionKeyRef.current).catch(() => undefined);
+    void pruneSessionHistoryCache(payload, currentGatewaySessionKeyRef.current || currentSessionKeyRef.current).catch(() => undefined);
     return payload;
   }, [pruneSessionHistoryCache]);
 
@@ -464,13 +427,20 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
         connectionGeneration?: number;
       },
     ) => {
-      const agentId = options?.agentId || extractAgentIdFromSessionKey(sessionKey) || selectedAgentId;
+      const context = resolveSessionContext(sessionKey, options?.agentId || selectedAgentId);
+      const agentId = context.agentId;
+      const gatewaySessionKey = context.gatewaySessionKey;
       if (!sessionKey || !agentId) {
         return;
       }
 
+      if (context.taskRunSession && !gatewaySessionKey) {
+        setHistoryLoading(false);
+        return;
+      }
+
       const requestId = ++historyLoadSeqRef.current;
-      const memoryCachedMessages = sessionHistoryCacheRef.current[sessionKey];
+      const memoryCachedMessages = gatewaySessionKey ? sessionHistoryCacheRef.current[gatewaySessionKey] : undefined;
       let hasAnyCache = Array.isArray(memoryCachedMessages);
       let existingCachedTitle: string | null = null;
 
@@ -478,23 +448,25 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
 
       if (!hasAnyCache) {
         try {
-          const cachedRow = await loadPersistedSessionHistoryCache(sessionKey, agentId);
+          const cachedRow = gatewaySessionKey
+            ? await loadPersistedSessionHistoryCache(gatewaySessionKey, agentId)
+            : null;
           if (!isCurrentHistoryLoad(requestId, sessionKey, options?.connectionGeneration)) {
             return;
           }
 
           if (cachedRow) {
             const cachedMessages = parseCachedMessagesJson(cachedRow.messagesJson);
-            updateSessionHistoryCache(sessionKey, cachedMessages);
+            updateSessionHistoryCache(gatewaySessionKey, cachedMessages);
             hasAnyCache = true;
 
             const cachedTitle = cachedRow.title?.trim();
             existingCachedTitle = cachedTitle || null;
             if (cachedTitle) {
               setHistoryTitleCache((current) => (
-                current[sessionKey] === cachedTitle
+                current[gatewaySessionKey] === cachedTitle
                   ? current
-                  : { ...current, [sessionKey]: cachedTitle }
+                  : { ...current, [gatewaySessionKey]: cachedTitle }
               ));
             }
           }
@@ -517,26 +489,26 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       }
 
       try {
-        const messages = await loadSessionHistoryMessages(sessionKey, INITIAL_HISTORY_LIMIT);
+        const messages = await loadSessionHistoryMessages(gatewaySessionKey, INITIAL_HISTORY_LIMIT);
 
         if (!isCurrentHistoryLoad(requestId, sessionKey, options?.connectionGeneration)) {
           return;
         }
 
-        updateSessionHistoryCache(sessionKey, messages);
+        updateSessionHistoryCache(gatewaySessionKey, messages);
 
-        const sessionRow = sessionsResult?.sessions.find((session) => session.key === sessionKey) ?? null;
+        const sessionRow = sessionsResult?.sessions.find((session) => session.key === gatewaySessionKey) ?? null;
         const nextTitle = extractFirstMeaningfulSessionTitle(messages);
         if (nextTitle) {
           setHistoryTitleCache((current) => (
-            current[sessionKey] === nextTitle
+            current[gatewaySessionKey] === nextTitle
               ? current
-              : { ...current, [sessionKey]: nextTitle }
+              : { ...current, [gatewaySessionKey]: nextTitle }
           ));
         }
 
         await saveSessionHistoryCache(
-          sessionKey,
+          gatewaySessionKey,
           agentId,
           messages,
           sessionRow?.updatedAt ?? null,
@@ -559,6 +531,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       isStaleConnectionGeneration,
       loadPersistedSessionHistoryCache,
       loadSessionHistoryMessages,
+      resolveSessionContext,
       saveSessionHistoryCache,
       selectedAgentId,
       sessionsResult,
@@ -607,13 +580,16 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       }).catch(() => undefined);
 
       const currentSelectedAgentId = selectedAgentIdRef.current;
+      const currentTaskRunSession = resolveTaskRunSession(currentSessionKeyRef.current);
       const nextAgentId =
         nextAgentsPayload.agents.some((agent) => agent.id === currentSelectedAgentId)
           ? currentSelectedAgentId
           : nextAgentsPayload.defaultId || nextAgentsPayload.agents[0]?.id || "";
-      const nextSessionKey = nextAgentId
-        ? resolveAgentSessionKey(sessionsPayload, nextAgentId, currentSessionKeyRef.current)
-        : "";
+      const nextSessionKey = currentTaskRunSession && currentTaskRunSession.agentId === nextAgentId
+        ? currentTaskRunSession.key
+        : nextAgentId
+          ? resolveAgentSessionKey(sessionsPayload, nextAgentId, currentGatewaySessionKeyRef.current || currentSessionKeyRef.current)
+          : "";
 
       if (isStaleConnectionGeneration(expectedGeneration, client)) {
         return;
@@ -621,7 +597,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
 
       setSelectedAgentId(nextAgentId);
       setSelectedSessionKey(nextSessionKey);
-      void pruneSessionHistoryCache(sessionsPayload, nextSessionKey).catch(() => undefined);
+      void pruneSessionHistoryCache(sessionsPayload, currentGatewaySessionKeyRef.current || nextSessionKey).catch(() => undefined);
     } catch (bootstrapError) {
       if (isStaleConnectionGeneration(expectedGeneration, client)) {
         return;
@@ -631,7 +607,39 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       setStatus("error");
       setError(bootstrapError instanceof Error ? bootstrapError.message : String(bootstrapError));
     }
-  }, [clearPendingDisconnectError, isStaleConnectionGeneration, pruneSessionHistoryCache]);
+  }, [clearPendingDisconnectError, isStaleConnectionGeneration, pruneSessionHistoryCache, resolveTaskRunSession]);
+
+  const bindTaskRunConversationToResult = useCallback(async (
+    sessionKey: string,
+    result: { sessionKey?: string | null; sessionId?: string | null },
+  ) => {
+    const syntheticSession = resolveTaskRunSession(sessionKey);
+    if (!syntheticSession) {
+      return null;
+    }
+
+    const boundSessionKey = await resolveTaskRunBoundSessionKey({ result, sessionsResult, loadSessions });
+    if (!boundSessionKey) {
+      return null;
+    }
+
+    if (syntheticSession.boundSessionKey === boundSessionKey && syntheticSession.status === "resolved") {
+      return boundSessionKey;
+    }
+
+    patchTaskRunSession(sessionKey, (session) => ({
+      ...session,
+      status: "resolved",
+      boundSessionKey,
+      updatedAt: Date.now(),
+    }));
+    void loadSessions().catch(() => null);
+    await loadHistory(sessionKey, {
+      agentId: syntheticSession.agentId,
+      connectionGeneration: connectionGenerationRef.current,
+    });
+    return boundSessionKey;
+  }, [loadHistory, loadSessions, patchTaskRunSession, resolveTaskRunSession, sessionsResult]);
 
   const handleGatewayEvent = useCallback(
     (event: { event: string; payload?: unknown }) => {
@@ -642,16 +650,24 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
         const payloadRunId = toStringValue(payload.runId);
         const currentRunId = currentRunIdRef.current;
         const activeAliases = activeRunAliasesRef.current;
+        const currentDisplaySessionKey = currentSessionKeyRef.current;
+        const currentTaskRunSession = resolveTaskRunSession(currentDisplaySessionKey);
+        const isUnboundCurrentTaskRun = Boolean(currentTaskRunSession && !currentTaskRunSession.boundSessionKey);
+        const matchesCurrentRun = isKnownActiveRunId(payloadRunId);
 
         if (!currentRunId) {
           return;
         }
 
-        if (payloadSessionKey && payloadSessionKey !== currentSessionKeyRef.current) {
+        if (payloadRunId && !matchesCurrentRun) {
           return;
         }
 
-        if (!payloadSessionKey && payloadRunId && payloadRunId !== currentRunId && !activeAliases.has(payloadRunId)) {
+        if (
+          payloadSessionKey &&
+          payloadSessionKey !== currentGatewaySessionKeyRef.current &&
+          !(isUnboundCurrentTaskRun && matchesCurrentRun)
+        ) {
           return;
         }
 
@@ -659,10 +675,16 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
           activeAliases.add(payloadRunId);
         }
 
+        if (isUnboundCurrentTaskRun && payloadSessionKey && matchesCurrentRun) {
+          void bindTaskRunConversationToResult(currentDisplaySessionKey, {
+            sessionKey: payloadSessionKey,
+          });
+        }
+
         const step = buildLiveStepFromAgentEvent(payload, payloadRunId || currentRunId || "run");
         if (step) {
           const timestampMs = toFiniteTimestamp(payload.ts) ?? Date.now();
-          const dedupeRunId = currentRunId || payloadRunId || "run";
+          const dedupeRunId = payloadRunId || currentRunId || "run";
           if (
             shouldSkipMirroredLiveStep({
               step,
@@ -693,8 +715,20 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       }
 
       const payload = event.payload;
-      const isCurrentSession = payload.sessionKey === currentSessionKeyRef.current;
+      const currentDisplaySessionKey = currentSessionKeyRef.current;
+      const currentTaskRunSession = resolveTaskRunSession(currentDisplaySessionKey);
+      const isUnboundCurrentTaskRun = Boolean(currentTaskRunSession && !currentTaskRunSession.boundSessionKey);
       const isCurrentRun = isKnownActiveRunId(payload.runId);
+      let isCurrentSession = payload.sessionKey === currentGatewaySessionKeyRef.current;
+
+      if (!isCurrentSession && isUnboundCurrentTaskRun && isCurrentRun) {
+        isCurrentSession = true;
+        if (payload.sessionKey) {
+          void bindTaskRunConversationToResult(currentDisplaySessionKey, {
+            sessionKey: payload.sessionKey,
+          });
+        }
+      }
 
       if (!isCurrentSession) {
         if (payload.state === "final") {
@@ -748,7 +782,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
         });
       }
     },
-    [applyLiveStep, clearActiveRunRefs, finishLiveSteps, isKnownActiveRunId, loadHistory, loadSessions, removeTransientThinkingBridge, selectedAgentId, shouldSkipMirroredLiveStep],
+    [applyLiveStep, bindTaskRunConversationToResult, clearActiveRunRefs, finishLiveSteps, isKnownActiveRunId, loadHistory, loadSessions, removeTransientThinkingBridge, resolveTaskRunSession, selectedAgentId, shouldSkipMirroredLiveStep],
   );
 
   useEffect(() => {
@@ -795,7 +829,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
         setStatus("connecting");
         setError(null);
         return; /*
-          setError(message ?? "棣栭〉鑱婂ぉ杩炴帴宸叉柇寮€");
+          setError(message ?? "网关连接已断开");
       */ }
       resetGatewayState("error", MISSING_GATEWAY_TOKEN_ERROR);
       return;
@@ -839,7 +873,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
             return;
           }
 
-          setError(message ?? "棣栭〉鑱婂ぉ杩炴帴宸叉柇寮€");
+          setError(message ?? "网关连接已断开");
           setStatus("error");
         }, 1500); /*
         return;
@@ -895,11 +929,19 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       return;
     }
 
+    const syntheticSession = resolveTaskRunSession(selectedSessionKey);
+    if (syntheticSession) {
+      if (syntheticSession.agentId !== selectedAgentId) {
+        setSelectedSessionKey(resolveAgentSessionKey(sessionsResult, selectedAgentId));
+      }
+      return;
+    }
+
     const nextSessionKey = resolveAgentSessionKey(sessionsResult, selectedAgentId, selectedSessionKey);
     if (nextSessionKey && nextSessionKey !== selectedSessionKey) {
       setSelectedSessionKey(nextSessionKey);
     }
-  }, [selectedAgentId, selectedSessionKey, sessionsResult]);
+  }, [resolveTaskRunSession, selectedAgentId, selectedSessionKey, sessionsResult]);
 
   useEffect(() => {
     if (!sessionsResult) {
@@ -936,81 +978,17 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       return;
     }
 
-    void (async () => {
-      const cachedRows = await invoke<WorkspaceChatSessionCacheSummary[]>("list_workspace_chat_session_cache", {
-        agentId: selectedAgentId,
-      }).catch(() => []);
-      const cachedTitleKeys = new Set<string>();
-
-      setHistoryTitleCache((current) => {
-        let changed = false;
-        const next = { ...current };
-
-        cachedRows.forEach((row) => {
-          const cachedTitle = row.title?.trim();
-          if (!cachedTitle) {
-            return;
-          }
-
-          cachedTitleKeys.add(row.sessionKey);
-          if (next[row.sessionKey] === cachedTitle) {
-            return;
-          }
-
-          next[row.sessionKey] = cachedTitle;
-          changed = true;
-        });
-
-        return changed ? next : current;
-      });
-
-      if (!connected) {
-        return;
-      }
-
-      const sessions = sortSessionsByUpdatedAt(filterAgentSessions(sessionsResult, selectedAgentId));
-
-      sessions.forEach((session) => {
-        if (cachedTitleKeys.has(session.key) || historyTitleFetchesRef.current.has(session.key)) {
-          return;
-        }
-
-        historyTitleFetchesRef.current.add(session.key);
-
-        void loadSessionHistoryMessages(session.key, 40)
-          .then((messages) => {
-            const nextTitle = extractFirstMeaningfulSessionTitle(messages);
-            if (nextTitle) {
-              setHistoryTitleCache((current) => (
-                current[session.key] === nextTitle
-                  ? current
-                  : { ...current, [session.key]: nextTitle }
-              ));
-            }
-
-            updateSessionHistoryCache(session.key, messages);
-            return saveSessionHistoryCache(
-              session.key,
-              selectedAgentId,
-              messages,
-              session.updatedAt ?? null,
-              nextTitle ?? cachedRows.find((row) => row.sessionKey === session.key)?.title ?? null,
-            ).catch(() => undefined);
-          })
-          .catch(() => undefined)
-          .finally(() => {
-            historyTitleFetchesRef.current.delete(session.key);
-          });
-      });
-    })().catch(() => undefined);
-  }, [
-    connected,
-    loadSessionHistoryMessages,
-    saveSessionHistoryCache,
-    selectedAgentId,
-    sessionsResult,
-    updateSessionHistoryCache,
-  ]);
+    void loadWorkspaceHistoryTitles({
+      agentId: selectedAgentId,
+      connected,
+      sessionsResult,
+      historyTitleFetches: historyTitleFetchesRef.current,
+      setHistoryTitleCache,
+      loadSessionHistoryMessages,
+      updateSessionHistoryCache,
+      saveSessionHistoryCache,
+    }).catch(() => undefined);
+  }, [connected, loadSessionHistoryMessages, saveSessionHistoryCache, selectedAgentId, sessionsResult, updateSessionHistoryCache]);
 
   const selectAgent = useCallback((agentId: string) => {
     setSelectedAgentId(agentId);
@@ -1018,17 +996,17 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
   }, [sessionsResult]);
 
   const selectSession = useCallback((sessionKey: string, fallbackAgentId?: string | null) => {
-    const agentId = extractAgentIdFromSessionKey(sessionKey) || fallbackAgentId?.trim();
+    const agentId = resolveSessionContext(sessionKey, fallbackAgentId).agentId;
     if (agentId) {
       setSelectedAgentId(agentId); setSelectedSessionKey(sessionKey);
     }
-  }, []);
+  }, [resolveSessionContext]);
   const refreshSessionHistory = useCallback((sessionKey: string, agentId?: string | null) => {
-    const nextAgentId = extractAgentIdFromSessionKey(sessionKey) || agentId?.trim() || selectedAgentId;
+    const nextAgentId = resolveSessionContext(sessionKey, agentId || selectedAgentId).agentId;
     return connected && sessionKey && nextAgentId
       ? loadHistory(sessionKey, { agentId: nextAgentId, connectionGeneration: connectionGenerationRef.current }).then(() => true)
       : Promise.resolve(false);
-  }, [connected, loadHistory, selectedAgentId]);
+  }, [connected, loadHistory, resolveSessionContext, selectedAgentId]);
 
   const sendMessage = useCallback(
     async (
@@ -1046,41 +1024,26 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
           })
         : message;
 
-      if (!client?.connected || !currentSessionKey || !message) {
+      if (!client?.connected || !currentGatewaySessionKey || !message) {
         return false;
       }
 
       const runId = crypto.randomUUID();
-      currentRunIdRef.current = runId;
-      activeRunAliasesRef.current = new Set([runId]);
-      liveStepDedupeRef.current.clear();
-      hasObservedNonThinkingStepRef.current = false;
-      hasAssistantTextDeltaRef.current = false;
-
-      setPendingUserMessage({
-        id: `pending-${runId}`,
-        role: "user",
-        author: "你",
-        text: message,
-        time: formatClockTime(Date.now()),
-      });
-      setStreamText("");
-      setActiveRunId(runId);
-      setLiveSteps([
-        {
-          id: `${runId}:thinking`,
-          kind: "thinking",
-          status: "running",
-          title: "思考中",
+      initializeActiveRun({
+        runId,
+        pendingUserMessage: {
+          id: `pending-${runId}`,
+          role: "user",
+          author: "你",
+          text: message,
           time: formatClockTime(Date.now()),
         },
-      ]);
+      });
       setSending(true);
-      setError(null);
 
       try {
         await client.request("chat.send", {
-          sessionKey: currentSessionKey,
+          sessionKey: currentGatewaySessionKey,
           message: transportMessage,
           deliver: false,
           idempotencyKey: runId,
@@ -1098,19 +1061,18 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
         setSending(false);
       }
     },
-    [clearActiveRunRefs, currentSessionKey],
+    [clearActiveRunRefs, currentGatewaySessionKey, initializeActiveRun],
   );
-
   const abortMessage = useCallback(async () => {
     const client = clientRef.current;
-    if (!client?.connected || !currentSessionKey) {
+    if (!client?.connected || !currentGatewaySessionKey) {
       return false;
     }
 
     try {
       await client.request("chat.abort", currentRunIdRef.current
-        ? { sessionKey: currentSessionKey, runId: currentRunIdRef.current }
-        : { sessionKey: currentSessionKey });
+        ? { sessionKey: currentGatewaySessionKey, runId: currentRunIdRef.current }
+        : { sessionKey: currentGatewaySessionKey });
       removeTransientThinkingBridge(currentRunIdRef.current);
       finishLiveSteps("aborted");
       return true;
@@ -1118,11 +1080,11 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       setError(abortError instanceof Error ? abortError.message : String(abortError));
       return false;
     }
-  }, [currentSessionKey, finishLiveSteps, removeTransientThinkingBridge]);
+  }, [currentGatewaySessionKey, finishLiveSteps, removeTransientThinkingBridge]);
 
   const resetSession = useCallback(async () => {
     const client = clientRef.current;
-    if (!client?.connected || !currentSessionKey) {
+    if (!client?.connected || !currentGatewaySessionKey) {
       return false;
     }
 
@@ -1131,21 +1093,21 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     try {
       if (currentRunIdRef.current) {
         await client.request("chat.abort", {
-          sessionKey: currentSessionKey,
+          sessionKey: currentGatewaySessionKey,
           runId: currentRunIdRef.current,
         }).catch(() => undefined);
       }
 
-      await client.request("sessions.reset", { key: currentSessionKey });
+      await client.request("sessions.reset", { key: currentGatewaySessionKey });
       setActiveRunId(null);
       setPendingUserMessage(null);
       setStreamText(null);
       clearActiveRunRefs();
       setLiveSteps([]);
-      updateSessionHistoryCache(currentSessionKey, []);
+      updateSessionHistoryCache(currentGatewaySessionKey, []);
       await saveSessionHistoryCache(
-        currentSessionKey,
-        extractAgentIdFromSessionKey(currentSessionKey) || selectedAgentId,
+        currentGatewaySessionKey,
+        extractAgentIdFromSessionKey(currentGatewaySessionKey) || selectedAgentId,
         [],
         null,
         null,
@@ -1164,7 +1126,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     } finally {
       setResettingSession(false);
     }
-  }, [clearActiveRunRefs, currentSessionKey, loadHistory, loadSessions, saveSessionHistoryCache, selectedAgentId, updateSessionHistoryCache]);
+  }, [clearActiveRunRefs, currentGatewaySessionKey, currentSessionKey, loadHistory, loadSessions, saveSessionHistoryCache, selectedAgentId, updateSessionHistoryCache]);
 
   const request = useCallback(
     async <T = unknown>(method: string, params?: unknown) => {
@@ -1182,20 +1144,37 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       return [];
     }
 
-    return filterAgentSessions(sessionsResult, selectedAgentId)
+    const taskRunHistoryItems = Object.values(taskRunSessions)
+      .filter((session) => session.agentId === selectedAgentId)
+      .map((session) => {
+        const boundSessionUpdatedAt = session.boundSessionKey
+          ? sessionsResult?.sessions.find((gatewaySession) => gatewaySession.key === session.boundSessionKey)?.updatedAt ?? null
+          : null;
+        return buildTaskRunHistoryItem(session, currentSessionKey, boundSessionUpdatedAt);
+      });
+    const hiddenGatewaySessionKeys = new Set(
+      taskRunHistoryItems
+        .map((item) => item.boundSessionKey?.trim() || "")
+        .filter(Boolean),
+    );
+    const gatewayHistoryItems = filterAgentSessions(sessionsResult, selectedAgentId)
       .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0))
+      .filter((session) => !hiddenGatewaySessionKeys.has(session.key))
       .map((session) => buildSessionHistoryItem(session, {
         cachedTitle: historyTitleCache[session.key],
         currentSessionKey,
       }));
-  }, [currentSessionKey, historyTitleCache, selectedAgentId, sessionsResult]);
+
+    return [...taskRunHistoryItems, ...gatewayHistoryItems]
+      .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0));
+  }, [currentSessionKey, historyTitleCache, selectedAgentId, sessionsResult, taskRunSessions]);
 
   const normalizedHistoryMessages = useMemo(
     () =>
-      (sessionHistoryCache[currentSessionKey] ?? [])
+      (currentGatewaySessionKey ? sessionHistoryCache[currentGatewaySessionKey] ?? [] : [])
         .map((message) => normalizeGatewayMessage(message, resolveAssistantAuthor))
         .filter((message): message is WorkspaceMessage => Boolean(message)),
-    [currentSessionKey, resolveAssistantAuthor, sessionHistoryCache],
+    [currentGatewaySessionKey, resolveAssistantAuthor, sessionHistoryCache],
   );
 
   const streamMessage = useMemo(() => {
@@ -1211,15 +1190,15 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     return {
       id: `stream-${activeRunId}`,
       role: "assistant" as const,
-      author: resolveAssistantAuthor(currentSessionKey),
+      author: resolveAssistantAuthor(currentGatewaySessionKey || currentSessionKey),
       text: nextText,
       time: "",
       status: "streaming" as const,
     };
-  }, [activeRunId, currentSessionKey, resolveAssistantAuthor, streamText]);
+  }, [activeRunId, currentGatewaySessionKey, currentSessionKey, resolveAssistantAuthor, streamText]);
 
   const messages = useMemo(() => {
-    const merged = [...normalizedHistoryMessages];
+    const merged = [...(currentTaskRunSession?.systemMessages ?? []), ...normalizedHistoryMessages];
     if (pendingUserMessage) {
       merged.push(pendingUserMessage);
     }
@@ -1227,7 +1206,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       merged.push(streamMessage);
     }
     return merged;
-  }, [normalizedHistoryMessages, pendingUserMessage, streamMessage]);
+  }, [currentTaskRunSession?.systemMessages, normalizedHistoryMessages, pendingUserMessage, streamMessage]);
 
   const agentLastMessageById = useMemo(() => {
     const next = { ...cachedAgentLastMessageById };
@@ -1280,6 +1259,10 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     sending,
     resettingSession,
     isGenerating: Boolean(activeRunId),
+    createTaskRunConversation,
+    beginTaskRunConversationExecution,
+    setTaskRunConversationStatus,
+    bindTaskRunConversationToResult,
     selectAgent,
     selectSession,
     refreshSessionHistory,

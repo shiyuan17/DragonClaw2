@@ -18,11 +18,30 @@ export interface WorkspaceCronRunOutcome {
   sessionId?: string | null;
 }
 
+export interface WorkspaceCronRunLifecycleCallbacks {
+  onAccepted?: (payload: { message: string; enqueued: boolean; runId?: string | null }) => void;
+  onSkipped?: (payload: { reason: "not-due" | "already-running" | "invalid-spec"; message: string }) => void;
+  onError?: (payload: { message: string }) => void;
+  onSessionResolved?: (payload: { sessionKey?: string | null; sessionId?: string | null }) => void;
+  onTerminalRunResolved?: (payload: {
+    status?: WorkspaceCronRunRecord["status"];
+    summary?: string | null;
+    error?: string | null;
+  }) => void;
+}
+
+export interface WorkspaceCronRunFollowUpOptions {
+  previousTopSignature: string;
+  previousLatestTimestamp: number;
+  callbacks?: WorkspaceCronRunLifecycleCallbacks;
+}
+
 export const UNBOUND_AGENT_TASK_ERROR = "当前频道未绑定运行 Agent，无法读取真实任务。";
 export const TASK_GATEWAY_OFFLINE_ERROR = "Gateway 未连接，无法读取真实任务。";
 export const TASK_FEEDBACK_TITLE = "任务";
 export const RUN_RESULT_SESSION_POLL_ATTEMPTS = 3;
 export const RUN_RESULT_SESSION_POLL_DELAY_MS = 800;
+export const OPTIMISTIC_RUN_INDICATOR_TIMEOUT_MS = 8000;
 
 export function getRunSkipNotice(reason: "not-due" | "already-running" | "invalid-spec") {
   switch (reason) {
@@ -91,4 +110,47 @@ export function resolveNewRunRecord(
   }
 
   return buildRunRecordTimestamp(latestRun) > previousLatestTimestamp ? latestRun : null;
+}
+
+export async function pollResolvedRunSession(params: {
+  jobId: string;
+  previousTopSignature: string;
+  previousLatestTimestamp: number;
+  loadTaskRuns: (jobId: string, options?: { force?: boolean }) => Promise<WorkspaceCronRunRecord[]>;
+  isStillActive: () => boolean;
+}) {
+  let entries = await params.loadTaskRuns(params.jobId, { force: true });
+  let latestRun = resolveNewRunRecord(entries, params.previousTopSignature, params.previousLatestTimestamp);
+  if (latestRun?.sessionKey || latestRun?.sessionId) {
+    return {
+      sessionKey: latestRun.sessionKey ?? null,
+      sessionId: latestRun.sessionId ?? null,
+      latestRun,
+    };
+  }
+
+  for (let attempt = 1; attempt < RUN_RESULT_SESSION_POLL_ATTEMPTS; attempt += 1) {
+    if (!params.isStillActive()) {
+      break;
+    }
+
+    await waitForDelay(RUN_RESULT_SESSION_POLL_DELAY_MS);
+    entries = await params.loadTaskRuns(params.jobId, { force: true });
+    latestRun = resolveNewRunRecord(entries, params.previousTopSignature, params.previousLatestTimestamp);
+    if (latestRun?.sessionKey || latestRun?.sessionId) {
+      return {
+        sessionKey: latestRun.sessionKey ?? null,
+        sessionId: latestRun.sessionId ?? null,
+        latestRun,
+      };
+    }
+  }
+
+  return latestRun
+    ? {
+      sessionKey: latestRun.sessionKey ?? null,
+      sessionId: latestRun.sessionId ?? null,
+      latestRun,
+    }
+    : null;
 }

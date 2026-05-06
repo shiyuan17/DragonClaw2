@@ -325,11 +325,17 @@ export function normalizeWorkspaceCronRunResult(value: unknown): WorkspaceCronRu
 export function resolveWorkspaceCronAgentId(job: WorkspaceCronJob): string {
   return job.agentId?.trim() || "main";
 }
-export function getWorkspaceCronDisplayStatus(job: WorkspaceCronJob): WorkspaceCronDisplayStatus {
+export function getWorkspaceCronDisplayStatus(
+  job: WorkspaceCronJob,
+  options?: { optimisticRunning?: boolean },
+): WorkspaceCronDisplayStatus {
   if (!job.enabled) {
     return "disabled";
   }
   if (typeof job.state.runningAtMs === "number") {
+    return "running";
+  }
+  if (options?.optimisticRunning) {
     return "running";
   }
   if (job.state.lastRunStatus === "error" || job.state.lastStatus === "error") {
@@ -357,9 +363,10 @@ export function getWorkspaceCronStatusLabel(status: WorkspaceCronDisplayStatus):
   }
 }
 
-export function getWorkspaceCronStatusTone(status: WorkspaceCronDisplayStatus): "online" | "busy" | "offline" {
+export function getWorkspaceCronStatusTone(status: WorkspaceCronDisplayStatus): "online" | "busy" | "offline" | "running" {
   switch (status) {
     case "running":
+      return "running";
     case "ok":
       return "online";
     case "error":
