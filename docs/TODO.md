@@ -1,5 +1,8 @@
 # DragonClaw - 开发任务总表 (AI 开发规范版)
 
+## Phase 5.53: Workspace 任务抽屉样式收敛
+- [ ] 收敛 `workspace-clone` 右侧任务抽屉的列表样式与操作入口，改为紧凑任务行、轻量运行 footer 与更多菜单，不扩展任务创建能力，也不改动现有真实 cron / `invoke()` 契约。
+
 ## Phase 5.52: Workspace 真实任务管理接入
 - [ ] 将 `workspace-clone` 右侧任务抽屉切换到真实 OpenClaw `cron` 数据，支持真实列表、编辑、启停、删除、立即运行和最近运行结果展示，不新增任务创建入口，也不改动现有 Tauri command / `invoke()` 契约。
 ## Phase 5.42a: Security Hotfix
