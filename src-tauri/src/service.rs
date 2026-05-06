@@ -34,8 +34,8 @@ use std::os::windows::process::CommandExt;
 const DEFAULT_PORT: u16 = 18789;
 const MAX_PORT: u16 = 18899;
 const CONNECT_TIMEOUT_MS: u64 = 200;
-const SERVICE_READY_TIMEOUT_MS: u64 = 90_000;
-const GATEWAY_RPC_CHECK_TIMEOUT_MS: u64 = 8_000;
+const SERVICE_READY_TIMEOUT_MS: u64 = 120_000;
+const GATEWAY_RPC_CHECK_TIMEOUT_MS: u64 = 20_000;
 const GATEWAY_RPC_CHECK_INTERVAL_MS: u64 = 1_000;
 const WINDOWS_HIDDEN_WINDOW_FLAG: u32 = 0x0800_0000;
 
@@ -192,7 +192,7 @@ fn verify_gateway_rpc_ready(port: u16, token: &str) -> Result<(), String> {
 
     let output = openclaw_cli::run_command_with_timeout(
         &mut command,
-        Duration::from_millis(GATEWAY_RPC_CHECK_TIMEOUT_MS + 2_000),
+        Duration::from_millis(GATEWAY_RPC_CHECK_TIMEOUT_MS + 5_000),
         "OpenClaw gateway RPC readiness check",
     )?;
 
@@ -499,17 +499,7 @@ async fn wait_for_service_ready(
 
     loop {
         let port_accepting = connect_to_port(port);
-        if (ready_signal.load(Ordering::SeqCst) || port_accepting)
-            && last_rpc_check_at.elapsed() >= Duration::from_millis(GATEWAY_RPC_CHECK_INTERVAL_MS)
-        {
-            last_rpc_check_at = Instant::now();
-            match verify_gateway_rpc_ready(port, token) {
-                Ok(()) => return Ok(()),
-                Err(error) => {
-                    last_rpc_error = Some(error);
-                }
-            }
-        }
+        let ready_from_log = ready_signal.load(Ordering::SeqCst);
         let child_status = {
             let mut child_guard = state.child.lock().unwrap();
             if let Some(child) = child_guard.as_mut() {
@@ -529,6 +519,22 @@ async fn wait_for_service_ready(
 
         if let Some(result) = child_status {
             return result;
+        }
+
+        if ready_from_log && port_accepting {
+            return Ok(());
+        }
+
+        if port_accepting
+            && last_rpc_check_at.elapsed() >= Duration::from_millis(GATEWAY_RPC_CHECK_INTERVAL_MS)
+        {
+            last_rpc_check_at = Instant::now();
+            match verify_gateway_rpc_ready(port, token) {
+                Ok(()) => return Ok(()),
+                Err(error) => {
+                    last_rpc_error = Some(error);
+                }
+            }
         }
 
         if started_at.elapsed() >= Duration::from_millis(SERVICE_READY_TIMEOUT_MS) {
@@ -960,7 +966,7 @@ async fn start_service_impl(
             let mut last_flush = Instant::now();
             for line in reader.lines().map_while(Result::ok) {
                 let level = classify_log_level(&line);
-                let is_ready = is_service_ready_signal(&line);
+                let is_ready = is_gateway_ready_signal(&line);
                 if is_ready {
                     stdout_ready_signal.store(true, Ordering::SeqCst);
                 }
@@ -1153,11 +1159,16 @@ fn classify_log_level(line: &str) -> &'static str {
     }
 }
 
-/// Detect if a log line indicates the service is ready to accept connections.
+/// Detect if a log line indicates that the gateway completed startup.
+fn is_gateway_ready_signal(line: &str) -> bool {
+    let lower = line.to_lowercase();
+    lower.contains("[gateway] ready") || lower.contains("gateway ready")
+}
+
+/// Detect if a log line indicates the service is ready or listening.
 fn is_service_ready_signal(line: &str) -> bool {
     let lower = line.to_lowercase();
-    lower.contains("[gateway] ready")
-        || lower.contains("gateway ready")
+    is_gateway_ready_signal(line)
         || lower.contains("listening on")
         || lower.contains("listening at")
         || lower.contains("started on")

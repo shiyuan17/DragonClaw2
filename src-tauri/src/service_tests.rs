@@ -60,6 +60,23 @@ fn test_service_ready_signal() {
 }
 
 #[test]
+fn test_gateway_ready_signal_excludes_listening_and_starting() {
+    assert!(is_gateway_ready_signal("gateway ready"));
+    assert!(is_gateway_ready_signal(
+        "2026-05-03T21:14:39.270+08:00 [gateway] ready"
+    ));
+    assert!(!is_gateway_ready_signal(
+        "2026-05-03T21:14:11.236+08:00 [gateway] http server listening"
+    ));
+    assert!(!is_gateway_ready_signal(
+        "closed before connect code=1013 reason=gateway starting"
+    ));
+    assert!(!is_gateway_ready_signal(
+        "{\"cause\":\"startup-sidecars-pending\"}"
+    ));
+}
+
+#[test]
 fn runtime_state_round_trip() {
     let path = unique_temp_path("round-trip.json");
     let runtime = ServiceRuntimeState {
