@@ -126,13 +126,13 @@ Launcher 下载的 OpenClaw 源码**不跟踪 main 分支**，而是锁定到指
 
 | 配置项 | 位置 | 当前值 |
 |---|---|---|
-| `PINNED_VERSION` | `src-tauri/src/download.rs` | `v2026.2.6-1` |
+| `PINNED_VERSION` | `src-tauri/src/download.rs` | `v2026.5.4` |
 
 ### 为什么锁版本
 
-- OpenClaw v2026.2.19+ 引入了强制 device identity，导致 Launcher 的本地网关 WebSocket 连接被拒绝
-- `dangerouslyDisableDeviceAuth: true` 在新版中不再生效
-- 锁定到 v2026.2.6-1（device identity 强制化之前的最后一个稳定版）
+- Launcher 需要对上游 release 做真实安装、gateway 与聊天链路回归验证，不能直接跟踪 `main`
+- OpenClaw 新版本可能改变 gateway、Control UI 或安装产物行为；只有完成本地验证的 tag 才能成为新的锁定版本
+- 当前已验证通过的内置版本为 `v2026.5.4`
 
 ### 如何更新锁定版本
 

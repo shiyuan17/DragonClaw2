@@ -17,8 +17,8 @@ const OPENCLAW_REPO: &str = "openclaw/openclaw";
 const ALLOWED_DOWNLOAD_HOSTS: &[&str] = &["github.com", "ghfast.top", "mirror.ghproxy.com"];
 
 /// Pinned OpenClaw version validated against DragonClaw's local gateway/chat flow.
-/// See: https://github.com/openclaw/openclaw/releases/tag/v2026.4.27
-const PINNED_VERSION: &str = "v2026.4.27";
+/// See: https://github.com/openclaw/openclaw/releases/tag/v2026.5.4
+const PINNED_VERSION: &str = "v2026.5.4";
 
 /// Quick URL reachability test (3 second timeout)
 pub async fn test_url_reachable(url: &str) -> bool {
