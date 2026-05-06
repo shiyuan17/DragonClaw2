@@ -1,5 +1,8 @@
 # DragonClaw - 开发任务总表 (AI 开发规范版)
 
+## Phase 5.55.1: Gateway RPC Readiness Grace
+- [ ] Prevent false OpenClaw startup failure while gateway sidecars are warming up by separating true `gateway ready` log detection from HTTP listening, widening RPC probe timeouts, and preserving persistent-service reuse without changing Tauri command or `invoke()` contracts.
+
 ## Phase 5.55: Startup Flow Single Source and Persistent Service
 - [ ] Unify startup into the React guide/setup surface, remove the static Booting splash and duplicate OpenClaw startup overlay, keep homepage chat from replaying the normal startup checklist, and leave OpenClaw running across DragonClaw quits for fast reuse without changing Tauri command or `invoke()` contracts.
 
