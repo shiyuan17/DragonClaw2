@@ -1,5 +1,15 @@
 import { Modal, ModalFooter } from "../ui/Modal";
 import { MAIN_AGENT_DISPLAY_NAME } from "../../data/agencyRoster";
+import {
+  formatWorkspaceCronDuration,
+  formatWorkspaceCronPayloadPreview,
+  formatWorkspaceCronScheduleSummary,
+  formatWorkspaceCronSessionTarget,
+  formatWorkspaceCronTimestamp,
+  getWorkspaceCronDisplayStatus,
+  getWorkspaceCronStatusLabel,
+  getWorkspaceCronStatusTone,
+} from "./workspaceCloneCron";
 import { WorkspaceCloneAvatarModal } from "./WorkspaceCloneAvatarModal";
 import { WorkspaceCloneCommandsModal } from "./WorkspaceCloneCommandsModal";
 import { WorkspaceCloneMemoryModal } from "./WorkspaceCloneMemoryModal";
@@ -10,6 +20,8 @@ import type {
   WorkspaceCloneAvatarOption,
 } from "./workspaceCloneAvatarPresets";
 import type {
+  WorkspaceCronJob,
+  WorkspaceCronRunRecord,
   WorkspaceSlashCommandDefinition,
   WorkspaceSlashCommandDraftInput,
   WorkspaceEntity,
@@ -71,7 +83,13 @@ interface WorkspaceCloneOverlayStackProps {
   avatarError: string;
   memoryItems: WorkspaceResourceItem[];
   channelItems: WorkspaceResourceItem[];
-  scheduleItems: WorkspaceResourceItem[];
+  tasks: WorkspaceCronJob[];
+  selectedTaskId: string | null;
+  selectedTaskRuns: WorkspaceCronRunRecord[];
+  taskLoading: boolean;
+  taskError: string;
+  taskRunsError: string;
+  taskRunsLoading: boolean;
   onCloseAvatarModal: () => void;
   onSetAvatarCategory: (value: WorkspaceCloneAvatarCategoryId) => void;
   onApplyAvatarPreset: (option: WorkspaceCloneAvatarOption) => void;
@@ -111,6 +129,28 @@ interface WorkspaceCloneOverlayStackProps {
   onCloseRuntimeLogDetail: () => void;
   onCloseSettingsTextPreview: () => void;
   onCloseRelatedResource: () => void;
+}
+
+const RELATED_TITLE_MAP: Record<Exclude<WorkspaceRelatedResource, null | "memory" | "skills" | "tools" | "commands">, string> = {
+  model: "模型资源面板",
+  channel: "频道资源面板",
+  schedule: "任务详情",
+};
+
+function renderResourceList(items: WorkspaceResourceItem[]) {
+  return (
+    <div className="workspace-clone__resource-list">
+      {items.map((item) => (
+        <div key={item.id} className="workspace-clone__resource-row">
+          <div>
+            <strong>{item.title}</strong>
+            <small>{item.subtitle}</small>
+          </div>
+          {item.tag ? <span className="workspace-clone__resource-tag">{item.tag}</span> : null}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function WorkspaceCloneOverlayStack({
@@ -162,7 +202,13 @@ export function WorkspaceCloneOverlayStack({
   avatarError,
   memoryItems,
   channelItems,
-  scheduleItems,
+  tasks,
+  selectedTaskId,
+  selectedTaskRuns,
+  taskLoading,
+  taskError,
+  taskRunsError,
+  taskRunsLoading,
   onCloseAvatarModal,
   onSetAvatarCategory,
   onApplyAvatarPreset,
@@ -203,16 +249,8 @@ export function WorkspaceCloneOverlayStack({
   onCloseSettingsTextPreview,
   onCloseRelatedResource,
 }: WorkspaceCloneOverlayStackProps) {
-  const relatedTitleMap: Record<Exclude<WorkspaceRelatedResource, null | "memory" | "skills" | "tools" | "commands">, string> = {
-    model: "模型资源面板",
-    channel: "频道资源面板",
-    schedule: "定时任务面板",
-  };
-
-  const relatedItemsMap = {
-    channel: channelItems,
-    schedule: scheduleItems,
-  };
+  const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? tasks[0] ?? null;
+  const selectedTaskStatus = selectedTask ? getWorkspaceCronDisplayStatus(selectedTask) : "disabled";
 
   return (
     <>
@@ -236,7 +274,7 @@ export function WorkspaceCloneOverlayStack({
         <div className="workspace-clone__dialog-body">
           <div className="workspace-clone__dialog-copy">
             <strong>{selectedEntity?.name || MAIN_AGENT_DISPLAY_NAME}</strong>
-            <p>{selectedEntity?.subtitle || "当前只保留 Agent 信息弹层的视觉结构与字段布局。"}</p>
+            <p>{selectedEntity?.subtitle || "当前先保留 Agent 信息弹层的结构，后续再继续补全更多真实字段。"}</p>
           </div>
           <div className="workspace-clone__info-grid">
             <div><span>状态</span><strong>{selectedEntity?.status || "offline"}</strong></div>
@@ -335,7 +373,7 @@ export function WorkspaceCloneOverlayStack({
         <div className="workspace-clone__dialog-body">
           <div className="workspace-clone__dialog-copy">
             <strong>Runtime Log Detail</strong>
-            <p>保留摘要、详细内容、状态标签和复制按钮区域，后续再接真实 runtime log 数据。</p>
+            <p>这里保留日志详情的结构位置，后续再继续接入真实 runtime log 数据。</p>
           </div>
           <div className="workspace-clone__log-detail">
             <div className="workspace-clone__log-detail-tabs">
@@ -357,7 +395,7 @@ export function WorkspaceCloneOverlayStack({
         <div className="workspace-clone__dialog-body">
           <div className="workspace-clone__dialog-copy">
             <strong>完整内容预览</strong>
-            <p>这里对应聊天工作区里的说明性预览弹层，用来承接纯界面阶段的详细文本。</p>
+            <p>这里对应聊天工作区里的说明性预览弹层，用来承接纯界面阶段的详细文案。</p>
           </div>
           <pre className="workspace-clone__preview-block">
 {`workspace-clone / chat
@@ -374,7 +412,7 @@ export function WorkspaceCloneOverlayStack({
         onClose={onCloseRelatedResource}
         title={
           relatedResource && relatedResource !== "memory" && relatedResource !== "skills" && relatedResource !== "tools" && relatedResource !== "commands"
-            ? relatedTitleMap[relatedResource]
+            ? RELATED_TITLE_MAP[relatedResource]
             : ""
         }
         maxWidth={860}
@@ -382,10 +420,10 @@ export function WorkspaceCloneOverlayStack({
         <div className="workspace-clone__dialog-body">
           <div className="workspace-clone__dialog-copy">
             <strong>Related Resource</strong>
-            <p>这里统一承接 model、channel、schedule 的界面占位面板。</p>
+            <p>这里统一承接 model、channel、task 的补充信息与只读详情。</p>
           </div>
 
-          {relatedResource === "model" && (
+          {relatedResource === "model" ? (
             <div className="workspace-clone__resource-grid">
               {["OpenAI Compatible", "Claude Compatible", "Local Mock Platform"].map((item, index) => (
                 <div key={item} className="workspace-clone__resource-card">
@@ -395,35 +433,93 @@ export function WorkspaceCloneOverlayStack({
                 </div>
               ))}
             </div>
-          )}
+          ) : null}
 
-          {(relatedResource === "channel" || relatedResource === "schedule") && (
-            <div className="workspace-clone__resource-list">
-              {(relatedItemsMap[relatedResource] || []).map((item) => (
-                <div key={item.id} className="workspace-clone__resource-row">
-                  <div>
-                    <strong>{item.title}</strong>
-                    <small>{item.subtitle}</small>
-                  </div>
-                  {item.tag && <span className="workspace-clone__resource-tag">{item.tag}</span>}
-                </div>
-              ))}
-            </div>
-          )}
+          {relatedResource === "channel" ? renderResourceList(channelItems) : null}
 
-          {relatedResource === "memory" && (
-            <div className="workspace-clone__resource-list">
-              {memoryItems.map((item) => (
-                <div key={item.id} className="workspace-clone__resource-row">
-                  <div>
-                    <strong>{item.title}</strong>
-                    <small>{item.subtitle}</small>
+          {relatedResource === "schedule" ? (
+            <div className="workspace-clone__task-detail-panel">
+              {taskLoading ? <div className="workspace-resource-modal__empty">正在加载真实任务详情...</div> : null}
+              {!taskLoading && !selectedTask ? <div className="workspace-resource-modal__empty">当前 Agent 暂无真实任务。</div> : null}
+              {taskError.trim() ? <div className="workspace-clone__task-feedback-card is-error">{taskError}</div> : null}
+
+              {selectedTask ? (
+                <>
+                  <div className="workspace-clone__task-detail-card">
+                    <div className="workspace-clone__task-detail-head">
+                      <div>
+                        <strong>{selectedTask.name}</strong>
+                        <small>{selectedTask.description?.trim() || formatWorkspaceCronPayloadPreview(selectedTask)}</small>
+                      </div>
+                      <span className={`workspace-clone__status-inline is-${getWorkspaceCronStatusTone(selectedTaskStatus)}`}>
+                        {getWorkspaceCronStatusLabel(selectedTaskStatus)}
+                      </span>
+                    </div>
+
+                    <div className="workspace-clone__task-detail-grid">
+                      <div>
+                        <span>调度</span>
+                        <small>{formatWorkspaceCronScheduleSummary(selectedTask.schedule)}</small>
+                      </div>
+                      <div>
+                        <span>会话目标</span>
+                        <small>{formatWorkspaceCronSessionTarget(selectedTask.sessionTarget)}</small>
+                      </div>
+                      <div>
+                        <span>唤醒模式</span>
+                        <small>{selectedTask.wakeMode}</small>
+                      </div>
+                      <div>
+                        <span>下次运行</span>
+                        <small>{formatWorkspaceCronTimestamp(selectedTask.state.nextRunAtMs)}</small>
+                      </div>
+                      <div>
+                        <span>最近运行</span>
+                        <small>{formatWorkspaceCronTimestamp(selectedTask.state.lastRunAtMs)}</small>
+                      </div>
+                      <div>
+                        <span>最近耗时</span>
+                        <small>{selectedTask.state.lastDurationMs ? formatWorkspaceCronDuration(selectedTask.state.lastDurationMs) : "暂无"}</small>
+                      </div>
+                    </div>
+
+                    <div className="workspace-clone__task-detail-payload">
+                      <span>任务内容</span>
+                      <pre>{formatWorkspaceCronPayloadPreview(selectedTask)}</pre>
+                    </div>
                   </div>
-                  {item.tag && <span className="workspace-clone__resource-tag">{item.tag}</span>}
-                </div>
-              ))}
+
+                  {taskRunsError.trim() ? <div className="workspace-clone__task-feedback-card is-error">{taskRunsError}</div> : null}
+
+                  <div className="workspace-clone__task-runs workspace-clone__task-runs--detail">
+                    <div className="workspace-clone__task-runs-head">
+                      <strong>最近运行记录</strong>
+                      {taskRunsLoading ? <small>同步中...</small> : null}
+                    </div>
+                    {selectedTaskRuns.length === 0 ? (
+                      <div className="workspace-clone__task-run-empty">暂无运行记录</div>
+                    ) : (
+                      selectedTaskRuns.map((run) => (
+                        <div key={`${run.jobId}-${run.ts}`} className="workspace-clone__task-run-row">
+                          <div className="workspace-clone__task-run-copy">
+                            <div className="workspace-clone__task-run-head">
+                              <strong>{formatWorkspaceCronTimestamp(run.runAtMs ?? run.ts)}</strong>
+                              <span className={`workspace-clone__status-inline is-${run.status === "error" ? "busy" : run.status === "skipped" ? "busy" : "online"}`}>
+                                {run.status === "error" ? "异常" : run.status === "skipped" ? "已跳过" : "正常"}
+                              </span>
+                            </div>
+                            <small>{run.summary?.trim() || run.error?.trim() || "本次运行未返回更多摘要"}</small>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </>
+              ) : null}
             </div>
-          )}
+          ) : null}
+
+          {relatedResource === "memory" ? renderResourceList(memoryItems) : null}
         </div>
 
         <ModalFooter>

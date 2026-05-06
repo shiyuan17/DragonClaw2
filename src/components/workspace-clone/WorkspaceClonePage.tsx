@@ -17,6 +17,7 @@ import type {
 import { useWorkspaceGatewayChat } from "../../hooks/useWorkspaceGatewayChat";
 import { useWorkspaceCommandsAdmin } from "../../hooks/workspace-clone/useWorkspaceCommandsAdmin";
 import { useWorkspaceCloneFeedback } from "../../hooks/workspace-clone/useWorkspaceCloneFeedback";
+import { useWorkspaceCronTasks } from "../../hooks/workspace-clone/useWorkspaceCronTasks";
 import { useWorkspaceMemoryAdmin } from "../../hooks/workspace-clone/useWorkspaceMemoryAdmin";
 import { useWorkspaceSkillsAdmin } from "../../hooks/workspace-clone/useWorkspaceSkillsAdmin";
 import { formatUptime } from "../../utils/log-humanizer";
@@ -27,7 +28,6 @@ import {
   buildWorkspaceLogs,
   WORKSPACE_HISTORY,
   WORKSPACE_MENU_ITEMS,
-  WORKSPACE_SCHEDULES,
   WORKSPACE_TYPE_TABS,
   WORKSPACE_WORKBENCH,
 } from "./workspaceCloneData";
@@ -43,6 +43,7 @@ import { WorkspaceCloneHeader } from "./WorkspaceCloneHeader";
 import { WorkspaceCloneCompactView } from "./WorkspaceCloneCompactView";
 import { WorkspaceCloneScenePresetSwitcher } from "./WorkspaceCloneScenePresetSwitcher";
 import { WorkspaceCloneSidebar } from "./WorkspaceCloneSidebar";
+import { WorkspaceCloneTaskEditorModal } from "./WorkspaceCloneTaskEditorModal";
 import {
   buildWorkspaceScenePresetStateKey,
   loadWorkspaceScenePresetOpenState,
@@ -51,10 +52,14 @@ import {
   updateWorkspaceScenePresetOpenState,
 } from "./workspaceCloneScenePresetState";
 import { useWorkspaceChannels } from "../../hooks/workspace-clone/useWorkspaceChannels";
+import { useWorkspaceComposerModelMenu } from "../../hooks/workspace-clone/useWorkspaceComposerModelMenu";
 import { useWorkspaceEmailBinding } from "../../hooks/workspace-clone/useWorkspaceEmailBinding";
+import { loadLocalAgentRoster } from "../../hooks/workspace-gateway/local-agent-roster";
 import type {
+  WorkspaceCronJob,
   WorkspaceEntity,
   WorkspaceGatewayAgentRow,
+  WorkspaceGatewayAgentsListResult,
   WorkspaceGatewaySkillStatusResult,
   WorkspaceMemoryFile,
   WorkspaceRelatedResource,
@@ -312,9 +317,11 @@ export function WorkspaceClonePage({
   const [showRuntimeLogDetail, setShowRuntimeLogDetail] = useState(false);
   const [showSettingsTextPreview, setShowSettingsTextPreview] = useState(false);
   const [relatedResource, setRelatedResource] = useState<WorkspaceRelatedResource>(null);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [isModelConfigOpen, setIsModelConfigOpen] = useState(false);
   const [savedProviders, setSavedProviders] = useState<SavedProvider[]>([]);
   const [savedProvidersLoading, setSavedProvidersLoading] = useState(false);
+  const [localAgentsResult, setLocalAgentsResult] = useState<WorkspaceGatewayAgentsListResult | null>(null);
   const [scenePresetOpenStateByKey, setScenePresetOpenStateByKey] = useState<Record<string, boolean>>(
     () => loadWorkspaceScenePresetOpenState(),
   );
@@ -335,6 +342,38 @@ export function WorkspaceClonePage({
     logs,
   });
   const workspaceEmailBinding = useWorkspaceEmailBinding();
+  const refreshLocalAgentRoster = useCallback(async (existingResult?: WorkspaceGatewayAgentsListResult | null) => {
+    const nextResult = await loadLocalAgentRoster(existingResult ?? homepageChat.agentsResult ?? null);
+    setLocalAgentsResult(nextResult);
+    const nextAgentId =
+      nextResult?.agents.some((agent) => agent.id === homepageChat.selectedAgentId)
+        ? homepageChat.selectedAgentId
+        : nextResult?.defaultId || nextResult?.agents[0]?.id || "";
+
+    if (nextAgentId && nextAgentId !== homepageChat.selectedAgentId) {
+      homepageChat.selectAgent(nextAgentId);
+    }
+
+    return nextResult;
+  }, [homepageChat.agentsResult, homepageChat.selectedAgentId, homepageChat.selectAgent]);
+  const handleAgentRosterChanged = useCallback(async () => {
+    await refreshLocalAgentRoster().catch(() => undefined);
+
+    if (homepageChat.connected) {
+      await homepageChat.reload().catch(() => undefined);
+    }
+
+    await workspaceChannels.refreshChannels().catch(() => undefined);
+  }, [
+    homepageChat.connected,
+    homepageChat.reload,
+    refreshLocalAgentRoster,
+    workspaceChannels.refreshChannels,
+  ]);
+
+  useEffect(() => {
+    void refreshLocalAgentRoster().catch(() => undefined);
+  }, [refreshLocalAgentRoster]);
 
   const refreshSavedProviders = useCallback(async () => {
     const requestId = savedProvidersLoadSeqRef.current + 1;
@@ -357,6 +396,12 @@ export function WorkspaceClonePage({
     () => resolveWorkspaceModelName(currentConfig, currentModelName),
     [currentConfig, currentModelName],
   );
+  const workspaceCurrentModelId = useMemo(() => currentConfig?.model?.trim() || "", [currentConfig]);
+  const composerModelMenu = useWorkspaceComposerModelMenu({
+    configVersion,
+    currentModelId: workspaceCurrentModelId,
+    handleSetModel,
+  });
 
   const workspaceProviderName = useMemo(() => {
     const primaryProviderKey = currentConfig?.provider;
@@ -372,15 +417,35 @@ export function WorkspaceClonePage({
     () => buildWorkspaceEntities(workspaceModelName, workspaceProviderName, running),
     [workspaceModelName, workspaceProviderName, running],
   );
+  const mergedGatewayAgents = useMemo(() => {
+    if (!localAgentsResult) {
+      return homepageChat.agents;
+    }
+
+    const localAgents = localAgentsResult.agents;
+    const localAgentIds = new Set(localAgents.map((agent) => agent.id));
+    const knownAgentsById = new Map(
+      homepageChat.agents
+        .filter((agent) => localAgentIds.has(agent.id))
+        .map((agent) => [agent.id, agent]),
+    );
+
+    return localAgents.map((agent) => knownAgentsById.get(agent.id) ?? agent);
+  }, [homepageChat.agents, localAgentsResult]);
+  const mergedAgentListSource = homepageChat.agentListSource !== "none"
+    ? homepageChat.agentListSource
+    : localAgentsResult
+      ? "cache"
+      : "none";
   const avatarStateSelectedAgent = useMemo(() => {
     if (activeType !== "agents") {
       return null;
     }
 
-    if (homepageChat.agentListSource !== "none" && homepageChat.agents.length > 0) {
-      const targetAgentId = selectedEntityId || homepageChat.selectedAgentId || homepageChat.agents[0]?.id || "";
+    if (mergedAgentListSource !== "none" && mergedGatewayAgents.length > 0) {
+      const targetAgentId = selectedEntityId || homepageChat.selectedAgentId || mergedGatewayAgents[0]?.id || "";
       const targetAgent =
-        homepageChat.agents.find((agent) => agent.id === targetAgentId) ?? homepageChat.agents[0] ?? null;
+        mergedGatewayAgents.find((agent) => agent.id === targetAgentId) ?? mergedGatewayAgents[0] ?? null;
 
       if (targetAgent) {
         return {
@@ -412,9 +477,9 @@ export function WorkspaceClonePage({
   }, [
     activeType,
     homepageChat.agentLastMessageById,
-    homepageChat.agentListSource,
-    homepageChat.agents,
     homepageChat.selectedAgentId,
+    mergedAgentListSource,
+    mergedGatewayAgents,
     selectedEntityId,
     staticEntitiesByType.agents,
   ]);
@@ -430,14 +495,14 @@ export function WorkspaceClonePage({
 
   const gatewayAgentEntities = useMemo(
     () =>
-      homepageChat.agentListSource !== "none" && homepageChat.agents.length > 0
+      mergedAgentListSource !== "none" && mergedGatewayAgents.length > 0
         ? buildGatewayAgentEntities({
-            agents: homepageChat.agents,
+            agents: mergedGatewayAgents,
             selectedAgentId: homepageChat.selectedAgentId,
             currentSessionKey: homepageChat.currentSessionKey,
             currentMainSession: homepageChat.currentMainSession,
             sessionsResult: homepageChat.sessionsResult,
-            agentListSource: homepageChat.agentListSource,
+            agentListSource: mergedAgentListSource,
             agentLastMessageById: homepageChat.agentLastMessageById,
             running,
             isGenerating: homepageChat.isGenerating,
@@ -452,12 +517,12 @@ export function WorkspaceClonePage({
         : staticAgentEntities,
     [
       avatarState.resolvePersistedAgentAvatarUrl,
+      mergedAgentListSource,
+      mergedGatewayAgents,
       workspaceModelName,
       workspaceProviderName,
-      homepageChat.agents,
       homepageChat.currentMainSession,
       homepageChat.currentSessionKey,
-      homepageChat.agentListSource,
       homepageChat.agentLastMessageById,
       homepageChat.isGenerating,
       homepageChat.selectedAgentId,
@@ -501,6 +566,7 @@ export function WorkspaceClonePage({
     if (activeMenu !== "chat") {
       savedProvidersLoadSeqRef.current += 1;
       modelConfigOpenRef.current = false;
+      composerModelMenu.closeMenu();
       setUtilityPanel(null);
       setContextMenu(null);
       setRelatedResource(null);
@@ -511,7 +577,7 @@ export function WorkspaceClonePage({
       setShowSettingsTextPreview(false);
       workspaceEmailBinding.closeEmailBindingModal({ clearStatus: true, force: true });
     }
-  }, [activeMenu, setContextMenu, workspaceEmailBinding.closeEmailBindingModal]);
+  }, [activeMenu, composerModelMenu.closeMenu, setContextMenu, workspaceEmailBinding.closeEmailBindingModal]);
 
   useEffect(() => {
     if (activeMenu !== "chat" || activeType !== "agents" || !avatarStateSelectedAgent) {
@@ -576,6 +642,12 @@ export function WorkspaceClonePage({
     requestSkillStatus,
   });
   const toolsAdmin = useWorkspaceToolsAdmin({ agentId: currentMemoryAgentId });
+  const cronTasks = useWorkspaceCronTasks({
+    agentId: currentMemoryAgentId,
+    gatewayConnected: homepageChat.connected,
+    request: homepageChat.request,
+    enabled: activeMenu === "chat",
+  });
 
   useWorkspaceCloneFeedback({
     memoryNotice: memoryAdmin.memoryNotice,
@@ -598,6 +670,16 @@ export function WorkspaceClonePage({
     weixinQrUrl: workspaceChannels.weixinQrUrl,
     hasActiveWeixinQrSession: workspaceChannels.hasActiveWeixinQrSession,
   });
+
+  useEffect(() => {
+    if (!editingTaskId) {
+      return;
+    }
+
+    if (!cronTasks.tasks.some((task) => task.id === editingTaskId)) {
+      setEditingTaskId(null);
+    }
+  }, [cronTasks.tasks, editingTaskId]);
 
   const showScenePresetToggle = activeMenu === "chat" && activeType === "agents" && Boolean(selectedEntity?.id);
   const scenePresetStateKey = useMemo(
@@ -755,6 +837,11 @@ export function WorkspaceClonePage({
     setSavedProvidersLoading(false);
   }, []);
 
+  const openCustomModelConfigModal = useCallback(() => {
+    composerModelMenu.closeMenu();
+    openModelConfigModal();
+  }, [composerModelMenu.closeMenu, openModelConfigModal]);
+
   const toggleUtilityPanel = (panel: Exclude<WorkspaceUtilityPanel, null>) => {
     setUtilityPanel((current) => current === panel ? null : panel);
   };
@@ -786,6 +873,43 @@ export function WorkspaceClonePage({
     setRelatedResource(resource);
   };
 
+  const editingTask = useMemo(
+    () => cronTasks.tasks.find((task) => task.id === editingTaskId) ?? null,
+    [cronTasks.tasks, editingTaskId],
+  );
+
+  const handleSelectTask = useCallback((taskId: string) => {
+    cronTasks.setSelectedTaskId(taskId);
+    void cronTasks.loadTaskRuns(taskId);
+  }, [cronTasks]);
+
+  const handleEditTask = useCallback((task: WorkspaceCronJob) => {
+    cronTasks.setSelectedTaskId(task.id);
+    setEditingTaskId(task.id);
+  }, [cronTasks]);
+
+  const handleDeleteTask = useCallback((task: WorkspaceCronJob) => {
+    const confirmed = window.confirm(`确认删除任务“${task.name}”吗？这会直接删除 OpenClaw 中的真实任务配置。`);
+    if (!confirmed) {
+      return;
+    }
+
+    void cronTasks.deleteTask(task.id);
+  }, [cronTasks]);
+
+  const handleSaveEditingTask = useCallback(async (patch: Parameters<typeof cronTasks.updateTask>[1]) => {
+    if (!editingTask) {
+      return;
+    }
+
+    try {
+      await cronTasks.updateTask(editingTask.id, patch);
+      setEditingTaskId(null);
+    } catch {
+      // Keep the modal open so the user can adjust the draft after an error.
+    }
+  }, [cronTasks, editingTask]);
+
   const shouldRenderOverlayStack = Boolean(
     avatarState.isAvatarModalOpen ||
     showAgentInfo ||
@@ -796,14 +920,6 @@ export function WorkspaceClonePage({
     showSettingsTextPreview ||
     relatedResource,
   );
-  const scheduleResourceItems = relatedResource === "schedule"
-    ? WORKSPACE_SCHEDULES.map((item) => ({
-        id: item.id,
-        title: item.title,
-        subtitle: item.subtitle,
-        tag: item.enabled ? "enabled" : "disabled",
-      }))
-    : [];
 
   return (
     <motion.section
@@ -994,7 +1110,17 @@ export function WorkspaceClonePage({
                 activeSessionSection={activeSessionSection}
                 historyItems={chatEnabled ? homepageChat.historyItems : WORKSPACE_HISTORY}
                 logs={derivedLogs}
-                schedules={WORKSPACE_SCHEDULES}
+                tasks={cronTasks.tasks}
+                selectedTaskId={cronTasks.selectedTaskId}
+                selectedTaskRuns={cronTasks.selectedTaskRuns}
+                taskLoading={cronTasks.taskLoading}
+                taskNotice={cronTasks.taskNotice}
+                taskError={cronTasks.taskError}
+                taskRunsError={cronTasks.taskRunsError}
+                taskRunsLoading={cronTasks.taskRunsLoading}
+                taskRunsLoadingId={cronTasks.taskRunsLoadingId}
+                taskActionJobId={cronTasks.taskActionJobId}
+                gatewayConnected={homepageChat.connected}
                 workbenchItems={WORKSPACE_WORKBENCH}
                 memoryItems={memoryResourceItems}
                 skillItems={skillResourceItems}
@@ -1014,6 +1140,18 @@ export function WorkspaceClonePage({
                  onStart={handleStart}
                 onOpenModelConfig={openModelConfigModal}
                 onOpenLogs={() => toggleUtilityPanel("logs")}
+                onRefreshTasks={() => {
+                  void cronTasks.refreshTasks({ showLoading: true });
+                }}
+                onSelectTask={handleSelectTask}
+                onToggleTaskEnabled={(task) => {
+                  void cronTasks.toggleTaskEnabled(task);
+                }}
+                onEditTask={handleEditTask}
+                onRunTask={(task) => {
+                  void cronTasks.runTaskNow(task.id);
+                }}
+                onDeleteTask={handleDeleteTask}
               />
 
               {showScenePresetToggle && scenePresetsOpen && (
@@ -1041,7 +1179,17 @@ export function WorkspaceClonePage({
                 onOpenMemoryModal={openMemoryModal}
                 onOpenCommandsModal={openCommandsModal}
                 onOpenEmailBindingModal={workspaceEmailBinding.openEmailBindingModal}
-                onOpenModelConfig={openModelConfigModal}
+                currentModelId={workspaceCurrentModelId}
+                modelMenuOpen={composerModelMenu.isOpen}
+                modelMenuItems={composerModelMenu.items}
+                modelMenuLoading={composerModelMenu.loading}
+                modelMenuError={composerModelMenu.error}
+                modelMenuSwitchingId={composerModelMenu.switchingId}
+                onToggleModelMenu={composerModelMenu.toggleMenu}
+                onCloseModelMenu={composerModelMenu.closeMenu}
+                onRetryModelMenuLoad={composerModelMenu.loadItems}
+                onSelectModelMenuItem={composerModelMenu.selectModel}
+                onOpenModelConfig={openCustomModelConfigModal}
                 emailBindingBound={workspaceEmailBinding.isBound}
                 emailBindingBoundProviderLabel={workspaceEmailBinding.boundProviderLabel}
                 slashCommands={commandsAdmin.slashCommands}
@@ -1055,7 +1203,7 @@ export function WorkspaceClonePage({
             </>
           ) : activeMenu === "employees" ? (
             <Suspense fallback={<WorkspaceCloneLazyFallback label="数字员工" />}>
-              <WorkspaceCloneEmployeesView />
+              <WorkspaceCloneEmployeesView onAgentRosterChanged={handleAgentRosterChanged} />
             </Suspense>
           ) : activeMenu === "skills" ? (
             <Suspense fallback={<WorkspaceCloneLazyFallback label="技能市场" />}>
@@ -1125,7 +1273,13 @@ export function WorkspaceClonePage({
               avatarError={avatarState.avatarError}
               memoryItems={memoryResourceItems}
               channelItems={shouldBuildChannelRows ? workspaceChannels.channelResourceItems : []}
-              scheduleItems={scheduleResourceItems}
+              tasks={cronTasks.tasks}
+              selectedTaskId={cronTasks.selectedTaskId}
+              selectedTaskRuns={cronTasks.selectedTaskRuns}
+              taskLoading={cronTasks.taskLoading}
+              taskError={cronTasks.taskError}
+              taskRunsError={cronTasks.taskRunsError}
+              taskRunsLoading={cronTasks.taskRunsLoading}
               onCloseAvatarModal={avatarState.closeAvatarModal}
               onSetAvatarCategory={avatarState.setAvatarCategory}
               onApplyAvatarPreset={avatarState.applyAvatarPreset}
@@ -1211,6 +1365,16 @@ export function WorkspaceClonePage({
             />
           </Suspense>
         ) : null}
+
+        <WorkspaceCloneTaskEditorModal
+          show={Boolean(editingTask)}
+          job={editingTask}
+          saving={cronTasks.taskActionJobId === editingTask?.id && cronTasks.taskActionType === "save"}
+          notice={cronTasks.taskNotice}
+          error={cronTasks.taskError}
+          onClose={() => setEditingTaskId(null)}
+          onSave={handleSaveEditingTask}
+        />
 
         <WorkspaceCloneEmailBindingModal
           show={workspaceEmailBinding.isOpen}

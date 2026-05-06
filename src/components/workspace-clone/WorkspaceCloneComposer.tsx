@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { filterWorkspaceSlashCommands, parseWorkspaceSlashSelection } from "./workspaceCloneSlashCommands";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
+import type { SavedModel } from "../../types";
 import type {
   WorkspaceActiveSlashCommand,
   WorkspaceGatewayStatus,
@@ -14,6 +15,7 @@ interface WorkspaceCloneComposerProps {
   connectionStatus: WorkspaceGatewayStatus;
   selectedEntityName: string | null;
   currentModelName: string;
+  currentModelId: string;
   draftValue: string;
   onDraftValueChange: (value: string) => void;
   scenePresetsOpen: boolean;
@@ -27,6 +29,15 @@ interface WorkspaceCloneComposerProps {
   onOpenMemoryModal: () => void;
   onOpenCommandsModal: () => void;
   onOpenEmailBindingModal: () => void;
+  modelMenuOpen: boolean;
+  modelMenuItems: SavedModel[];
+  modelMenuLoading: boolean;
+  modelMenuError: string;
+  modelMenuSwitchingId: string | null;
+  onToggleModelMenu: () => void;
+  onCloseModelMenu: () => void;
+  onRetryModelMenuLoad: () => Promise<void>;
+  onSelectModelMenuItem: (modelId: string) => Promise<void>;
   onOpenModelConfig: () => void;
   emailBindingBound: boolean;
   emailBindingBoundProviderLabel: string;
@@ -56,7 +67,7 @@ function resolveComposerStatusText(params: {
   const { chatEnabled, running, connectionStatus, isGenerating } = params;
 
   if (!chatEnabled) {
-    return "当前只支持已绑定 Agent 的聊天";
+    return "当前仅支持已绑定 Agent 的聊天";
   }
   if (!running) {
     return "服务尚未启动";
@@ -71,11 +82,24 @@ function resolveComposerStatusText(params: {
   return "连接异常";
 }
 
+function resolveModelMenuOption(model: SavedModel) {
+  const [providerLabel, ...modelParts] = model.id.split("/");
+  const modelLabel = modelParts.length > 0 ? modelParts.join("/") : model.id;
+
+  return {
+    id: model.id,
+    modelLabel,
+    providerLabel,
+    displayLabel: model.name?.trim() || modelLabel,
+  };
+}
+
 export function WorkspaceCloneComposer({
   running,
   chatEnabled,
   connectionStatus,
   currentModelName,
+  currentModelId,
   draftValue,
   onDraftValueChange,
   scenePresetsOpen,
@@ -87,6 +111,15 @@ export function WorkspaceCloneComposer({
   resettingSession,
   onOpenCommandsModal,
   onOpenEmailBindingModal,
+  modelMenuOpen,
+  modelMenuItems,
+  modelMenuLoading,
+  modelMenuError,
+  modelMenuSwitchingId,
+  onToggleModelMenu,
+  onCloseModelMenu,
+  onRetryModelMenuLoad,
+  onSelectModelMenuItem,
   onOpenModelConfig,
   emailBindingBound,
   emailBindingBoundProviderLabel,
@@ -100,12 +133,18 @@ export function WorkspaceCloneComposer({
 }: WorkspaceCloneComposerProps) {
   const canSend = chatEnabled && running && connectionStatus === "connected" && !sending && !isGenerating;
   const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
+  const modelMenuRef = useRef<HTMLDivElement | null>(null);
   const statusText = resolveComposerStatusText({
     chatEnabled,
     running,
     connectionStatus,
     isGenerating,
   });
+  const modelMenuOptions = useMemo(
+    () => modelMenuItems.map((item) => resolveModelMenuOption(item)),
+    [modelMenuItems],
+  );
+  const isModelMenuBusy = Boolean(modelMenuSwitchingId);
   const slashSelection = useMemo(() => parseWorkspaceSlashSelection(draftValue), [draftValue]);
   const filteredSlashCommands = useMemo(
     () => filterWorkspaceSlashCommands(slashCommands, slashSelection?.query || ""),
@@ -116,6 +155,37 @@ export function WorkspaceCloneComposer({
   useEffect(() => {
     setHighlightedCommandIndex(0);
   }, [draftValue]);
+
+  useEffect(() => {
+    if (!modelMenuOpen) {
+      return undefined;
+    }
+
+    const handleDocumentMouseDown = (event: MouseEvent) => {
+      if (!modelMenuRef.current?.contains(event.target as Node)) {
+        onCloseModelMenu();
+      }
+    };
+
+    const handleDocumentKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onCloseModelMenu();
+      }
+    };
+
+    document.addEventListener("mousedown", handleDocumentMouseDown);
+    document.addEventListener("keydown", handleDocumentKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleDocumentMouseDown);
+      document.removeEventListener("keydown", handleDocumentKeyDown);
+    };
+  }, [modelMenuOpen, onCloseModelMenu]);
+
+  useEffect(() => {
+    if (!chatEnabled) {
+      onCloseModelMenu();
+    }
+  }, [chatEnabled, onCloseModelMenu]);
 
   const handleSelectSlashCommand = (commandId: string) => {
     const nextDraft = slashSelection?.remainder || "";
@@ -144,6 +214,11 @@ export function WorkspaceCloneComposer({
       onDraftValueChange("");
       onClearActiveSlashCommand();
     }
+  };
+
+  const handleSelectModel = async (modelId: string) => {
+    await onSelectModelMenuItem(modelId);
+    onCloseModelMenu();
   };
 
   return (
@@ -245,9 +320,7 @@ export function WorkspaceCloneComposer({
               disabled={!chatEnabled}
             >
               <WorkspaceCloneIcon name="mail" size={14} strokeWidth={1.9} />
-              {emailBindingBound
-                ? `邮箱 ${emailBindingBoundProviderLabel || "已绑定"}`
-                : "邮箱"}
+              {emailBindingBound ? `邮箱 ${emailBindingBoundProviderLabel || "已绑定"}` : "邮箱"}
             </button>
             <button
               type="button"
@@ -258,20 +331,92 @@ export function WorkspaceCloneComposer({
               <WorkspaceCloneIcon name="terminal" size={14} strokeWidth={1.9} />
               命令
             </button>
-            <button
-              type="button"
-              className="workspace-clone__composer-pill workspace-clone__composer-pill--muted"
-              onClick={onOpenModelConfig}
-              disabled={!chatEnabled}
-            >
-              <WorkspaceCloneIcon name="bot" size={14} strokeWidth={1.9} />
-              模型 {formatModelLabel(currentModelName)}
-            </button>
+            <div className="workspace-clone__composer-model-menu" ref={modelMenuRef}>
+              <button
+                type="button"
+                className={`workspace-clone__composer-pill workspace-clone__composer-pill--muted ${modelMenuOpen ? "is-active" : ""}`}
+                onClick={onToggleModelMenu}
+                disabled={!chatEnabled}
+                aria-expanded={modelMenuOpen}
+                aria-haspopup="menu"
+              >
+                <WorkspaceCloneIcon name="bot" size={14} strokeWidth={1.9} />
+                模型 {formatModelLabel(currentModelName)}
+                <WorkspaceCloneIcon
+                  name="chevron"
+                  size={12}
+                  strokeWidth={2}
+                  className={`workspace-clone__composer-model-menu-caret ${modelMenuOpen ? "is-open" : ""}`}
+                />
+              </button>
+
+              {modelMenuOpen ? (
+                <div className="workspace-clone__composer-model-popover" role="menu" aria-label="模型列表">
+                  <div className="workspace-clone__composer-model-list">
+                    {modelMenuLoading ? (
+                      <div className="workspace-clone__composer-model-state">
+                        <strong>正在加载模型列表…</strong>
+                        <span>稍候即可显示已保存模型。</span>
+                      </div>
+                    ) : modelMenuError ? (
+                      <div className="workspace-clone__composer-model-state is-error">
+                        <strong>加载模型列表失败</strong>
+                        <span>{modelMenuError}</span>
+                        <button
+                          type="button"
+                          className="workspace-clone__composer-model-retry"
+                          onClick={() => void onRetryModelMenuLoad()}
+                        >
+                          <WorkspaceCloneIcon name="refresh" size={12} strokeWidth={2} />
+                          重试
+                        </button>
+                      </div>
+                    ) : modelMenuOptions.length > 0 ? (
+                      modelMenuOptions.map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          className={[
+                            "workspace-clone__composer-model-option",
+                            currentModelId === option.id ? "is-selected" : "",
+                            modelMenuSwitchingId === option.id ? "is-switching" : "",
+                          ].join(" ").trim()}
+                          onClick={() => void handleSelectModel(option.id)}
+                          disabled={isModelMenuBusy}
+                          title={option.displayLabel}
+                        >
+                          <span className="workspace-clone__composer-model-option-copy">
+                            <strong>{option.modelLabel}</strong>
+                            <small>{option.providerLabel || option.displayLabel}</small>
+                          </span>
+                          <span className="workspace-clone__composer-model-option-indicator" aria-hidden="true" />
+                        </button>
+                      ))
+                    ) : (
+                      <div className="workspace-clone__composer-model-state">
+                        <strong>暂无已保存模型</strong>
+                        <span>先去配置自定义模型，保存后就会出现在这里。</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="workspace-clone__composer-model-footer">
+                    <button
+                      type="button"
+                      className="workspace-clone__composer-model-custom"
+                      onClick={onOpenModelConfig}
+                      disabled={isModelMenuBusy}
+                    >
+                      <WorkspaceCloneIcon name="plus" size={14} strokeWidth={2} />
+                      配置自定义模型
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </div>
 
-          <span
-            className={`workspace-clone__composer-status ${running && connectionStatus === "connected" ? "is-online" : "is-idle"}`}
-          >
+          <span className={`workspace-clone__composer-status ${running && connectionStatus === "connected" ? "is-online" : "is-idle"}`}>
             {statusText}
           </span>
 

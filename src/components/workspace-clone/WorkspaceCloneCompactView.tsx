@@ -4,9 +4,9 @@ import { WORKSPACE_MENU_ITEMS } from "./workspaceCloneData";
 
 const COMPACT_COPY: Record<Exclude<WorkspaceMenuKey, "chat" | "employees">, { title: string; description: string; bullets: string[] }> = {
   schedule: {
-    title: "定时任务工作区骨架",
-    description: "这里先保留定时任务栏目结构与信息节奏，后续再逐步迁移真实调度能力。",
-    bullets: ["后续迁移任务列表、启停状态和调度设置。", "当前仅保留标题、说明卡片和状态占位。"],
+    title: "任务工作区骨架",
+    description: "这里保留任务栏目结构与信息节奏，后续再逐步扩展更多真实任务能力。",
+    bullets: ["后续承接任务列表、启停状态和真实调度设置。", "当前保留标题、说明卡片和整体信息层级。"],
   },
   knowledge: {
     title: "知识库管理工作区骨架",

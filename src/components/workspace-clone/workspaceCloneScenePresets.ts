@@ -17,7 +17,7 @@ export interface WorkspaceCloneScenePresetGroup {
 export const WORKSPACE_SCENE_PRESET_GROUPS: WorkspaceCloneScenePresetGroup[] = [
   {
     id: "schedule",
-    title: "定时任务",
+    title: "任务",
     description: "把周期性分析、提醒和摘要整理成可直接发送的自动化任务。",
     icon: "clock",
     cases: [

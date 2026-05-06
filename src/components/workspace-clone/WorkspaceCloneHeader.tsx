@@ -128,7 +128,7 @@ export function WorkspaceCloneHeader({
               {[
                 { key: "history", label: "历史会话", icon: "clock" },
                 { key: "logs", label: "运行日志", icon: "notebook" },
-                { key: "schedule", label: "定时任务", icon: "calendar-clock" },
+                { key: "schedule", label: "任务", icon: "calendar-clock" },
               ].map((item) => (
                 <button
                   key={item.key}

@@ -14,7 +14,7 @@ import type {
 
 export const WORKSPACE_MENU_ITEMS: WorkspaceMenuItem[] = [
   { key: "chat", label: "聊天", icon: "message-circle" },
-  { key: "schedule", label: "定时任务", icon: "calendar-clock" },
+  { key: "schedule", label: "任务", icon: "calendar-clock" },
   { key: "knowledge", label: "知识库管理", icon: "book-open" },
   { key: "employees", label: "数字员工", icon: "users" },
   { key: "skills", label: "技能市场", icon: "sparkles" },
@@ -32,8 +32,8 @@ export const WORKSPACE_REAL_TYPE_TABS: WorkspaceTypeTab[] = WORKSPACE_TYPE_TABS.
 export const WORKSPACE_HOME_SUGGESTIONS = [
   {
     id: "task",
-    title: "定时任务",
-    description: "把周期性任务拆解、提醒和摘要整理成可以直接发送的自动化任务。",
+    title: "任务",
+    description: "把周期性工作、提醒和摘要整理成可以直接执行的自动化任务。",
     icon: "calendar-clock",
   },
   {
@@ -173,7 +173,7 @@ export const WORKSPACE_MEMORY_ITEMS: WorkspaceResourceItem[] = [
 export const WORKSPACE_SKILL_ITEMS: WorkspaceResourceItem[] = [
   { id: "sk-1", title: "文档整理", subtitle: "把需求和阶段说明整理成结构化记录。", tag: "Installed" },
   { id: "sk-2", title: "渠道接待", subtitle: "生成欢迎语和接待话术。", tag: "Built-in" },
-  { id: "sk-3", title: "排期助手", subtitle: "输出定时任务和执行节奏建议。", tag: "Built-in" },
+  { id: "sk-3", title: "排期助手", subtitle: "输出任务和执行节奏建议。", tag: "Built-in" },
 ];
 
 export const WORKSPACE_COMMAND_ITEMS: WorkspaceResourceItem[] = [

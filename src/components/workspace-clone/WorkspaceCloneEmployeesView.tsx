@@ -13,6 +13,10 @@ const DIVISION_FILTER_ALL = "__all__";
 
 const rosterDivisions = loadAgencyRoster();
 
+interface WorkspaceCloneEmployeesViewProps {
+  onAgentRosterChanged?: () => Promise<void> | void;
+}
+
 function includesAgentId(ids: string[], agentId: string) {
   return ids.some((item) => item === agentId);
 }
@@ -52,7 +56,7 @@ function renderRoleAvatar(role: AgencyRosterRole) {
   return role.name.slice(0, 1) || "员";
 }
 
-export function WorkspaceCloneEmployeesView() {
+export function WorkspaceCloneEmployeesView({ onAgentRosterChanged }: WorkspaceCloneEmployeesViewProps) {
   const { pushFeedback } = useFeedback();
   const [divisionFilter, setDivisionFilter] = useState(DIVISION_FILTER_ALL);
   const [searchValue, setSearchValue] = useState("");
@@ -214,6 +218,7 @@ export function WorkspaceCloneEmployeesView() {
       try {
         await invoke<string>("install_agency_agent", { agentId: role.agentId });
         await refreshInstalledIds();
+        await Promise.resolve(onAgentRosterChanged?.()).catch(() => undefined);
         setNotice(`已将「${role.name}」加入本地员工列表。`);
       } catch (installError) {
         setError(installError instanceof Error ? installError.message : `加入「${role.name}」失败。`);
@@ -221,7 +226,7 @@ export function WorkspaceCloneEmployeesView() {
         setInstallingIds((current) => current.filter((item) => item !== role.agentId));
       }
     },
-    [installingIds, installedIds, refreshInstalledIds],
+    [installingIds, installedIds, onAgentRosterChanged, refreshInstalledIds],
   );
 
   const handleRemove = useCallback(
@@ -237,6 +242,7 @@ export function WorkspaceCloneEmployeesView() {
       try {
         await invoke<string>("uninstall_agency_agent", { agentId: role.agentId });
         await refreshInstalledIds();
+        await Promise.resolve(onAgentRosterChanged?.()).catch(() => undefined);
         setNotice(`已移除「${role.name}」。`);
       } catch (removeError) {
         setError(removeError instanceof Error ? removeError.message : `移除「${role.name}」失败。`);
@@ -244,7 +250,7 @@ export function WorkspaceCloneEmployeesView() {
         setRemovingIds((current) => current.filter((item) => item !== role.agentId));
       }
     },
-    [refreshInstalledIds, removingIds],
+    [onAgentRosterChanged, refreshInstalledIds, removingIds],
   );
 
   const closeSelectedRole = useCallback(() => {

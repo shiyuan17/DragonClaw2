@@ -64,7 +64,7 @@ export const WORKSPACE_CORE_TOOL_DEFINITIONS: WorkspaceCoreToolDefinition[] = [
   { id: "message", title: "message", description: "消息发送", category: "messaging", categoryLabel: TOOL_CATEGORY_LABELS.messaging },
   { id: "browser", title: "browser", description: "浏览页面与交互结果", category: "ui", categoryLabel: TOOL_CATEGORY_LABELS.ui },
   { id: "canvas", title: "canvas", description: "画布能力", category: "ui", categoryLabel: TOOL_CATEGORY_LABELS.ui },
-  { id: "cron", title: "cron", description: "自动化与定时任务", category: "automation", categoryLabel: TOOL_CATEGORY_LABELS.automation },
+  { id: "cron", title: "cron", description: "自动化与任务", category: "automation", categoryLabel: TOOL_CATEGORY_LABELS.automation },
   { id: "gateway", title: "gateway", description: "访问本地网关控制能力", category: "automation", categoryLabel: TOOL_CATEGORY_LABELS.automation },
   { id: "nodes", title: "nodes", description: "节点能力", category: "nodes", categoryLabel: TOOL_CATEGORY_LABELS.nodes },
   { id: "agents_list", title: "agents_list", description: "读取 Agent 列表", category: "other", categoryLabel: TOOL_CATEGORY_LABELS.other },

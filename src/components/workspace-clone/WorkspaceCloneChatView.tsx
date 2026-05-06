@@ -2,6 +2,8 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { WORKSPACE_HOME_SUGGESTIONS } from "./workspaceCloneData";
 import { shouldHideWorkspaceMessage } from "./workspaceCloneMessageVisibility";
 import type {
+  WorkspaceCronJob,
+  WorkspaceCronRunRecord,
   WorkspaceEntity,
   WorkspaceHistoryFilter,
   WorkspaceHistoryItem,
@@ -9,7 +11,6 @@ import type {
   WorkspaceMessage,
   WorkspaceRelatedResource,
   WorkspaceResourceItem,
-  WorkspaceScheduleItem,
   WorkspaceSessionSectionKey,
   WorkspaceToolItem,
   WorkspaceUtilityPanel,
@@ -76,7 +77,17 @@ interface WorkspaceCloneChatViewProps {
   activeSessionSection: WorkspaceSessionSectionKey;
   historyItems: WorkspaceHistoryItem[];
   logs: Array<{ id: string; title: string; subtitle: string }>;
-  schedules: WorkspaceScheduleItem[];
+  tasks: WorkspaceCronJob[];
+  selectedTaskId: string | null;
+  selectedTaskRuns: WorkspaceCronRunRecord[];
+  taskLoading: boolean;
+  taskNotice: string;
+  taskError: string;
+  taskRunsError: string;
+  taskRunsLoading: boolean;
+  taskRunsLoadingId: string | null;
+  taskActionJobId: string | null;
+  gatewayConnected: boolean;
   workbenchItems: WorkspaceWorkbenchItem[];
   memoryItems: WorkspaceResourceItem[];
   skillItems: WorkspaceResourceItem[];
@@ -103,6 +114,12 @@ interface WorkspaceCloneChatViewProps {
   onStart: () => void;
   onOpenModelConfig: () => void;
   onOpenLogs: () => void;
+  onRefreshTasks: () => void;
+  onSelectTask: (taskId: string) => void;
+  onToggleTaskEnabled: (task: WorkspaceCronJob) => void;
+  onEditTask: (task: WorkspaceCronJob) => void;
+  onRunTask: (task: WorkspaceCronJob) => void;
+  onDeleteTask: (task: WorkspaceCronJob) => void;
 }
 
 export function WorkspaceCloneChatView({
@@ -118,7 +135,17 @@ export function WorkspaceCloneChatView({
   activeSessionSection,
   historyItems,
   logs,
-  schedules,
+  tasks,
+  selectedTaskId,
+  selectedTaskRuns,
+  taskLoading,
+  taskNotice,
+  taskError,
+  taskRunsError,
+  taskRunsLoading,
+  taskRunsLoadingId,
+  taskActionJobId,
+  gatewayConnected,
   workbenchItems,
   memoryItems,
   skillItems,
@@ -138,6 +165,12 @@ export function WorkspaceCloneChatView({
   onStart,
   onOpenModelConfig,
   onOpenLogs,
+  onRefreshTasks,
+  onSelectTask,
+  onToggleTaskEnabled,
+  onEditTask,
+  onRunTask,
+  onDeleteTask,
 }: WorkspaceCloneChatViewProps) {
   const messageScrollRef = useRef<HTMLDivElement | null>(null);
   const wasNearBottomRef = useRef(true);
@@ -401,7 +434,17 @@ export function WorkspaceCloneChatView({
             activeSessionSection={activeSessionSection}
             historyItems={historyItems}
             logs={logs}
-            schedules={schedules}
+            tasks={tasks}
+            selectedTaskId={selectedTaskId}
+            selectedTaskRuns={selectedTaskRuns}
+            taskLoading={taskLoading}
+            taskNotice={taskNotice}
+            taskError={taskError}
+            taskRunsError={taskRunsError}
+            taskRunsLoading={taskRunsLoading}
+            taskRunsLoadingId={taskRunsLoadingId}
+            taskActionJobId={taskActionJobId}
+            gatewayConnected={gatewayConnected}
             workbenchItems={workbenchItems}
             memoryItems={memoryItems}
             skillItems={skillItems}
@@ -417,6 +460,12 @@ export function WorkspaceCloneChatView({
             onSelectHistorySession={onSelectHistorySession}
             onOpenRelatedResource={onOpenRelatedResource}
             onOpenModelConfig={onOpenModelConfig}
+            onRefreshTasks={onRefreshTasks}
+            onSelectTask={onSelectTask}
+            onToggleTaskEnabled={onToggleTaskEnabled}
+            onEditTask={onEditTask}
+            onRunTask={onRunTask}
+            onDeleteTask={onDeleteTask}
           />
         </Suspense>
       ) : null}
