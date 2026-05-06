@@ -162,29 +162,23 @@ export function WorkspaceCloneUtilityDrawer({
   const [taskFilter, setTaskFilter] = useState<TaskFilterKey>("enabled");
   const [openTaskMenuId, setOpenTaskMenuId] = useState<string | null>(null);
   const taskMenuRef = useRef<HTMLDivElement | null>(null);
+  const taskFilterInitKeyRef = useRef<string | null>(null);
   const enabledTaskCount = tasks.filter((task) => task.enabled).length;
-  const disabledTaskCount = tasks.length - enabledTaskCount;
+  const taskFilterInitKey = `${selectedEntity?.id ?? "none"}:${panel ?? "none"}`;
 
   useEffect(() => {
     if (panel !== "schedule") {
+      taskFilterInitKeyRef.current = null;
       return;
     }
 
-    if (taskFilter === "enabled") {
-      if (enabledTaskCount > 0 || disabledTaskCount === 0) {
-        return;
-      }
-
-      setTaskFilter("disabled");
+    if (taskFilterInitKeyRef.current === taskFilterInitKey) {
       return;
     }
 
-    if (disabledTaskCount > 0 || enabledTaskCount === 0) {
-      return;
-    }
-
-    setTaskFilter("enabled");
-  }, [disabledTaskCount, enabledTaskCount, panel, taskFilter]);
+    taskFilterInitKeyRef.current = taskFilterInitKey;
+    setTaskFilter(enabledTaskCount > 0 ? "enabled" : "disabled");
+  }, [enabledTaskCount, panel, taskFilterInitKey]);
 
   useEffect(() => {
     if (!openTaskMenuId) {
@@ -296,6 +290,7 @@ export function WorkspaceCloneUtilityDrawer({
                 key={filter.key}
                 type="button"
                 className={`workspace-clone__drawer-filter workspace-clone__drawer-filter--task ${taskFilter === filter.key ? "is-active" : ""}`}
+                aria-selected={taskFilter === filter.key}
                 onClick={() => setTaskFilter(filter.key)}
               >
                 {filter.label}
