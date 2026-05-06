@@ -1,5 +1,8 @@
 # DragonClaw - 开发任务总表 (AI 开发规范版)
 
+## Phase 5.54: 内置 OpenClaw 升级到 v2026.5.4
+- [ ] 将 DragonClaw 内置 OpenClaw 锁定版本从 `v2026.4.27` 升级到 `v2026.5.4`，保持 `.openclaw_version` 自动重装、`pnpm install` + 条件 `pnpm build` 安装链路，以及本地 gateway / Control UI / 首页聊天回归可用，不改任何 Tauri command 签名或前端 `invoke()` 契约。
+
 ## Phase 5.53: Workspace 任务抽屉样式收敛
 - [x] 收敛 `workspace-clone` 右侧任务抽屉的列表样式与操作入口，改为紧凑任务行、轻量运行 footer 与更多菜单，不扩展任务创建能力，也不改动现有真实 cron / `invoke()` 契约。
 
