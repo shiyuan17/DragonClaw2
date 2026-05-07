@@ -42,6 +42,32 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager};
 
+#[cfg(target_os = "windows")]
+fn apply_windows_runtime_icons<R: tauri::Runtime>(app: &mut tauri::App<R>) {
+    let Some(default_icon) = app.default_window_icon().cloned() else {
+        eprintln!(
+            "DragonClaw could not apply a Windows runtime icon because no default window icon was available."
+        );
+        return;
+    };
+
+    let webview_windows = app.webview_windows();
+    if webview_windows.is_empty() {
+        eprintln!(
+            "DragonClaw could not apply a Windows runtime icon because no webview windows were available during setup."
+        );
+        return;
+    }
+
+    for (label, window) in webview_windows {
+        if let Err(error) = window.set_icon(default_icon.clone()) {
+            eprintln!(
+                "DragonClaw failed to apply the Windows runtime icon to window '{label}': {error}"
+            );
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -49,6 +75,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(service::ServiceState::default())
         .setup(|app| {
+            #[cfg(target_os = "windows")]
+            apply_windows_runtime_icons(app);
+
             // ===== System Tray =====
             let show_i = MenuItem::with_id(app, "show", "打开面板", true, None::<&str>)?;
             let browser_i = MenuItem::with_id(app, "browser", "打开浏览器", true, None::<&str>)?;
@@ -69,8 +98,14 @@ pub fn run() {
                 ],
             )?;
 
-            let _tray = TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
+            let default_window_icon = app.default_window_icon().cloned();
+            if default_window_icon.is_none() {
+                eprintln!(
+                    "DragonClaw could not resolve the default window icon for the system tray; the tray will fall back to the platform default icon."
+                );
+            }
+
+            let mut tray_builder = TrayIconBuilder::new()
                 .tooltip("DragonClaw")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
@@ -131,8 +166,13 @@ pub fn run() {
                             let _ = window.set_focus();
                         }
                     }
-                })
-                .build(app)?;
+                });
+
+            if let Some(icon) = default_window_icon {
+                tray_builder = tray_builder.icon(icon);
+            }
+
+            let _tray = tray_builder.build(app)?;
 
             Ok(())
         })
