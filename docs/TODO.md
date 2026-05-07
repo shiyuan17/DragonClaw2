@@ -18,6 +18,15 @@
 ## Phase 5.57: Workspace 运行日志分类与详情优化
 - [ ] Upgrade the `workspace-clone` runtime log drawer into categorized, compact log cards with `全部 / 工具调用 / 技能调用 / 系统事件 / 其他` filters, inferred OpenClaw raw-type labels, and a readable detail modal, while keeping the existing `LogEntry` source plus all Tauri / `invoke()` contracts unchanged.
 
+## Phase 5.58: Workspace 历史会话标题恢复
+- [ ] Restore missing `workspace-clone` history session titles by tightening frontend title resolution, repairing empty SQLite cache titles from cached messages, and adding a final non-empty drawer fallback without changing any Tauri / Gateway / `invoke()` contracts.
+
+## Phase 5.58: Workspace 聊天文件侧栏
+- [ ] Add a `文件` entry to the `workspace-clone` chat more-menu, open a right-side file drawer for the current session, extract user and assistant file or link targets from chat messages, support `全部 / 网站 / 文档 / excel / ppt / 图片 / 视频 / 音频` filters, and open targets directly without changing existing Tauri commands, Gateway contracts, or `invoke()` signatures.
+
+## Phase 5.58.x: Workspace 日志与历史会话错码热修
+- [ ] Repair `workspace-clone` runtime log cards and history session titles by restoring UTF-8 humanized log strings, filtering suspicious mojibake titles from frontend caches, self-healing cached session titles from stored messages, and keeping final non-empty drawer-visible fallbacks without changing any Tauri / Gateway / `invoke()` contracts.
+
 ## Phase 5.55: Startup Flow Single Source and Persistent Service
 - [ ] Unify startup into the React guide/setup surface, remove the static Booting splash and duplicate OpenClaw startup overlay, keep homepage chat from replaying the normal startup checklist, and leave OpenClaw running across DragonClaw quits for fast reuse without changing Tauri command or `invoke()` contracts.
 
