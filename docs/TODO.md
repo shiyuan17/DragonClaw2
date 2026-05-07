@@ -17,12 +17,16 @@
 
 ## Phase 5.57: Workspace 运行日志分类与详情优化
 - [ ] Upgrade the `workspace-clone` runtime log drawer into categorized, compact log cards with `全部 / 工具调用 / 技能调用 / 系统事件 / 其他` filters, inferred OpenClaw raw-type labels, and a readable detail modal, while keeping the existing `LogEntry` source plus all Tauri / `invoke()` contracts unchanged.
+- [ ] Phase 5.57.1: fix the `workspace-clone` runtime log drawer so log cards render visible title/summary text again, the log filter row stays readable at drawer width, and the right drawer no longer feels visually clipped, without changing any Tauri / `invoke()` contracts.
 
 ## Phase 5.58: Workspace 历史会话标题恢复
-- [ ] Restore missing `workspace-clone` history session titles by tightening frontend title resolution, repairing empty SQLite cache titles from cached messages, and adding a final non-empty drawer fallback without changing any Tauri / Gateway / `invoke()` contracts.
+- [ ] Restore missing `workspace-clone` history session titles so each history card shows a human-readable conversation title instead of only time, repair empty SQLite cache titles from cached messages, keep history-drawer title display in sync with the agent secondary list, and preserve existing Tauri / Gateway / `invoke()` contracts.
 
 ## Phase 5.58: Workspace 聊天文件侧栏
 - [ ] Add a `文件` entry to the `workspace-clone` chat more-menu, open a right-side file drawer for the current session, extract user and assistant file or link targets from chat messages, support `全部 / 网站 / 文档 / excel / ppt / 图片 / 视频 / 音频` filters, and open targets directly without changing existing Tauri commands, Gateway contracts, or `invoke()` signatures.
+
+## Phase 5.58y: Windows 运行态 Logo 修复
+- [ ] 修复 Windows 运行态窗口/任务栏/托盘/安装产物图标一致性，统一主窗口与托盘共享 `src-tauri/icons/icon.ico` 对应的默认图标来源，并保持现有 Tauri command / `invoke()` 契约不变。
 
 ## Phase 5.58.x: Workspace 日志与历史会话错码热修
 - [ ] Repair `workspace-clone` runtime log cards and history session titles by restoring UTF-8 humanized log strings, filtering suspicious mojibake titles from frontend caches, self-healing cached session titles from stored messages, and keeping final non-empty drawer-visible fallbacks without changing any Tauri / Gateway / `invoke()` contracts.

@@ -1,12 +1,12 @@
 # Phase 5.56.6: Workspace 聊天空白区收起右侧边栏
 
-> Status: Planned
+> Status: Implemented, pending acceptance
 > Date: 2026-05-07
 > Type: Frontend interaction polish
 
 ## Goal
 
-在 `workspace-clone` 聊天页中，当右侧 utility drawer 已展开时，支持点击聊天主画布中的空白区域直接收起右侧边栏，减少来回点右上角关闭按钮的操作成本。
+在 `workspace-clone` 聊天页中，当右侧 utility drawer 已展开时，支持点击聊天主画布中的空白区域直接收起右侧边栏，减少来回点击右上角关闭按钮的操作成本。
 
 ## Scope
 
@@ -23,13 +23,9 @@
 
 ## Implementation Notes
 
-- 在 `WorkspaceCloneChatView` 中为聊天画布的空白容器补充轻量点击关闭逻辑。
-- 使用现有 `onCloseUtilityPanel` 回调，不新增全局状态或新的公共接口。
-- 通过仅响应容器自身空白区域点击，避免影响：
-  - 消息卡片点击/选中文本
-  - 欢迎态建议卡片
-  - 服务启动面板按钮
-  - drawer 内任务/历史/工作台操作
+- 在 `WorkspaceCloneChatView` 中复用现有 `handleBlankAreaClick` / `onCloseUtilityPanel` 逻辑，不新增全局状态或公共接口。
+- 继续只响应容器自身的空白点击，避免影响消息正文、头像、建议卡片、服务启动面板按钮和 drawer 内部操作。
+- 补充消息行背景空白命中：聊天消息 `article` 会撑满整行宽度，所以点击气泡左右两侧的行内空白时，也按“空白区域”处理并收起右侧边栏。
 
 ## Acceptance Criteria
 
@@ -43,6 +39,6 @@
 - `npm run check:file-size`
 - `npm run tauri dev`
 - 手动验证：
-  - 打开任意右侧 utility drawer；
-  - 点击聊天空白区域，drawer 收起；
-  - 再次打开 drawer，点击消息/按钮/建议卡片，drawer 保持打开。
+  - 打开任意右侧 utility drawer。
+  - 点击聊天空白区域，drawer 收起。
+  - 再次打开 drawer，点击消息、按钮或建议卡片，drawer 保持打开。
