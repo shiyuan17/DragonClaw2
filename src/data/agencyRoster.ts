@@ -9,6 +9,7 @@ import type {
   AgencyRosterDefinitionSection,
   AgencyRosterDivision,
   AgencyRosterRole,
+  AgencyRosterRoleProfile,
 } from "../types";
 
 interface NormalizedAgencyAgentInfo {
@@ -35,6 +36,15 @@ const agencyProfileModules = import.meta.glob("./agency-agent-profiles/*.json") 
   () => Promise<{ default: AgencyAgentProfile }>
 >;
 
+const DEFAULT_PERSONALITY_RADAR: Record<string, number> = {
+  structure: 80,
+  reliability: 80,
+  empathy: 70,
+  creativity: 70,
+  execution: 80,
+  system: 80,
+};
+
 function normalizeStringList(value: unknown) {
   return Array.isArray(value)
     ? value
@@ -51,10 +61,24 @@ function normalizePersonalityRadar(value: unknown) {
 
   return Object.entries(value).reduce<Record<string, number>>((result, [key, score]) => {
     if (typeof score === "number" && Number.isFinite(score)) {
-      result[key] = score;
+      const normalizedKey = key.trim().toLowerCase();
+      if (!normalizedKey) {
+        return result;
+      }
+      result[normalizedKey] = Math.min(100, Math.max(0, Math.round(score)));
     }
     return result;
   }, {});
+}
+
+function withDefaultPersonalityRadar(radar: Record<string, number>) {
+  return Object.entries(DEFAULT_PERSONALITY_RADAR).reduce<Record<string, number>>(
+    (result, [key, score]) => {
+      result[key] = typeof radar[key] === "number" ? radar[key] : score;
+      return result;
+    },
+    { ...radar },
+  );
 }
 
 function normalizeInfo(info: AgencyAgentInfo | undefined): NormalizedAgencyAgentInfo {
@@ -200,6 +224,22 @@ async function loadAgencyProfileSections(agentId: string, fallbackDescription: s
   return buildFallbackInfoSections(resolvePreferredProfileInfo(profileModule.default), fallbackDescription);
 }
 
+function buildFallbackRoleProfile(role?: AgencyRosterRole): AgencyRosterRoleProfile {
+  return {
+    name: role?.name?.trim() || "",
+    mission: role?.description?.trim() || "",
+    identity: role?.definitionPreview?.trim() || role?.description?.trim() || "",
+    capabilities: [],
+    likes: [],
+    dislikes: [],
+    rules: [],
+    workflow: [],
+    tags: role?.tags ?? [],
+    usageScenarios: [],
+    personalityRadar: { ...DEFAULT_PERSONALITY_RADAR },
+  };
+}
+
 const agencyRoster = agencyAgentIndex.divisions.map(toAgencyRosterDivision);
 const agencyRoleMap = new Map<string, AgencyRosterRole>(
   agencyRoster.flatMap((division) => division.roles).map((role) => [role.agentId, role]),
@@ -241,6 +281,34 @@ export function resolveWorkspaceAgentDisplayName(agentId: string, fallbackName?:
   }
 
   return normalizedAgentId || MAIN_AGENT_DISPLAY_NAME;
+}
+
+export async function loadAgencyRoleProfile(agentId: string): Promise<AgencyRosterRoleProfile> {
+  const normalizedAgentId = agentId.trim();
+  const fallbackRole = agencyRoleMap.get(normalizedAgentId);
+  const fallbackProfile = buildFallbackRoleProfile(fallbackRole);
+  const loadProfile = agencyProfileModules[`./agency-agent-profiles/${normalizedAgentId}.json`];
+
+  if (!loadProfile) {
+    return fallbackProfile;
+  }
+
+  const profileModule = await loadProfile();
+  const preferredInfo = resolvePreferredProfileInfo(profileModule.default);
+
+  return {
+    name: preferredInfo.name || fallbackProfile.name,
+    mission: preferredInfo.mission || fallbackProfile.mission,
+    identity: preferredInfo.identity || fallbackProfile.identity,
+    capabilities: preferredInfo.capabilities,
+    likes: preferredInfo.likes,
+    dislikes: preferredInfo.dislikes,
+    rules: preferredInfo.rules,
+    workflow: preferredInfo.workflow,
+    tags: preferredInfo.tags.length > 0 ? preferredInfo.tags : fallbackProfile.tags,
+    usageScenarios: preferredInfo.usageScenarios,
+    personalityRadar: withDefaultPersonalityRadar(preferredInfo.personalityRadar),
+  };
 }
 
 export async function loadAgencyRoleDefinition(agentId: string) {

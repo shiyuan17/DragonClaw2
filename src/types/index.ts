@@ -371,6 +371,20 @@ export interface AgencyRosterRole {
     searchText?: string;
 }
 
+export interface AgencyRosterRoleProfile {
+    name: string;
+    mission: string;
+    identity: string;
+    capabilities: string[];
+    likes: string[];
+    dislikes: string[];
+    rules: string[];
+    workflow: string[];
+    tags: string[];
+    usageScenarios: string[];
+    personalityRadar: Record<string, number>;
+}
+
 export interface AgencyRosterDivision {
     id: string;
     title: string;
