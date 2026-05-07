@@ -12,6 +12,7 @@ import {
   getWorkspaceCronStatusTone,
 } from "./workspaceCloneCron";
 import { WorkspaceCloneAvatarModal } from "./WorkspaceCloneAvatarModal";
+import { WorkspaceCloneAgentInfoModal } from "./WorkspaceCloneAgentInfoModal";
 import { WorkspaceCloneCommandsModal } from "./WorkspaceCloneCommandsModal";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
 import { WorkspaceCloneMemoryModal } from "./WorkspaceCloneMemoryModal";
@@ -308,23 +309,11 @@ export function WorkspaceCloneOverlayStack({
         onResetDefault={onResetAvatarOverride}
       />
 
-      <Modal show={showAgentInfo} onClose={onCloseAgentInfo} title="Agent 信息" maxWidth={560}>
-        <div className="workspace-clone__dialog-body">
-          <div className="workspace-clone__dialog-copy">
-            <strong>{selectedEntity?.name || MAIN_AGENT_DISPLAY_NAME}</strong>
-            <p>{selectedEntity?.subtitle || "当前先保留 Agent 信息弹层的结构，后续再继续补全更多真实字段。"}</p>
-          </div>
-          <div className="workspace-clone__info-grid">
-            <div><span>状态</span><strong>{selectedEntity?.status || "offline"}</strong></div>
-            <div><span>当前工作</span><strong>{selectedEntity?.currentWork || "等待后续迁移"}</strong></div>
-            <div><span>最近输出</span><strong>{selectedEntity?.recentOutput || "暂无"}</strong></div>
-            <div><span>实体类型</span><strong>{selectedEntity?.entityType || "agents"}</strong></div>
-          </div>
-        </div>
-        <ModalFooter>
-          <button className="btn-secondary" type="button" onClick={onCloseAgentInfo}>关闭</button>
-        </ModalFooter>
-      </Modal>
+      <WorkspaceCloneAgentInfoModal
+        show={showAgentInfo}
+        selectedEntity={selectedEntity}
+        onClose={onCloseAgentInfo}
+      />
 
       <WorkspaceCloneMemoryModal
         show={showMemoryModal}
