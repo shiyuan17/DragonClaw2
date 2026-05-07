@@ -3,11 +3,20 @@
 ## Phase 5.55.1: Gateway RPC Readiness Grace
 - [ ] Prevent false OpenClaw startup failure while gateway sidecars are warming up by separating true `gateway ready` log detection from HTTP listening, widening RPC probe timeouts, and preserving persistent-service reuse without changing Tauri command or `invoke()` contracts.
 
+## Phase 5.55.2: Startup 单实例自愈与卡死修复
+- [ ] 修复启动偶发卡在 `正在检查环境 / launching` 的问题，将生命周期快照改为非阻塞读取，在启动前收敛 launcher-owned OpenClaw 残留进程，补齐 `service-starting` 轮询/超时兜底，并保持现有 Tauri command / `invoke()` 契约与后台常驻策略不变。
+
 ## Phase 5.56: Workspace Task Card and Editor Refresh
 - [ ] Rebuild the `workspace-clone` task drawer cards and task editor modal into the new compact layout, remove the inline recent-runs block, keep task titles human-readable via one shared display-title resolver, preserve manual `enabled / disabled` filter selection, correct the task dropdown menu styling, show concrete trigger timing for task loops, add a running-only animated indicator in the list without affecting the title line, bridge manual `Run now` with an optimistic running state until real run signals arrive, pass accepted `cron.run` `runId` values into the existing live timeline state, and make manual `Run now` open an independent frontend task-run conversation that first shows a system `正在执行中` reply, then attaches to the real OpenClaw result session or a terminal no-session fallback without changing real cron / Gateway / `invoke()` contracts.
 
 - [ ] Phase 5.56.3: realign manual `Run now` with official OpenClaw task semantics by avoiding pre-opened synthetic task chats, switching into real sessions only when upstream produces one, forcing immediate wake for `main + systemEvent` manual runs, removing the extra visible `模式` UI, and restoring legacy synthetic task sessions by binding them to real gateway sessions before send/reset/new-chat actions continue.
 - [ ] Phase 5.56.4: restore local Rust/Tauri testability first, reproduce one real task run from the current list, then make manual `Run now` bridge directly into real target sessions by `sessionTarget + job.sessionKey`, initialize live-run state immediately from accepted `runId`, and keep `cron.runs` only as a fallback closeout/binding path without changing Tauri or Gateway contracts.
+- [ ] Phase 5.56.5: replace manual task `Run now` with a chat-first new-session flow that creates a real gateway session for the task agent, inserts a local `正在执行任务` system hint, sends the task payload as a user message, and aligns homepage `新对话` with true `sessions.create` behavior instead of `sessions.reset`.
+- [ ] Phase 5.56.6a: de-duplicate chat-first manual task execution content, strip schedule/time wording from manual-run hints and visible user messages, and inject a hidden guardrail prompt so running an existing task does not create or mutate task records unless the user explicitly asks for task management in-chat.
+- [ ] Phase 5.56.6: allow clicking blank space in the `workspace-clone` chat canvas to close the right utility drawer, while keeping message cards, composer controls, task actions, and all existing `invoke()` / session handlers unchanged.
+
+## Phase 5.57: Workspace 运行日志分类与详情优化
+- [ ] Upgrade the `workspace-clone` runtime log drawer into categorized, compact log cards with `全部 / 工具调用 / 技能调用 / 系统事件 / 其他` filters, inferred OpenClaw raw-type labels, and a readable detail modal, while keeping the existing `LogEntry` source plus all Tauri / `invoke()` contracts unchanged.
 
 ## Phase 5.55: Startup Flow Single Source and Persistent Service
 - [ ] Unify startup into the React guide/setup surface, remove the static Booting splash and duplicate OpenClaw startup overlay, keep homepage chat from replaying the normal startup checklist, and leave OpenClaw running across DragonClaw quits for fast reuse without changing Tauri command or `invoke()` contracts.
@@ -82,6 +91,9 @@
 
 ## Phase 5.20: 数字员工中文名称统一显示
 - [x] 在 `workspace-clone` 内统一将 Agent 展示名切到角色库中文名称来源，并将 `main` 的所有用户可见名称显示为“主分身”，同时保留英文 `agentId` 搜索与内部绑定/安装语义不变
+
+## Phase 5.20.2: 数字员工最近会话二级菜单收敛
+- [ ] 将 `workspace-clone` 聊天目录中的数字员工最近会话改为默认显示 3 条、超过 3 条显示“展开更多”、展开后最多展示 7 条并支持“收起更多”，保持现有 session 切换语义与 `invoke()` 契约不变
 
 ## Phase 5.15.9: 首页收缩侧边栏视觉重设计
 - [x] `workspace-clone` 首页收缩态侧边栏改为参考图风格的双轨轻量导航，统一左侧菜单轨与右侧迷你目录轨的卡片节奏、间距、阴影和选中态
