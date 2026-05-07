@@ -963,26 +963,20 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
 
   const loadHistoryTitles = useCallback((options?: { agentIds?: string[]; sessionKeysByAgentId?: Record<string, string[]> }) => {
     const agentIds = options?.agentIds?.length ? options.agentIds : selectedAgentId ? [selectedAgentId] : [];
-    if (agentIds.length === 0) {
-      return;
-    }
-
+    if (agentIds.length === 0) return;
     void Promise.all(agentIds.map((agentId) => loadWorkspaceHistoryTitles({
       agentId, connected, sessionsResult, sessionKeys: options?.sessionKeysByAgentId?.[agentId], historyTitleFetches: historyTitleFetchesRef.current, setHistoryTitleCache,
       loadSessionHistoryMessages, loadPersistedSessionHistoryCache, updateSessionHistoryCache, saveSessionHistoryCache,
     }))).catch(() => undefined);
   }, [connected, loadPersistedSessionHistoryCache, loadSessionHistoryMessages, saveSessionHistoryCache, selectedAgentId, sessionsResult, updateSessionHistoryCache]);
 
-  const selectAgent = useCallback((agentId: string) => {
-    setSelectedAgentId(agentId);
-    setSelectedSessionKey(resolveAgentSessionKey(sessionsResult, agentId));
-  }, [sessionsResult]);
+  useEffect(() => { if (selectedAgentId && sessionsResult?.sessions.length) loadHistoryTitles({ agentIds: [selectedAgentId] }); }, [loadHistoryTitles, selectedAgentId, sessionsResult]);
+
+  const selectAgent = useCallback((agentId: string) => { setSelectedAgentId(agentId); setSelectedSessionKey(resolveAgentSessionKey(sessionsResult, agentId)); }, [sessionsResult]);
 
   const selectSession = useCallback((sessionKey: string, fallbackAgentId?: string | null) => {
     const agentId = resolveSessionContext(sessionKey, fallbackAgentId).agentId;
-    if (agentId) {
-      setSelectedAgentId(agentId); setSelectedSessionKey(sessionKey);
-    }
+    if (agentId) { setSelectedAgentId(agentId); setSelectedSessionKey(sessionKey); }
   }, [resolveSessionContext]);
   const refreshSessionHistory = useCallback((sessionKey: string, agentId?: string | null) => {
     const nextAgentId = resolveSessionContext(sessionKey, agentId || selectedAgentId).agentId;

@@ -3,6 +3,7 @@
 // This file is part of DragonClaw. See LICENSE for details.
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { openPath } from "@tauri-apps/plugin-opener";
 import { motion } from "framer-motion";
 import { resolveWorkspaceAgentDisplayName } from "../../data/agencyRoster";
 import type {
@@ -34,6 +35,11 @@ import { buildWorkspaceRuntimeLogs } from "./workspaceCloneLogs";
 import { formatAgentAvatar } from "./workspaceCloneGateway";
 import { workspaceCloneAvatarCategoryTabs } from "./workspaceCloneAvatarPresets";
 import { resolveWorkspaceGatewayAvatarUrl } from "./workspaceCloneAvatarUtils";
+import {
+  buildWorkspaceChatFileItems,
+  isWorkspaceUrlTarget,
+  resolveWorkspaceLocalOpenPath,
+} from "./workspaceCloneChatFiles";
 import { WorkspaceCloneChatView } from "./WorkspaceCloneChatView";
 import { WorkspaceCloneComposer } from "./WorkspaceCloneComposer";
 import {
@@ -62,6 +68,7 @@ import { useWorkspaceEmailBinding } from "../../hooks/workspace-clone/useWorkspa
 import { loadLocalAgentRoster } from "../../hooks/workspace-gateway/local-agent-roster";
 import type {
   WorkspaceCronJob,
+  WorkspaceChatFileItem,
   WorkspaceEntity,
   WorkspaceGatewayAgentRow,
   WorkspaceGatewayAgentsListResult,
@@ -316,10 +323,7 @@ export function WorkspaceClonePage({
   const savedProvidersLoadSeqRef = useRef(0);
   const modelConfigOpenRef = useRef(false);
   const showDirectory = activeMenu === "chat";
-  const channelDataEnabled =
-    showDirectory &&
-    (activeType === "channels" || relatedResource === "channel" || (utilityPanel === "session" && activeSessionSection === "channel"));
-  const workspaceChannels = useWorkspaceChannels({ configVersion, enabled: channelDataEnabled });
+  const workspaceChannels = useWorkspaceChannels({ configVersion, enabled: showDirectory });
   const { setContextMenu } = workspaceChannels;
   const serviceStartup = useWorkspaceServiceStartupStatus({
     running,
@@ -830,36 +834,40 @@ export function WorkspaceClonePage({
   }, [homepageChat.loadHistoryTitles, utilityPanel]);
 
   const uptimeLabel = running ? formatUptime(uptime) : "\u672a\u542f\u52a8";
-  const shouldBuildLogRows = utilityPanel === "logs" || Boolean(selectedRuntimeLogId);
-  const shouldBuildMemoryRows =
-    memoryAdmin.showMemoryModal || relatedResource === "memory" || (utilityPanel === "session" && activeSessionSection === "memory");
-  const shouldBuildSkillRows =
-    skillsAdmin.showSkillsModal || relatedResource === "skills" || (utilityPanel === "session" && activeSessionSection === "skills");
-  const shouldBuildCommandRows = relatedResource === "commands" || utilityPanel === "session";
-  const shouldBuildToolRows =
-    toolsAdmin.showToolsModal || relatedResource === "tools" || (utilityPanel === "session" && activeSessionSection === "tools");
-  const shouldBuildChannelRows =
-    relatedResource === "channel" || (utilityPanel === "session" && activeSessionSection === "channel");
   const derivedLogs = useMemo(
-    () => (shouldBuildLogRows ? buildWorkspaceRuntimeLogs(logs) : []),
-    [logs, shouldBuildLogRows],
+    () => buildWorkspaceRuntimeLogs(logs),
+    [logs],
+  );
+  const chatMessages = useMemo(
+    () => (chatEnabled ? homepageChat.messages : []),
+    [chatEnabled, homepageChat.messages],
+  );
+  const chatFileItems = useMemo(
+    () => buildWorkspaceChatFileItems(chatMessages),
+    [chatMessages],
   );
   const selectedRuntimeLog = useMemo<WorkspaceRuntimeLogItem | null>(
     () => derivedLogs.find((item) => item.id === selectedRuntimeLogId) ?? null,
     [derivedLogs, selectedRuntimeLogId],
   );
+
+  const handleOpenChatFile = useCallback(async (item: WorkspaceChatFileItem) => {
+    if (isWorkspaceUrlTarget(item.target)) {
+      await invoke("open_url", { url: item.target });
+      return;
+    }
+
+    await openPath(resolveWorkspaceLocalOpenPath(item.target));
+  }, []);
   const memoryResourceItems = useMemo(
-    () => (shouldBuildMemoryRows ? buildWorkspaceMemoryResourceItems(memoryAdmin.memoryFiles) : []),
-    [memoryAdmin.memoryFiles, shouldBuildMemoryRows],
+    () => buildWorkspaceMemoryResourceItems(memoryAdmin.memoryFiles),
+    [memoryAdmin.memoryFiles],
   );
-  const skillResourceItems = useMemo(() => (shouldBuildSkillRows ? skillsAdmin.skillResourceItems : []), [shouldBuildSkillRows, skillsAdmin.skillResourceItems]);
-  const toolResourceItems = useMemo(() => (shouldBuildToolRows ? toolsAdmin.toolResourceItems : []), [shouldBuildToolRows, toolsAdmin.toolResourceItems]);
+  const skillResourceItems = useMemo(() => skillsAdmin.skillResourceItems, [skillsAdmin.skillResourceItems]);
+  const toolResourceItems = useMemo(() => toolsAdmin.toolResourceItems, [toolsAdmin.toolResourceItems]);
   const commandResourceItems = useMemo(
-    () =>
-      shouldBuildCommandRows
-        ? buildCommandSummaryItems(commandsAdmin.slashCommands, commandsAdmin.activeSlashCommandId)
-        : [],
-    [commandsAdmin.activeSlashCommandId, commandsAdmin.slashCommands, shouldBuildCommandRows],
+    () => buildCommandSummaryItems(commandsAdmin.slashCommands, commandsAdmin.activeSlashCommandId),
+    [commandsAdmin.activeSlashCommandId, commandsAdmin.slashCommands],
   );
   const openModelConfigModal = useCallback(() => {
     modelConfigOpenRef.current = true;
@@ -1024,6 +1032,7 @@ export function WorkspaceClonePage({
     memoryAdmin.showMemoryModal ||
     skillsAdmin.showSkillsModal ||
     toolsAdmin.showToolsModal ||
+    selectedRuntimeLogId ||
     selectedRuntimeLog ||
     showSettingsTextPreview ||
     relatedResource,
@@ -1211,7 +1220,7 @@ export function WorkspaceClonePage({
                 selectedEntity={selectedEntity}
                 chatEnabled={chatEnabled}
                 chatDisabledReason={chatDisabledReason}
-                messages={chatEnabled ? homepageChat.messages : []}
+                messages={chatMessages}
                 liveSteps={chatEnabled ? homepageChat.liveSteps : []}
                 connectionError={homepageChat.error}
                 pendingTaskRunBridge={cronTasks.pendingRunNowBridge ? {
@@ -1235,10 +1244,11 @@ export function WorkspaceClonePage({
                 optimisticRunningTaskIds={cronTasks.optimisticRunningTaskIds}
                 gatewayConnected={homepageChat.connected}
                 workbenchItems={WORKSPACE_WORKBENCH}
+                fileItems={chatFileItems}
                 memoryItems={memoryResourceItems}
                 skillItems={skillResourceItems}
                 commandItems={commandResourceItems}
-                channelItems={shouldBuildChannelRows ? workspaceChannels.channelResourceItems : []}
+                channelItems={workspaceChannels.channelResourceItems}
                 toolItems={toolResourceItems}
                 currentModelName={workspaceModelName}
                 currentProviderName={workspaceProviderName}
@@ -1253,6 +1263,9 @@ export function WorkspaceClonePage({
                 onStart={handleStart}
                 onOpenModelConfig={openModelConfigModal}
                 onOpenLogs={() => toggleUtilityPanel("logs")}
+                onOpenChatFile={(item) => {
+                  void handleOpenChatFile(item);
+                }}
                 onOpenRuntimeLogDetail={openRuntimeLogDetail}
                 onRefreshTasks={() => {
                   void cronTasks.refreshTasks({ showLoading: true });
@@ -1345,6 +1358,7 @@ export function WorkspaceClonePage({
               showMemoryModal={memoryAdmin.showMemoryModal}
               showSkillsModal={skillsAdmin.showSkillsModal}
               showToolsModal={toolsAdmin.showToolsModal}
+              showRuntimeLogDetail={Boolean(selectedRuntimeLogId)}
               runtimeLog={selectedRuntimeLog}
               showSettingsTextPreview={showSettingsTextPreview}
               relatedResource={relatedResource}
@@ -1385,8 +1399,7 @@ export function WorkspaceClonePage({
               selectedAvatarPresetId={avatarState.selectedAvatarPresetId}
               avatarNotice={avatarState.avatarNotice}
               avatarError={avatarState.avatarError}
-              memoryItems={memoryResourceItems}
-              channelItems={shouldBuildChannelRows ? workspaceChannels.channelResourceItems : []}
+              channelItems={workspaceChannels.channelResourceItems}
               tasks={cronTasks.tasks}
               selectedTaskId={cronTasks.selectedTaskId}
               selectedTaskRuns={cronTasks.selectedTaskRuns}

@@ -127,6 +127,7 @@ export function WorkspaceCloneHeader({
             <div className="workspace-clone__more-menu">
               {[
                 { key: "history", label: "历史会话", icon: "clock" },
+                { key: "files", label: "文件", icon: "paperclip" },
                 { key: "logs", label: "运行日志", icon: "notebook" },
                 { key: "schedule", label: "任务", icon: "calendar-clock" },
               ].map((item) => (

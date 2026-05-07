@@ -4,6 +4,7 @@ import { shouldHideWorkspaceMessage } from "./workspaceCloneMessageVisibility";
 import type {
   WorkspaceCronJob,
   WorkspaceCronRunRecord,
+  WorkspaceChatFileItem,
   WorkspaceEntity,
   WorkspaceHistoryFilter,
   WorkspaceHistoryItem,
@@ -93,6 +94,7 @@ interface WorkspaceCloneChatViewProps {
   optimisticRunningTaskIds: string[];
   gatewayConnected: boolean;
   workbenchItems: WorkspaceWorkbenchItem[];
+  fileItems: WorkspaceChatFileItem[];
   memoryItems: WorkspaceResourceItem[];
   skillItems: WorkspaceResourceItem[];
   commandItems: WorkspaceResourceItem[];
@@ -118,6 +120,7 @@ interface WorkspaceCloneChatViewProps {
   onStart: () => void;
   onOpenModelConfig: () => void;
   onOpenLogs: () => void;
+  onOpenChatFile: (item: WorkspaceChatFileItem) => void;
   onOpenRuntimeLogDetail: (logId: string) => void;
   onRefreshTasks: () => void;
   onSelectTask: (taskId: string) => void;
@@ -152,6 +155,7 @@ export function WorkspaceCloneChatView({
   optimisticRunningTaskIds,
   gatewayConnected,
   workbenchItems,
+  fileItems,
   memoryItems,
   skillItems,
   commandItems,
@@ -170,6 +174,7 @@ export function WorkspaceCloneChatView({
   onStart,
   onOpenModelConfig,
   onOpenLogs,
+  onOpenChatFile,
   onOpenRuntimeLogDetail,
   onRefreshTasks,
   onSelectTask,
@@ -372,6 +377,7 @@ export function WorkspaceCloneChatView({
                           `is-${message.role}`,
                           message.status ? `is-${message.status}` : "",
                         ].join(" ").trim()}
+                        onClick={handleBlankAreaClick}
                       >
                         <div className="workspace-clone__message-marker">
                           {message.role === "assistant"
@@ -387,7 +393,10 @@ export function WorkspaceCloneChatView({
                     );
                   })}
                   {liveSteps.length > 0 && !hasStreamingMessage ? (
-                    <article className="workspace-clone__message workspace-clone__message--chat is-assistant is-live-status">
+                    <article
+                      className="workspace-clone__message workspace-clone__message--chat is-assistant is-live-status"
+                      onClick={handleBlankAreaClick}
+                    >
                       <div className="workspace-clone__message-marker">
                         {renderAvatarMarker(selectedEntity, selectedEntity?.avatarLabel || "A")}
                       </div>
@@ -477,6 +486,7 @@ export function WorkspaceCloneChatView({
             optimisticRunningTaskIds={optimisticRunningTaskIds}
             gatewayConnected={gatewayConnected}
             workbenchItems={workbenchItems}
+            fileItems={fileItems}
             memoryItems={memoryItems}
             skillItems={skillItems}
             commandItems={commandItems}
@@ -492,6 +502,7 @@ export function WorkspaceCloneChatView({
             onOpenRelatedResource={onOpenRelatedResource}
             onOpenModelConfig={onOpenModelConfig}
             onOpenRuntimeLogDetail={onOpenRuntimeLogDetail}
+            onOpenChatFile={onOpenChatFile}
             onRefreshTasks={onRefreshTasks}
             onSelectTask={onSelectTask}
             onToggleTaskEnabled={onToggleTaskEnabled}

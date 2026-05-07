@@ -17,10 +17,12 @@ export type {
   WorkspaceCronWakeMode,
 } from "./workspaceCloneCronTypes";
 
-export type WorkspaceUtilityPanel = "session" | "history" | "logs" | "schedule" | "workbench" | null;
+export type WorkspaceUtilityPanel = "session" | "history" | "logs" | "schedule" | "workbench" | "files" | null;
 export type WorkspaceSessionSectionKey = "model" | "memory" | "skills" | "commands" | "tools" | "channel" | "schedule";
 export type WorkspaceRelatedResource = WorkspaceSessionSectionKey | null;
 export type WorkspaceHistoryFilter = "all" | "today" | "yesterday";
+export type WorkspaceChatFileCategory = "all" | "website" | "document" | "excel" | "ppt" | "image" | "video" | "audio";
+export type WorkspaceChatFileSourceRole = "user" | "assistant";
 export type WorkspaceRuntimeLogCategory = "tool" | "skill" | "system" | "other";
 export type WorkspaceRuntimeLogCategoryFilter = "all" | WorkspaceRuntimeLogCategory;
 export type WorkspaceRuntimeLogRawType =
@@ -151,6 +153,17 @@ export interface WorkspaceHistoryItem {
   isMain?: boolean;
   kind?: "gateway" | "task-run";
   boundSessionKey?: string | null;
+}
+
+export interface WorkspaceChatFileItem {
+  id: string;
+  title: string;
+  target: string;
+  category: WorkspaceChatFileCategory;
+  sourceRole: WorkspaceChatFileSourceRole;
+  messageId: string;
+  messageTime: string;
+  messagePreview: string;
 }
 
 export interface WorkspaceScheduleItem {
