@@ -1,8 +1,10 @@
 use super::*;
 use super::support::{
-    existing_process_validation_failure_detail, read_runtime_state_from_path,
-    remove_runtime_state_file_at, write_runtime_state_to_path, ServiceRuntimeState,
+    existing_process_validation_failure_detail, is_launcher_gateway_command_line,
+    parse_port_from_command_line, read_runtime_state_from_path, remove_runtime_state_file_at,
+    write_runtime_state_to_path, ServiceRuntimeState,
 };
+use crate::launcher_state;
 
 fn unique_temp_path(file_name: &str) -> std::path::PathBuf {
     let mut path = std::env::temp_dir();
@@ -128,4 +130,39 @@ fn existing_process_rpc_failure_detail_includes_runtime_identity() {
     assert!(detail.contains("port=18789"));
     assert!(detail.contains("started_at=99"));
     assert!(detail.contains("probe failed"));
+}
+
+#[test]
+fn preferred_port_uses_launcher_state_when_available() {
+    let _guard = crate::test_env::env_lock();
+    let state = ServiceState::default();
+    let base = unique_temp_path("launcher-port");
+    let config_dir = base.join("config");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::env::set_var("DRAGONCLAW_USER_CONFIG_DIR", &config_dir);
+
+    launcher_state::mark_launcher_setup_completed_internal(Some(18792)).unwrap();
+    assert_eq!(preferred_known_port(&state), 18792);
+
+    std::env::remove_var("DRAGONCLAW_USER_CONFIG_DIR");
+    let _ = std::fs::remove_dir_all(base);
+}
+
+#[test]
+fn parse_port_from_command_line_extracts_gateway_port() {
+    let command = "\"C:\\\\node.exe\" C:\\\\OpenClawLauncher\\\\openclaw-engine\\\\openclaw.mjs gateway --allow-unconfigured --port 18790 --token abc";
+    assert_eq!(parse_port_from_command_line(command), Some(18790));
+}
+
+#[test]
+fn launcher_gateway_command_line_matches_engine_entry() {
+    let entry = std::path::Path::new(
+        "C:\\Users\\tester\\AppData\\Local\\OpenClawLauncher\\openclaw-engine\\openclaw.mjs",
+    );
+    let command = "\"C:\\\\node.exe\" C:\\Users\\tester\\AppData\\Local\\OpenClawLauncher\\openclaw-engine\\openclaw.mjs gateway --port 18789";
+    assert!(is_launcher_gateway_command_line(command, entry));
+    assert!(!is_launcher_gateway_command_line(
+        "\"C:\\\\node.exe\" C:\\other\\service.mjs gateway --port 18789",
+        entry,
+    ));
 }

@@ -8,37 +8,54 @@
  * installing dependencies, workspace selection, and config injection.
  * All setup-related Tauri command calls and event listeners live here.
  */
-
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { AppPhase, CurrentConfig, LauncherState, ServiceLifecycleSnapshot } from "../types";
+import type { AppPhase, LauncherState, ServiceLifecycleSnapshot } from "../types";
 import {
   getOnboardingSkillInstallDiagnostics,
   markOnboardingSkillInstallRequired,
-  shouldRunOnboardingSkillInstall,
-  startOnboardingSkillInstallBackground,
 } from "../utils/onboardingSkillInstaller";
-
+import {
+  beginSetupEnvironmentCheck,
+  configureSetupWorkspace,
+  scheduleBackgroundOnboardingSkillInstall,
+  startSetupLaunchPolling,
+  syncSetupWorkspacePath,
+} from "./useSetupFlow";
 const LAUNCH_POLL_INTERVAL_MS = 2000;
 const LAUNCH_POLL_TIMEOUT_MS = 60000;
+const ENVIRONMENT_CHECK_TIMEOUT_MS = 20000;
 const ONBOARDING_BACKGROUND_DELAY_MS = 10000;
-
-type IdleWindow = Window & { requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number; cancelIdleCallback?: (handle: number) => void; };
-interface ServiceLogPayload { level: string; message: string; }
-interface ServiceLogBatchPayload { logs: ServiceLogPayload[]; }
-const DEFAULT_LAUNCHER_STATE: LauncherState = { setupCompleted: false, lastLaunchAt: null, lastKnownPort: null };
-
+interface ServiceLogPayload {
+  level: string;
+  message: string;
+}
+interface ServiceLogBatchPayload {
+  logs: ServiceLogPayload[];
+}
+const DEFAULT_LAUNCHER_STATE: LauncherState = {
+  setupCompleted: false,
+  lastLaunchAt: null,
+  lastKnownPort: null,
+};
 interface UseSetupOptions {
   addLog: (level: string, message: string) => void;
   addLogs: (logs: ServiceLogPayload[]) => void;
   checkApiKey: () => Promise<void>;
-  setRunning: (r: boolean) => void;
+  setRunning: (running: boolean) => void;
   serviceLifecycle: ServiceLifecycleSnapshot | null;
+  serviceLifecycleReady: boolean;
 }
-
-export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLifecycle }: UseSetupOptions) {
+export function useSetup({
+  addLog,
+  addLogs,
+  checkApiKey,
+  setRunning,
+  serviceLifecycle,
+  serviceLifecycleReady,
+}: UseSetupOptions) {
   const [phase, setPhase] = useState<AppPhase>("checking");
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -46,7 +63,6 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
   const [workspacePath, setWorkspacePath] = useState("");
   const [setupError, setSetupError] = useState<string | null>(null);
   const [servicePort, setServicePort] = useState(18789);
-
   const phaseRef = useRef<AppPhase>("checking");
   const launchStartedRef = useRef(false);
   const launchFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -55,12 +71,21 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
   const onboardingInstallRunningRef = useRef(false);
   const startupFinalizingRef = useRef(false);
   const launchPollInFlightRef = useRef(false);
+  const environmentCheckStartedRef = useRef(false);
+  const environmentCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const servicePortRef = useRef(18789);
+  const serviceLifecycleRef = useRef<ServiceLifecycleSnapshot | null>(null);
   const finalizeStartupRef = useRef<(force?: boolean) => Promise<void>>(async () => {});
   const checkEnvironmentRef = useRef<() => Promise<void>>(async () => {});
-
-  useEffect(() => { phaseRef.current = phase; }, [phase]);
-  useEffect(() => { servicePortRef.current = servicePort; }, [servicePort]);
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
+  useEffect(() => {
+    servicePortRef.current = servicePort;
+  }, [servicePort]);
+  useEffect(() => {
+    serviceLifecycleRef.current = serviceLifecycle;
+  }, [serviceLifecycle]);
 
   useEffect(() => {
     if (typeof serviceLifecycle?.port === "number" && serviceLifecycle.port > 0) {
@@ -81,6 +106,7 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
         clearTimeout(launchFallbackRef.current);
         launchFallbackRef.current = null;
       }
+
       const errorMessage = serviceLifecycle.lastError
         || serviceLifecycle.detail
         || "OpenClaw 服务启动失败";
@@ -104,6 +130,13 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
     }
   }, []);
 
+  const clearEnvironmentCheckTimeout = useCallback(() => {
+    if (environmentCheckTimeoutRef.current) {
+      clearTimeout(environmentCheckTimeoutRef.current);
+      environmentCheckTimeoutRef.current = null;
+    }
+  }, []);
+
   const clearOnboardingSchedule = useCallback(() => {
     if (onboardingDelayRef.current) {
       clearTimeout(onboardingDelayRef.current);
@@ -111,39 +144,24 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
     }
 
     if (onboardingIdleRef.current !== null) {
-      const idleWindow = window as IdleWindow;
-      idleWindow.cancelIdleCallback?.(onboardingIdleRef.current);
+      window.cancelIdleCallback?.(onboardingIdleRef.current);
       onboardingIdleRef.current = null;
     }
   }, []);
 
-  const syncWorkspacePath = useCallback(async (fallback?: string) => {
-    try {
-      const currentConfig = await invoke<CurrentConfig>("get_current_config");
-      const nextPath = currentConfig.workspace_path?.trim() || fallback || "";
-      setWorkspacePath(nextPath);
-      return nextPath;
-    } catch {
-      if (typeof fallback === "string") {
-        setWorkspacePath(fallback);
-        return fallback;
-      }
-      return "";
-    }
+  const syncWorkspacePath = useCallback((fallback?: string) => {
+    return syncSetupWorkspacePath({
+      fallback,
+      setWorkspacePath,
+    });
   }, []);
 
-  const configureWorkspace = useCallback(async (nextWorkspacePath?: string | null) => {
-    const trimmedWorkspacePath = typeof nextWorkspacePath === "string"
-      ? nextWorkspacePath.trim()
-      : "";
-
-    await invoke("inject_default_config", {
-      workspacePath: trimmedWorkspacePath || null,
+  const configureWorkspace = useCallback((nextWorkspacePath?: string | null) => {
+    return configureSetupWorkspace({
+      nextWorkspacePath,
+      setWorkspacePath,
     });
-    await invoke("inject_default_models");
-    await markOnboardingSkillInstallRequired();
-    return await syncWorkspacePath(trimmedWorkspacePath || undefined);
-  }, [syncWorkspacePath]);
+  }, []);
 
   const backfillOnboardingSkillStateIfNeeded = useCallback(async () => {
     try {
@@ -158,57 +176,14 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
   }, [addLog]);
 
   const startBackgroundOnboardingSkillInstall = useCallback(() => {
-    if (onboardingInstallRunningRef.current) {
-      return;
-    }
-
-    clearOnboardingSchedule();
-
-    const triggerInstall = async () => {
-      if (onboardingInstallRunningRef.current) {
-        return;
-      }
-
-      let needsOnboardingSkills = false;
-      try {
-        needsOnboardingSkills = await shouldRunOnboardingSkillInstall();
-      } catch (error) {
-        addLog("warn", `Onboarding skill install state check failed; background install skipped: ${error}`);
-        return;
-      }
-
-      if (!needsOnboardingSkills) {
-        return;
-      }
-
-      onboardingInstallRunningRef.current = true;
-      addLog("info", "Onboarding recommended skill install was handed off to the backend background task.");
-
-      try {
-        await startOnboardingSkillInstallBackground();
-      } catch (error) {
-        addLog("error", `Background onboarding skill install failed to start: ${error}`);
-      } finally {
-        onboardingInstallRunningRef.current = false;
-      }
-    };
-
-    onboardingDelayRef.current = setTimeout(() => {
-      onboardingDelayRef.current = null;
-      const idleWindow = window as IdleWindow;
-      if (idleWindow.requestIdleCallback) {
-        onboardingIdleRef.current = idleWindow.requestIdleCallback(
-          () => {
-            onboardingIdleRef.current = null;
-            void triggerInstall();
-          },
-          { timeout: ONBOARDING_BACKGROUND_DELAY_MS },
-        );
-        return;
-      }
-
-      void triggerInstall();
-    }, ONBOARDING_BACKGROUND_DELAY_MS);
+    scheduleBackgroundOnboardingSkillInstall({
+      addLog,
+      clearOnboardingSchedule,
+      onboardingDelayRef,
+      onboardingIdleRef,
+      onboardingInstallRunningRef,
+      onboardingBackgroundDelayMs: ONBOARDING_BACKGROUND_DELAY_MS,
+    });
   }, [addLog, clearOnboardingSchedule]);
 
   const finalizeStartup = useCallback(async (force = false) => {
@@ -218,6 +193,7 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
 
     startupFinalizingRef.current = true;
     clearLaunchFallback();
+    clearEnvironmentCheckTimeout();
     launchStartedRef.current = false;
     setLoading(true);
     setRunning(true);
@@ -236,7 +212,33 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
       startupFinalizingRef.current = false;
       setLoading(false);
     }
-  }, [addLog, checkApiKey, clearLaunchFallback, setRunning, setSetupPhase, startBackgroundOnboardingSkillInstall]);
+  }, [
+    addLog,
+    checkApiKey,
+    clearEnvironmentCheckTimeout,
+    clearLaunchFallback,
+    setRunning,
+    setSetupPhase,
+    startBackgroundOnboardingSkillInstall,
+  ]);
+
+  const startLaunchPolling = useCallback((message: string) => {
+    startSetupLaunchPolling(message, {
+      addLog,
+      clearLaunchFallback,
+      finalizeStartup,
+      launchFallbackRef,
+      launchPollInFlightRef,
+      launchStartedRef,
+      phaseRef,
+      startupFinalizingRef,
+      setLoading,
+      setProgressMsg,
+      setSetupError,
+      pollIntervalMs: LAUNCH_POLL_INTERVAL_MS,
+      pollTimeoutMs: LAUNCH_POLL_TIMEOUT_MS,
+    });
+  }, [addLog, clearLaunchFallback, finalizeStartup]);
 
   const launchService = useCallback(async () => {
     if (launchStartedRef.current || startupFinalizingRef.current) {
@@ -263,49 +265,7 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
         return;
       }
 
-      setProgressMsg("OpenClaw 服务启动中，等待就绪信号...");
-      const fallbackStartedAt = Date.now();
-      const pollServiceReady = async () => {
-        if (phaseRef.current !== "launching" || startupFinalizingRef.current) {
-          return;
-        }
-
-        if (!launchPollInFlightRef.current) {
-          launchPollInFlightRef.current = true;
-          try {
-            const snapshot = await invoke<ServiceLifecycleSnapshot | null>("get_service_lifecycle_snapshot");
-            if (snapshot?.status === "ready") {
-              await finalizeStartup(true);
-              return;
-            }
-            if (snapshot?.status === "failed") {
-              launchStartedRef.current = false;
-              const errorMessage = snapshot.lastError || snapshot.detail || "OpenClaw 服务启动失败";
-              setSetupError(errorMessage);
-              setProgressMsg("启动失败，请重试");
-              addLog("error", errorMessage);
-              setLoading(false);
-              return;
-            }
-          } catch (pollError) {
-            addLog("warn", `OpenClaw 启动状态检测失败: ${pollError}`);
-          } finally {
-            launchPollInFlightRef.current = false;
-          }
-        }
-
-        if (Date.now() - fallbackStartedAt >= LAUNCH_POLL_TIMEOUT_MS) {
-          launchStartedRef.current = false;
-          setSetupError("OpenClaw 服务启动超时，请重试");
-          setProgressMsg("启动超时，请重试");
-          addLog("error", "OpenClaw 服务启动超时，未在 60 秒内确认 ready");
-          setLoading(false);
-          return;
-        }
-
-        launchFallbackRef.current = setTimeout(pollServiceReady, LAUNCH_POLL_INTERVAL_MS);
-      };
-      launchFallbackRef.current = setTimeout(pollServiceReady, LAUNCH_POLL_INTERVAL_MS);
+      startLaunchPolling("OpenClaw 服务启动中，等待就绪信号...");
     } catch (err) {
       launchStartedRef.current = false;
       setSetupError(String(err));
@@ -313,7 +273,7 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
       addLog("error", `启动失败: ${err}`);
       setLoading(false);
     }
-  }, [addLog, clearLaunchFallback, finalizeStartup, setSetupPhase]);
+  }, [addLog, clearLaunchFallback, finalizeStartup, setSetupPhase, startLaunchPolling]);
 
   const runSetup = useCallback(async () => {
     setLoading(true);
@@ -341,7 +301,7 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
       const nodeOk = await invoke<boolean>("check_node_exists");
       const openclawOk = await invoke<boolean>("check_openclaw_exists");
       const modulesOk = await invoke<boolean>("check_node_modules_exists");
-      const lifecycleSnapshot = await invoke<ServiceLifecycleSnapshot | null>("get_service_lifecycle_snapshot");
+      const lifecycleSnapshot = serviceLifecycleRef.current;
       const serviceReady = lifecycleSnapshot?.status === "ready";
       const serviceStarting = lifecycleSnapshot?.status === "service-starting";
       const environmentReady = nodeOk && openclawOk && modulesOk;
@@ -379,8 +339,8 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
         setProgress(98);
         if (serviceStarting) {
           setLoading(true);
-          setProgressMsg("OpenClaw 服务正在后台启动，请等待就绪信号...");
-          addLog("info", "Detected an existing OpenClaw service that is still starting; waiting for the structured lifecycle ready signal.");
+          startLaunchPolling("OpenClaw 服务正在后台启动，请等待就绪信号...");
+          addLog("info", "Detected an existing OpenClaw service that is still starting; waiting for lifecycle polling to confirm readiness.");
         } else {
           addLog("info", "Environment is ready but the OpenClaw service is not running yet; starting it now.");
           await launchService();
@@ -389,30 +349,34 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
       }
 
       if (environmentReady && !configOk) {
-          addLog("info", "首次使用，正在自动配置默认工作区...");
-          try {
-            const resolvedWorkspacePath = await configureWorkspace(null);
-            addLog("success", `[OK] 已自动配置默认工作区: ${resolvedWorkspacePath || "默认目录"}`);
-          } catch (configError) {
-            setSetupPhase("workspace");
-            addLog("warn", `默认工作区自动配置失败，已切换为手动选择: ${configError}`);
-            return;
-          }
+        addLog("info", "首次使用，正在自动配置默认工作区...");
+        try {
+          const resolvedWorkspacePath = await configureWorkspace(null);
+          addLog("success", `[OK] 已自动配置默认工作区: ${resolvedWorkspacePath || "默认目录"}`);
+        } catch (configError) {
+          setSetupPhase("workspace");
+          setLoading(false);
+          addLog("warn", `默认工作区自动配置失败，已切换为手动选择: ${configError}`);
+          return;
+        }
+
         addLog("success", "[OK] 环境检查通过，所有组件就绪");
         if (serviceReady) {
           addLog("info", "检测到已有 OpenClaw 在后台运行，正在复用现有服务...");
           await finalizeStartup(true);
           return;
         }
+
         if (serviceStarting) {
           setRunning(false);
           setSetupPhase("launching");
           setLoading(true);
           setProgress(98);
-          setProgressMsg("OpenClaw 服务正在后台启动，请等待就绪信号...");
-          addLog("info", "检测到 OpenClaw 服务正在后台启动，等待结构化生命周期状态变为 ready...");
+          startLaunchPolling("OpenClaw 服务正在后台启动，请等待就绪信号...");
+          addLog("info", "检测到 OpenClaw 服务正在后台启动，等待轮询确认 ready...");
           return;
         }
+
         await launchService();
         return;
       }
@@ -429,12 +393,29 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
     addLog,
     backfillOnboardingSkillStateIfNeeded,
     configureWorkspace,
+    finalizeStartup,
     launchService,
     runSetup,
     setRunning,
     setSetupPhase,
+    startLaunchPolling,
     syncWorkspacePath,
   ]);
+
+  const beginEnvironmentCheck = useCallback(() => {
+    beginSetupEnvironmentCheck({
+      addLog,
+      clearEnvironmentCheckTimeout,
+      environmentCheckStartedRef,
+      environmentCheckTimeoutRef,
+      phaseRef,
+      setLoading,
+      setProgressMsg,
+      setSetupError,
+      timeoutMs: ENVIRONMENT_CHECK_TIMEOUT_MS,
+      runCheck: checkEnvironmentRef.current,
+    });
+  }, [addLog, clearEnvironmentCheckTimeout]);
 
   useEffect(() => {
     finalizeStartupRef.current = finalizeStartup;
@@ -472,9 +453,8 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
       setServicePort(event.payload.port || 18789);
     });
 
-    void checkEnvironmentRef.current();
-
     return () => {
+      clearEnvironmentCheckTimeout();
       clearLaunchFallback();
       clearOnboardingSchedule();
       unlistenProgress.then((fn) => fn());
@@ -485,12 +465,21 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (!serviceLifecycleReady) {
+      return;
+    }
+
+    beginEnvironmentCheck();
+  }, [beginEnvironmentCheck, serviceLifecycleReady]);
+
   const handleSelectFolder = useCallback(async () => {
     const selected = await open({
       directory: true,
       multiple: false,
       title: "选择你的工作区目录",
     });
+
     if (selected && typeof selected === "string") {
       setWorkspacePath(selected);
     }
@@ -539,6 +528,7 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
 
   const retrySetup = useCallback(() => {
     setSetupError(null);
+    clearEnvironmentCheckTimeout();
 
     if (phaseRef.current === "launching") {
       launchStartedRef.current = false;
@@ -548,10 +538,18 @@ export function useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLife
       return;
     }
 
+    if (phaseRef.current === "checking") {
+      environmentCheckStartedRef.current = false;
+      setProgress(0);
+      setProgressMsg("正在重新检查环境...");
+      beginEnvironmentCheck();
+      return;
+    }
+
     setProgress(0);
     setProgressMsg("正在重试初始化...");
     void runSetup();
-  }, [launchService, runSetup]);
+  }, [beginEnvironmentCheck, clearEnvironmentCheckTimeout, launchService, runSetup]);
 
   return {
     phase,

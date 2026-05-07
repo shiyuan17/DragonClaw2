@@ -22,9 +22,11 @@ interface SetupWizardProps {
   progressMsg: string;
   workspacePath: string;
   loading: boolean;
+  setupError: string | null;
   appVersion: string;
   onSelectFolder: () => void;
   onConfirmWorkspace: () => void;
+  onRetry: () => void;
 }
 
 interface SetupStageLayoutProps {
@@ -94,13 +96,23 @@ export function SetupWizard({
   progressMsg,
   workspacePath,
   loading,
+  setupError,
   appVersion,
   onSelectFolder,
   onConfirmWorkspace,
+  onRetry,
 }: SetupWizardProps) {
+  const retryActions = setupError && !loading ? (
+    <div className="startup-actions">
+      <button className="startup-btn startup-btn--primary" onClick={onRetry} type="button">
+        重试
+      </button>
+    </div>
+  ) : undefined;
+
   if (phase === "checking" || phase === "initializing") {
     const title = phase === "checking" ? "DragonClaw 正在检查环境" : "DragonClaw 正在初始化";
-    const description = progressMsg || (
+    const description = setupError || progressMsg || (
       phase === "checking"
         ? "正在确认运行环境与关键依赖，请稍候。"
         : "正在准备必要组件与默认配置，请稍候。"
@@ -113,6 +125,7 @@ export function SetupWizard({
         description={description}
         progress={progress}
         showPercent
+        actions={retryActions}
       />
     );
   }
@@ -122,8 +135,9 @@ export function SetupWizard({
       <SetupStageLayout
         appVersion={appVersion}
         title="即将就绪"
-        description={progressMsg || "正在准备你的工作台，请稍候。"}
+        description={setupError || progressMsg || "正在准备你的工作台，请稍候。"}
         progress={Math.max(progress, 12)}
+        actions={retryActions}
       />
     );
   }

@@ -6,6 +6,7 @@ import type { ServiceLifecycleSnapshot } from "../types";
 
 export function useServiceLifecycle() {
   const [serviceLifecycle, setServiceLifecycle] = useState<ServiceLifecycleSnapshot | null>(null);
+  const [serviceLifecycleReady, setServiceLifecycleReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -14,11 +15,13 @@ export function useServiceLifecycle() {
       .then((snapshot) => {
         if (!cancelled) {
           setServiceLifecycle(snapshot);
+          setServiceLifecycleReady(true);
         }
       })
       .catch(() => {
         if (!cancelled) {
           setServiceLifecycle(null);
+          setServiceLifecycleReady(true);
         }
       });
 
@@ -34,5 +37,6 @@ export function useServiceLifecycle() {
 
   return {
     serviceLifecycle,
+    serviceLifecycleReady,
   };
 }

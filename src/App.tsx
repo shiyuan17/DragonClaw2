@@ -58,7 +58,7 @@ function AppShell() {
     addLog,
     addLogs,
   } = useLogs();
-  const { serviceLifecycle } = useServiceLifecycle();
+  const { serviceLifecycle, serviceLifecycleReady } = useServiceLifecycle();
 
   const {
     providers,
@@ -114,7 +114,7 @@ function AppShell() {
     retrySetup,
     handleSelectFolder,
     handleConfirmWorkspace,
-  } = useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLifecycle });
+  } = useSetup({ addLog, addLogs, checkApiKey, setRunning, serviceLifecycle, serviceLifecycleReady });
 
   const {
     loading: serviceLoading,
@@ -272,9 +272,11 @@ function AppShell() {
               progressMsg={progressMsg}
               workspacePath={workspacePath}
               loading={loading}
+              setupError={setupError}
               appVersion={appVersion}
               onSelectFolder={handleSelectFolder}
               onConfirmWorkspace={handleConfirmWorkspace}
+              onRetry={retrySetup}
             />
           ) : (
             <Suspense fallback={<ReadyPageFallback />}>

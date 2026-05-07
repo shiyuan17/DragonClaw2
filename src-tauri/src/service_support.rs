@@ -4,14 +4,24 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 
 use super::{
-    resolve_gateway_token, set_tracked_process, verify_gateway_rpc_ready, ServiceState,
+    resolve_gateway_token, set_tracked_process, verify_gateway_rpc_ready_with_timeout,
+    ServiceState,
 };
+use crate::openclaw_cli;
 use crate::paths;
+
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+#[cfg(target_os = "windows")]
+const WINDOWS_HIDDEN_WINDOW_FLAG: u32 = 0x0800_0000;
+const PROCESS_DISCOVERY_TIMEOUT_SECS: u64 = 5;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -26,6 +36,12 @@ pub(super) struct TrackedServiceProcess {
     pub pid: u32,
     pub port: u16,
     pub started_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct LauncherProcessInfo {
+    pub pid: u32,
+    pub port: u16,
 }
 
 pub(super) enum ExistingProcessValidation {
@@ -173,9 +189,10 @@ pub(super) fn invalidate_existing_process(
     set_runtime_issue(state, detail);
 }
 
-pub(super) fn validate_existing_process_for_ready(
+pub(super) fn validate_existing_process_for_ready_with_timeout(
     state: &ServiceState,
     process: TrackedServiceProcess,
+    timeout_ms: u64,
 ) -> ExistingProcessValidation {
     let token = match resolve_gateway_token() {
         Ok(token) => token,
@@ -189,7 +206,7 @@ pub(super) fn validate_existing_process_for_ready(
         }
     };
 
-    match verify_gateway_rpc_ready(process.port, &token) {
+    match verify_gateway_rpc_ready_with_timeout(process.port, &token, timeout_ms) {
         Ok(()) => {
             clear_runtime_issue(state);
             ExistingProcessValidation::Ready(process)
@@ -217,6 +234,118 @@ pub(super) fn terminate_owned_child_if_matching_pid(state: &ServiceState, pid: u
         let _ = child.wait();
     }
     true
+}
+
+pub(super) fn parse_port_from_command_line(command_line: &str) -> Option<u16> {
+    let tokens = command_line
+        .split_whitespace()
+        .map(|token| token.trim_matches('"'))
+        .collect::<Vec<_>>();
+
+    tokens
+        .windows(2)
+        .find_map(|pair| match pair {
+            ["--port", value] => value.parse::<u16>().ok(),
+            _ => None,
+        })
+}
+
+pub(super) fn is_launcher_gateway_command_line(command_line: &str, entry_path: &Path) -> bool {
+    let normalized = command_line.replace('/', "\\").to_ascii_lowercase();
+    let normalized_entry = entry_path
+        .to_string_lossy()
+        .replace('/', "\\")
+        .to_ascii_lowercase();
+
+    normalized.contains(normalized_entry.as_str()) && normalized.contains(" gateway")
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct WindowsProcessInfo {
+    process_id: u32,
+    command_line: Option<String>,
+}
+
+#[cfg(target_os = "windows")]
+fn run_hidden_powershell(script: &str) -> Result<std::process::Output, String> {
+    let mut command = std::process::Command::new("powershell");
+    command
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .creation_flags(WINDOWS_HIDDEN_WINDOW_FLAG);
+
+    openclaw_cli::run_command_with_timeout(
+        &mut command,
+        std::time::Duration::from_secs(PROCESS_DISCOVERY_TIMEOUT_SECS),
+        "Discover launcher-owned OpenClaw processes",
+    )
+}
+
+#[cfg(target_os = "windows")]
+pub(super) fn find_launcher_gateway_processes() -> Result<Vec<LauncherProcessInfo>, String> {
+    let entry_path = paths::engine_dir()?.join("openclaw.mjs");
+    let script = r#"
+$items = Get-CimInstance Win32_Process -Filter "name = 'node.exe'" |
+  Select-Object ProcessId, CommandLine |
+  ConvertTo-Json -Compress
+if ($null -eq $items) { "" } else { $items }
+"#;
+    let output = run_hidden_powershell(script)?;
+    if !output.status.success() {
+      let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+      return Err(if stderr.is_empty() {
+          "Failed to enumerate launcher-owned OpenClaw processes".to_string()
+      } else {
+          format!("Failed to enumerate launcher-owned OpenClaw processes: {stderr}")
+      });
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if stdout.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let candidates = match serde_json::from_str::<Vec<WindowsProcessInfo>>(&stdout) {
+        Ok(list) => list,
+        Err(_) => serde_json::from_str::<WindowsProcessInfo>(&stdout)
+            .map(|single| vec![single])
+            .map_err(|error| format!("Failed to parse launcher-owned process discovery output: {error}"))?,
+    };
+
+    let mut processes = candidates
+        .into_iter()
+        .filter_map(|item| {
+            let command_line = item.command_line?;
+            if !is_launcher_gateway_command_line(&command_line, &entry_path) {
+                return None;
+            }
+
+            let port = parse_port_from_command_line(&command_line)?;
+            Some(LauncherProcessInfo {
+                pid: item.process_id,
+                port,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    processes.sort_by_key(|item| (item.port, item.pid));
+    processes.dedup_by(|left, right| left.pid == right.pid);
+    Ok(processes)
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(super) fn find_launcher_gateway_processes() -> Result<Vec<LauncherProcessInfo>, String> {
+    Ok(Vec::new())
 }
 
 pub(super) fn summarize_plugin_config() -> Result<String, String> {

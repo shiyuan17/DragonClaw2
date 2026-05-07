@@ -1,4 +1,4 @@
-// Copyright (C) 2026 shiyuan
+﻿// Copyright (C) 2026 shiyuan
 // SPDX-License-Identifier: GPL-3.0-only
 // This file is part of DragonClaw. See LICENSE for details.
 
@@ -18,24 +18,32 @@ use crate::agency_agents;
 use crate::launcher_state;
 use crate::openclaw_cli;
 use crate::paths;
+#[path = "service_recovery.rs"]
+mod recovery;
 #[path = "service_support.rs"]
 mod support;
+use recovery::{
+    preferred_known_port, reconcile_launcher_gateway_processes, spawn_existing_process_validation,
+    verify_gateway_rpc_ready_with_timeout,
+};
 use support::{
     clear_known_process_tracking, clear_runtime_issue, current_runtime_issue,
-    emit_pending_runtime_issue_log, emit_service_log, persist_tracked_process, read_runtime_state,
-    set_runtime_issue, summarize_plugin_config, terminate_owned_child_if_matching_pid,
-    to_tracked_process, validate_existing_process_for_ready, ExistingProcessValidation,
+    emit_pending_runtime_issue_log, emit_service_log, persist_tracked_process,
+    read_runtime_state, set_runtime_issue, summarize_plugin_config,
+    terminate_owned_child_if_matching_pid, to_tracked_process,
+    validate_existing_process_for_ready_with_timeout, ExistingProcessValidation,
     TrackedServiceProcess,
 };
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
-const DEFAULT_PORT: u16 = 18789;
-const MAX_PORT: u16 = 18899;
+pub(super) const DEFAULT_PORT: u16 = 18789;
+pub(super) const MAX_PORT: u16 = 18899;
 const CONNECT_TIMEOUT_MS: u64 = 200;
 const SERVICE_READY_TIMEOUT_MS: u64 = 120_000;
-const GATEWAY_RPC_CHECK_TIMEOUT_MS: u64 = 20_000;
+pub(super) const EXISTING_PROCESS_RPC_CHECK_TIMEOUT_MS: u64 = 5_000;
+pub(super) const STARTUP_RPC_CHECK_TIMEOUT_MS: u64 = 8_000;
 const GATEWAY_RPC_CHECK_INTERVAL_MS: u64 = 1_000;
 const WINDOWS_HIDDEN_WINDOW_FLAG: u32 = 0x0800_0000;
 
@@ -54,7 +62,7 @@ struct ServiceLogEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-enum ServiceLifecycleStatus {
+pub(in crate::service) enum ServiceLifecycleStatus {
     #[serde(rename = "service-starting")]
     ServiceStarting,
     #[serde(rename = "ready")]
@@ -83,6 +91,7 @@ pub struct ServiceState {
     last_runtime_issue: Mutex<Option<String>>,
     last_logged_runtime_issue: Mutex<Option<String>>,
     manual_stop_requested: AtomicBool,
+    existing_process_validation_running: AtomicBool,
 }
 
 impl Default for ServiceState {
@@ -96,6 +105,7 @@ impl Default for ServiceState {
             last_runtime_issue: Mutex::new(None),
             last_logged_runtime_issue: Mutex::new(None),
             manual_stop_requested: AtomicBool::new(false),
+            existing_process_validation_running: AtomicBool::new(false),
         }
     }
 }
@@ -108,14 +118,14 @@ fn resolve_gateway_token() -> Result<String, String> {
         .ok_or_else(|| "Gateway token missing from openclaw.json".to_string())
 }
 
-fn now_unix_timestamp() -> i64 {
+pub(super) fn now_unix_timestamp() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs() as i64)
         .unwrap_or_default()
 }
 
-fn lifecycle_snapshot(
+pub(in crate::service) fn lifecycle_snapshot(
     status: ServiceLifecycleStatus,
     port: u16,
     detail: Option<String>,
@@ -131,7 +141,7 @@ fn lifecycle_snapshot(
     }
 }
 
-fn set_service_lifecycle(
+pub(in crate::service) fn set_service_lifecycle(
     app: &tauri::AppHandle,
     state: &ServiceState,
     snapshot: Option<ServiceLifecycleSnapshot>,
@@ -152,11 +162,11 @@ fn connect_to_port(port: u16) -> bool {
     .is_ok()
 }
 
-fn gateway_ws_url(port: u16) -> String {
+pub(super) fn gateway_ws_url(port: u16) -> String {
     format!("ws://127.0.0.1:{port}")
 }
 
-fn summarize_gateway_probe_failure(output: std::process::Output) -> String {
+pub(super) fn summarize_gateway_probe_failure(output: std::process::Output) -> String {
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let detail = if !stderr.is_empty() {
@@ -170,42 +180,6 @@ fn summarize_gateway_probe_failure(output: std::process::Output) -> String {
     detail.chars().take(500).collect()
 }
 
-fn verify_gateway_rpc_ready(port: u16, token: &str) -> Result<(), String> {
-    let url = gateway_ws_url(port);
-    let mut command = openclaw_cli::create_openclaw_cli_command()
-        .map_err(|error| format!("鏋勫缓 OpenClaw 缃戝叧鎺㈤拡鍛戒护澶辫触: {error}"))?;
-    command
-        .arg("gateway")
-        .arg("status")
-        .arg("--json")
-        .arg("--require-rpc")
-        .arg("--url")
-        .arg(&url)
-        .arg("--token")
-        .arg(token)
-        .arg("--timeout")
-        .arg(GATEWAY_RPC_CHECK_TIMEOUT_MS.to_string())
-        .env("OPENCLAW_GATEWAY_TOKEN", token)
-        .env("OPENCLAW_GATEWAY_AUTH_TOKEN", token)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    let output = openclaw_cli::run_command_with_timeout(
-        &mut command,
-        Duration::from_millis(GATEWAY_RPC_CHECK_TIMEOUT_MS + 5_000),
-        "OpenClaw gateway RPC readiness check",
-    )?;
-
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(format!(
-            "OpenClaw gateway RPC 校验失败（{}）：{}",
-            url,
-            summarize_gateway_probe_failure(output)
-        ))
-    }
-}
 
 /// Check if a port is truly available by:
 /// 1. Trying to bind to it
@@ -259,7 +233,7 @@ fn is_process_running(pid: u32) -> bool {
 }
 
 #[cfg(target_os = "windows")]
-fn terminate_process_by_pid(pid: u32) -> Result<(), String> {
+pub(super) fn terminate_process_by_pid(pid: u32) -> Result<(), String> {
     let mut command = std::process::Command::new("taskkill");
     command
         .args(["/PID", &pid.to_string(), "/T", "/F"])
@@ -281,7 +255,7 @@ fn terminate_process_by_pid(pid: u32) -> Result<(), String> {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn terminate_process_by_pid(pid: u32) -> Result<(), String> {
+pub(super) fn terminate_process_by_pid(pid: u32) -> Result<(), String> {
     let mut term_command = std::process::Command::new("kill");
     term_command
         .args(["-TERM", &pid.to_string()])
@@ -317,7 +291,10 @@ fn terminate_process_by_pid(pid: u32) -> Result<(), String> {
     }
 }
 
-fn set_tracked_process(state: &ServiceState, tracked: Option<TrackedServiceProcess>) {
+pub(in crate::service) fn set_tracked_process(
+    state: &ServiceState,
+    tracked: Option<TrackedServiceProcess>,
+) {
     let tracked_port = tracked
         .as_ref()
         .map(|process| process.port)
@@ -453,7 +430,8 @@ fn resolve_known_process(state: &ServiceState) -> Result<Option<TrackedServicePr
     Ok(None)
 }
 
-fn emit_service_port(app: &tauri::AppHandle, port: u16) {
+
+pub(in crate::service) fn emit_service_port(app: &tauri::AppHandle, port: u16) {
     let _ = app.emit("service-port", serde_json::json!({ "port": port }));
 }
 
@@ -463,7 +441,7 @@ fn open_control_ui_async(app: tauri::AppHandle, port: u16, token: String) {
             "service-log",
             serde_json::json!({
                 "level": "success",
-                "message": "正在打开浏览器..."
+                "message": "Opening browser..."
             }),
         );
         if let Err(error) = crate::control_ui::open_control_ui(app.clone(), port, token).await {
@@ -486,6 +464,7 @@ fn cleanup_failed_service_start(state: &ServiceState) {
     clear_known_process_tracking(state);
 }
 
+
 async fn wait_for_service_ready(
     state: &ServiceState,
     port: u16,
@@ -496,7 +475,6 @@ async fn wait_for_service_ready(
     let mut last_rpc_check_at =
         Instant::now() - Duration::from_millis(GATEWAY_RPC_CHECK_INTERVAL_MS);
     let mut last_rpc_error: Option<String> = None;
-
     loop {
         let port_accepting = connect_to_port(port);
         let ready_from_log = ready_signal.load(Ordering::SeqCst);
@@ -505,59 +483,57 @@ async fn wait_for_service_ready(
             if let Some(child) = child_guard.as_mut() {
                 match child.try_wait() {
                     Ok(Some(status)) => Some(Err(format!(
-                        "OpenClaw 服务进程已退出，网关端口 {port} 未监听（退出状态: {status}）"
+                        "OpenClaw service process exited before gateway port {port} was ready (status: {status})"
                     ))),
                     Ok(None) => None,
-                    Err(error) => Some(Err(format!("检查 OpenClaw 服务进程失败: {error}"))),
+                    Err(error) => Some(Err(format!(
+                        "Failed to inspect OpenClaw service process: {error}"
+                    ))),
                 }
             } else {
                 Some(Err(format!(
-                    "OpenClaw 服务进程不存在，网关端口 {port} 未监听"
+                    "OpenClaw service process is missing and gateway port {port} is not listening"
                 )))
             }
         };
-
         if let Some(result) = child_status {
             return result;
         }
-
         if ready_from_log && port_accepting {
             return Ok(());
         }
-
         if port_accepting
             && last_rpc_check_at.elapsed() >= Duration::from_millis(GATEWAY_RPC_CHECK_INTERVAL_MS)
         {
             last_rpc_check_at = Instant::now();
-            match verify_gateway_rpc_ready(port, token) {
+            match verify_gateway_rpc_ready_with_timeout(port, token, STARTUP_RPC_CHECK_TIMEOUT_MS) {
                 Ok(()) => return Ok(()),
                 Err(error) => {
                     last_rpc_error = Some(error);
                 }
             }
         }
-
         if started_at.elapsed() >= Duration::from_millis(SERVICE_READY_TIMEOUT_MS) {
             if port_accepting {
                 if let Some(error) = last_rpc_error {
                     return Err(format!(
-                        "OpenClaw 服务启动超时，RPC 检查仍失败: {error}（{} 秒）",
+                        "OpenClaw service startup timed out and RPC validation is still failing: {error} ({}s)",
                         SERVICE_READY_TIMEOUT_MS / 1000
                     ));
                 }
             }
-
             let detail = if port_accepting {
-                format!("端口 {port} 已监听，但未收到 OpenClaw gateway ready 信号")
+                format!(
+                    "Gateway port {port} is listening but the OpenClaw gateway ready signal was never observed"
+                )
             } else {
-                format!("网关端口 {port} 未监听")
+                format!("Gateway port {port} is not listening")
             };
             return Err(format!(
-                "OpenClaw 服务启动超时：{detail}（{} 秒）",
+                "OpenClaw service startup timed out: {detail} ({}s)",
                 SERVICE_READY_TIMEOUT_MS / 1000
             ));
         }
-
         tokio::time::sleep(Duration::from_millis(150)).await;
     }
 }
@@ -579,7 +555,7 @@ pub fn resolve_known_service_port(state: &ServiceState) -> Result<u16, String> {
     Ok(*state.port.lock().unwrap())
 }
 
-fn spawn_heartbeat_monitor(app: tauri::AppHandle, state: &ServiceState) {
+pub(in crate::service) fn spawn_heartbeat_monitor(app: tauri::AppHandle, state: &ServiceState) {
     if state
         .heartbeat_started
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -665,40 +641,31 @@ pub fn is_service_running(state: tauri::State<ServiceState>) -> bool {
 
 #[tauri::command]
 pub fn get_service_lifecycle_snapshot(
+    app: tauri::AppHandle,
     state: tauri::State<ServiceState>,
 ) -> Result<Option<ServiceLifecycleSnapshot>, String> {
+    let _ = reconcile_launcher_gateway_processes(&app, state.inner());
+
     if let Some(existing) = resolve_known_process(state.inner())? {
         if let Some(snapshot) = state.lifecycle.lock().unwrap().clone() {
-            if snapshot.status == ServiceLifecycleStatus::ServiceStarting {
-                return Ok(Some(snapshot));
+            match snapshot.status {
+                ServiceLifecycleStatus::Ready => return Ok(Some(snapshot)),
+                ServiceLifecycleStatus::ServiceStarting => return Ok(Some(snapshot)),
+                ServiceLifecycleStatus::Failed => {}
             }
         }
 
-        return match validate_existing_process_for_ready(state.inner(), existing) {
-            ExistingProcessValidation::Ready(existing) => {
-                let snapshot = lifecycle_snapshot(
-                    ServiceLifecycleStatus::Ready,
-                    existing.port,
-                    Some("Detected an existing OpenClaw service".to_string()),
-                    Some(existing.started_at),
-                    None,
-                );
-                *state.lifecycle.lock().unwrap() = Some(snapshot.clone());
-                clear_runtime_issue(state.inner());
-                Ok(Some(snapshot))
-            }
-            ExistingProcessValidation::Invalid { process, detail } => {
-                let snapshot = lifecycle_snapshot(
-                    ServiceLifecycleStatus::Failed,
-                    process.port,
-                    Some(detail.clone()),
-                    Some(process.started_at),
-                    Some(detail),
-                );
-                *state.lifecycle.lock().unwrap() = Some(snapshot.clone());
-                Ok(Some(snapshot))
-            }
-        };
+        let snapshot = lifecycle_snapshot(
+            ServiceLifecycleStatus::ServiceStarting,
+            existing.port,
+            Some("Validating existing OpenClaw service".to_string()),
+            Some(existing.started_at),
+            None,
+        );
+        *state.lifecycle.lock().unwrap() = Some(snapshot.clone());
+        emit_service_port(&app, existing.port);
+        spawn_existing_process_validation(app, existing);
+        return Ok(Some(snapshot));
     }
 
     if let Some(detail) = current_runtime_issue(state.inner()) {
@@ -757,13 +724,12 @@ async fn start_service_impl(
         .inner()
         .manual_stop_requested
         .store(false, Ordering::SeqCst);
-
     if let Err(error) = agency_agents::migrate_legacy_agency_config() {
         let _ = app.emit(
             "service-log",
             serde_json::json!({
                 "level": "warn",
-                "message": format!("清理数字员工旧配置失败: {error}")
+                "message": format!("Failed to migrate legacy digital employee config: {error}")
             }),
         );
         set_service_lifecycle(
@@ -779,9 +745,13 @@ async fn start_service_impl(
         );
         return Err(error);
     }
-
+    let _ = reconcile_launcher_gateway_processes(&app, state.inner());
     if let Some(existing) = resolve_known_process(state.inner())? {
-        match validate_existing_process_for_ready(state.inner(), existing) {
+        match validate_existing_process_for_ready_with_timeout(
+            state.inner(),
+            existing,
+            EXISTING_PROCESS_RPC_CHECK_TIMEOUT_MS,
+        ) {
             ExistingProcessValidation::Ready(existing) => {
                 let token = resolve_gateway_token()?;
                 spawn_heartbeat_monitor(app.clone(), state.inner());
@@ -800,31 +770,49 @@ async fn start_service_impl(
                 );
                 let _ = launcher_state::record_launcher_launch_internal(Some(existing.port));
                 let _ = app.emit(
-                "service-log",
-                serde_json::json!({
-                    "level": "info",
-                    "message": format!("检测到已在后台运行的 OpenClaw，复用端口 {}", existing.port)
-                }),
+                    "service-log",
+                    serde_json::json!({
+                        "level": "info",
+                        "message": format!("Detected an existing OpenClaw service and reused port {}", existing.port)
+                    }),
                 );
                 if open_browser {
-                open_control_ui_async(app.clone(), existing.port, token.clone());
+                    open_control_ui_async(app.clone(), existing.port, token.clone());
                 }
                 return Ok("Service is already running".to_string());
             }
-            ExistingProcessValidation::Invalid { process, .. } => {
+            ExistingProcessValidation::Invalid { process, detail } => {
                 emit_pending_runtime_issue_log(&app, state.inner(), "warn");
-                if terminate_owned_child_if_matching_pid(state.inner(), process.pid) {
+                let owned_child_terminated =
+                    terminate_owned_child_if_matching_pid(state.inner(), process.pid);
+                let external_terminated = terminate_process_by_pid(process.pid).is_ok();
+                if owned_child_terminated || external_terminated {
+                    emit_service_log(
+                        &app,
+                        "warn",
+                        format!(
+                            "Removed invalid launcher-owned OpenClaw process pid={} port={} before restart.",
+                            process.pid, process.port
+                        ),
+                    );
                     std::thread::sleep(Duration::from_millis(500));
+                } else {
+                    emit_service_log(
+                        &app,
+                        "warn",
+                        format!(
+                            "Failed to remove invalid launcher-owned OpenClaw process pid={} port={}: {}",
+                            process.pid, process.port, detail
+                        ),
+                    );
                 }
             }
         }
     }
-
     emit_pending_runtime_issue_log(&app, state.inner(), "warn");
-
     let openclaw_dir = paths::get_openclaw_dir()?;
     if !openclaw_dir.join("package.json").exists() {
-        let error = "OpenClaw 未安装，请先完成初始化".to_string();
+        let error = "OpenClaw is not installed; complete setup first".to_string();
         set_service_lifecycle(
             &app,
             state.inner(),
@@ -838,20 +826,24 @@ async fn start_service_impl(
         );
         return Err(error);
     }
-
-    let mut chosen_port = DEFAULT_PORT;
-    let mut found = false;
-    for port in DEFAULT_PORT..=MAX_PORT {
-        if is_port_available(port) {
-            chosen_port = port;
-            found = true;
-            break;
+    let preferred_port = preferred_known_port(state.inner());
+    let mut chosen_port = preferred_port;
+    let mut found = is_port_available(preferred_port);
+    if !found {
+        for port in DEFAULT_PORT..=MAX_PORT {
+            if port == preferred_port {
+                continue;
+            }
+            if is_port_available(port) {
+                chosen_port = port;
+                found = true;
+                break;
+            }
         }
     }
-
     if !found {
         let error = format!(
-            "端口 {}-{} 全部被占用，请关闭其他 OpenClaw 实例后重试。",
+            "Ports {}-{} are all in use; close other OpenClaw instances and try again.",
             DEFAULT_PORT, MAX_PORT
         );
         set_service_lifecycle(
@@ -867,17 +859,15 @@ async fn start_service_impl(
         );
         return Err(error);
     }
-
     if chosen_port != DEFAULT_PORT {
         let _ = app.emit(
             "service-log",
             serde_json::json!({
                 "level": "warn",
-                "message": format!("默认端口 {} 已被占用，自动切换到端口 {}", DEFAULT_PORT, chosen_port)
+                "message": format!("Default port {} was unavailable; switched to port {}", DEFAULT_PORT, chosen_port)
             }),
         );
     }
-
     emit_service_port(&app, chosen_port);
     let started_at = now_unix_timestamp();
     set_service_lifecycle(
@@ -895,17 +885,15 @@ async fn start_service_impl(
         "service-log",
         serde_json::json!({
             "level": "info",
-            "message": format!("正在启动 OpenClaw 服务 (端口 {})...", chosen_port)
+            "message": format!("Starting OpenClaw service on port {}...", chosen_port)
         }),
     );
-
     if let Ok(plugin_summary) = summarize_plugin_config() {
         emit_service_log(&app, "info", plugin_summary);
     }
-
     let token = resolve_gateway_token()?;
     let mut command = openclaw_cli::create_openclaw_cli_command()
-        .map_err(|error| format!("构建 OpenClaw 启动命令失败: {error}"))?;
+        .map_err(|error| format!("Failed to build OpenClaw startup command: {error}"))?;
     command
         .arg("gateway")
         .arg("--allow-unconfigured")
@@ -917,11 +905,10 @@ async fn start_service_impl(
         .stderr(Stdio::piped())
         .env("OPENCLAW_GATEWAY_TOKEN", &token)
         .env("OPENCLAW_GATEWAY_AUTH_TOKEN", &token);
-
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(error) => {
-            let message = format!("启动 OpenClaw 失败: {error}");
+            let message = format!("Failed to start OpenClaw: {error}");
             set_service_lifecycle(
                 &app,
                 state.inner(),
@@ -936,24 +923,20 @@ async fn start_service_impl(
             return Err(message);
         }
     };
-
     let tracked = TrackedServiceProcess {
         pid: child.id(),
         port: chosen_port,
         started_at,
     };
-
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
     let app_clone = app.clone();
     let ready_signal = Arc::new(AtomicBool::new(false));
-
     {
         let mut child_guard = state.child.lock().unwrap();
         *child_guard = Some(child);
     }
     set_tracked_process(state.inner(), Some(tracked.clone()));
-
     if let Some(stdout) = stdout {
         let app_out = app_clone.clone();
         let open_port = chosen_port;
@@ -970,7 +953,6 @@ async fn start_service_impl(
                 if is_ready {
                     stdout_ready_signal.store(true, Ordering::SeqCst);
                 }
-
                 if open_browser && !browser_opened && is_ready {
                     browser_opened = true;
                     let app_browser = app_out.clone();
@@ -980,12 +962,10 @@ async fn start_service_impl(
                         open_control_ui_async(app_browser, open_port, browser_token);
                     });
                 }
-
                 pending_logs.push(ServiceLogEntry {
                     level: level.to_string(),
                     message: line,
                 });
-
                 if is_ready
                     || pending_logs.len() >= 50
                     || last_flush.elapsed() >= Duration::from_millis(250)
@@ -997,7 +977,6 @@ async fn start_service_impl(
             flush_service_log_batch(&app_out, &mut pending_logs);
         });
     }
-
     if let Some(stderr) = stderr {
         let app_err = app_clone;
         std::thread::spawn(move || {
@@ -1009,7 +988,6 @@ async fn start_service_impl(
                     level: "error".to_string(),
                     message: line,
                 });
-
                 if pending_logs.len() >= 50 || last_flush.elapsed() >= Duration::from_millis(250) {
                     flush_service_log_batch(&app_err, &mut pending_logs);
                     last_flush = Instant::now();
@@ -1018,7 +996,6 @@ async fn start_service_impl(
             flush_service_log_batch(&app_err, &mut pending_logs);
         });
     }
-
     if let Err(error) =
         wait_for_service_ready(state.inner(), chosen_port, &token, ready_signal).await
     {
@@ -1044,7 +1021,6 @@ async fn start_service_impl(
         );
         return Err(error);
     }
-
     if let Err(error) = persist_tracked_process(&tracked) {
         set_runtime_issue(state.inner(), error.clone());
         cleanup_failed_service_start(state.inner());
@@ -1068,7 +1044,6 @@ async fn start_service_impl(
         );
         return Err(error);
     }
-
     let _ = launcher_state::record_launcher_launch_internal(Some(chosen_port));
     spawn_heartbeat_monitor(app.clone(), state.inner());
     clear_runtime_issue(state.inner());
@@ -1083,15 +1058,13 @@ async fn start_service_impl(
             None,
         )),
     );
-
     let _ = app.emit(
         "service-log",
         serde_json::json!({
             "level": "info",
-            "message": "OpenClaw 服务已启动，正在监听端口..."
+            "message": "OpenClaw service is ready and listening..."
         }),
     );
-
     Ok("Service started".to_string())
 }
 
@@ -1110,9 +1083,7 @@ pub fn stop_service(
         let current = state.tracked_process.lock().unwrap().clone();
         current.or_else(|| resolve_known_process(state.inner()).ok().flatten())
     };
-
     let mut stopped = false;
-
     if let Some(mut child) = owned_child {
         let _ = child.kill();
         let _ = child.wait();
@@ -1122,17 +1093,15 @@ pub fn stop_service(
             stopped = true;
         }
     }
-
     clear_known_process_tracking(state.inner());
     clear_runtime_issue(state.inner());
     clear_service_lifecycle(&app, state.inner());
-
     if stopped {
         let _ = app.emit(
             "service-log",
             serde_json::json!({
                 "level": "info",
-                "message": "OpenClaw 服务已停止"
+                "message": "OpenClaw service stopped"
             }),
         );
         Ok("Service stopped".to_string())
@@ -1180,6 +1149,8 @@ fn is_service_ready_signal(line: &str) -> bool {
 #[cfg(test)]
 #[path = "service_tests.rs"]
 mod tests;
+
+
 
 
 
