@@ -246,6 +246,7 @@ export function normalizeWorkspaceCronRunRecord(value: unknown): WorkspaceCronRu
     ts,
     jobId,
     action: "finished",
+    runId: toOptionalString(value.runId),
     status: normalizeRunStatus(value.status),
     error: toOptionalString(value.error),
     summary: toOptionalString(value.summary),
@@ -378,12 +379,12 @@ export function getWorkspaceCronStatusTone(status: WorkspaceCronDisplayStatus): 
   }
 }
 
-export function getWorkspaceCronEditDisabledReason(job: WorkspaceCronJob): string | null {
-  if (job.payload.kind !== "systemEvent") {
-    return "当前仅支持编辑 systemEvent 类型任务";
-  }
-
+export function getWorkspaceCronEditDisabledReason(_job: WorkspaceCronJob): string | null {
   return null;
+}
+
+export function formatWorkspaceCronPayloadKindLabel(job: WorkspaceCronJob): string {
+  return job.payload.kind === "agentTurn" ? "Agent 对话" : "系统事件";
 }
 
 export function formatWorkspaceCronPayloadPreview(job: WorkspaceCronJob): string {

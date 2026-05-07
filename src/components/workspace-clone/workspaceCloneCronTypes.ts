@@ -86,6 +86,7 @@ export interface WorkspaceCronRunRecord {
   ts: number;
   jobId: string;
   action: "finished";
+  runId?: string;
   status?: WorkspaceCronRunStatus;
   error?: string;
   summary?: string;

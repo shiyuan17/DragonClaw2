@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Modal, ModalFooter } from "../ui/Modal";
 import { MAIN_AGENT_DISPLAY_NAME } from "../../data/agencyRoster";
 import {
@@ -12,6 +13,7 @@ import {
 } from "./workspaceCloneCron";
 import { WorkspaceCloneAvatarModal } from "./WorkspaceCloneAvatarModal";
 import { WorkspaceCloneCommandsModal } from "./WorkspaceCloneCommandsModal";
+import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
 import { WorkspaceCloneMemoryModal } from "./WorkspaceCloneMemoryModal";
 import { WorkspaceCloneSkillsModal } from "./WorkspaceCloneSkillsModal";
 import { WorkspaceCloneToolPermissionsModal } from "./WorkspaceCloneToolPermissionsModal";
@@ -29,6 +31,7 @@ import type {
   WorkspaceMemoryFile,
   WorkspaceRelatedResource,
   WorkspaceResourceItem,
+  WorkspaceRuntimeLogItem,
   WorkspaceSkillCategory,
   WorkspaceSkillOption,
   WorkspaceToolCategory,
@@ -42,7 +45,8 @@ interface WorkspaceCloneOverlayStackProps {
   showMemoryModal: boolean;
   showSkillsModal: boolean;
   showToolsModal: boolean;
-  showRuntimeLogDetail: boolean;
+  showRuntimeLogDetail?: boolean;
+  runtimeLog: WorkspaceRuntimeLogItem | null;
   showSettingsTextPreview: boolean;
   relatedResource: WorkspaceRelatedResource;
   memoryFiles: WorkspaceMemoryFile[];
@@ -162,7 +166,8 @@ export function WorkspaceCloneOverlayStack({
   showMemoryModal,
   showSkillsModal,
   showToolsModal,
-  showRuntimeLogDetail,
+  showRuntimeLogDetail = false,
+  runtimeLog,
   showSettingsTextPreview,
   relatedResource,
   memoryFiles,
@@ -256,6 +261,34 @@ export function WorkspaceCloneOverlayStack({
   const selectedTaskStatus = selectedTask
     ? getWorkspaceCronDisplayStatus(selectedTask, { optimisticRunning: optimisticRunningTaskIds.includes(selectedTask.id) })
     : "disabled";
+  const [runtimeLogCopied, setRuntimeLogCopied] = useState(false);
+  const runtimeLogRawSection = runtimeLog?.detailSections.find((section) => section.tone === "raw") ?? null;
+
+  useEffect(() => {
+    setRuntimeLogCopied(false);
+  }, [runtimeLog?.id]);
+
+  useEffect(() => {
+    if (!runtimeLogCopied) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setRuntimeLogCopied(false);
+    }, 1800);
+
+    return () => window.clearTimeout(timer);
+  }, [runtimeLogCopied]);
+
+  const handleCopyRuntimeLog = () => {
+    if (!runtimeLogRawSection?.content.trim()) {
+      return;
+    }
+
+    void navigator.clipboard.writeText(runtimeLogRawSection.content).then(() => {
+      setRuntimeLogCopied(true);
+    }).catch(() => undefined);
+  };
 
   return (
     <>
@@ -373,26 +406,47 @@ export function WorkspaceCloneOverlayStack({
         onDraftChange={onUpdateCommandDraft}
         onSaveDraft={onSaveCommandDraft}
       />
-
       <Modal show={showRuntimeLogDetail} onClose={onCloseRuntimeLogDetail} title="运行日志详情" maxWidth={760}>
         <div className="workspace-clone__dialog-body">
-          <div className="workspace-clone__dialog-copy">
-            <strong>Runtime Log Detail</strong>
-            <p>这里保留日志详情的结构位置，后续再继续接入真实 runtime log 数据。</p>
-          </div>
-          <div className="workspace-clone__log-detail">
-            <div className="workspace-clone__log-detail-tabs">
-              <button type="button" className="is-active">摘要</button>
-              <button type="button">请求</button>
-              <button type="button">响应</button>
-              <button type="button">轨迹</button>
+          {runtimeLog ? (
+            <div className="workspace-clone__log-detail">
+              <div className="workspace-clone__dialog-copy workspace-clone__runtime-log-detail-copy">
+                <strong>{runtimeLog.title}</strong>
+                <p>{runtimeLog.summary}</p>
+              </div>
+              <div className="workspace-clone__runtime-log-detail-sections">
+                {runtimeLogRawSection ? (
+                  <section className="workspace-clone__runtime-log-detail-section is-raw">
+                    <span className="workspace-clone__runtime-log-detail-label">{runtimeLogRawSection.label}</span>
+                    <div className="workspace-clone__runtime-log-raw-wrap">
+                      <button
+                        type="button"
+                        className={`workspace-clone__runtime-log-copy ${runtimeLogCopied ? "is-copied" : ""}`}
+                        onClick={handleCopyRuntimeLog}
+                        aria-label={runtimeLogCopied ? "已复制原始日志" : "复制原始日志"}
+                        title={runtimeLogCopied ? "已复制" : "复制原始日志"}
+                      >
+                        <WorkspaceCloneIcon
+                          name={runtimeLogCopied ? "check" : "copy"}
+                          size={14}
+                          strokeWidth={2}
+                        />
+                      </button>
+                      <pre>{runtimeLogRawSection.content}</pre>
+                    </div>
+                  </section>
+                ) : null}
+              </div>
             </div>
-            <pre>{`[09:14] chat home rendered\n[09:15] right drawer toggled\n[09:16] overlay stack inspected`}</pre>
-          </div>
+          ) : (
+            <div className="workspace-clone__dialog-copy">
+              <strong>暂无日志详情</strong>
+              <p>请先从运行日志列表中选择一条日志。</p>
+            </div>
+          )}
         </div>
         <ModalFooter>
           <button className="btn-secondary" type="button" onClick={onCloseRuntimeLogDetail}>关闭</button>
-          <button className="btn-primary" type="button">复制日志</button>
         </ModalFooter>
       </Modal>
 

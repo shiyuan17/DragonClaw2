@@ -1062,6 +1062,33 @@
   text-overflow: ellipsis;
 }
 
+.workspace-clone__entity-session-toggle {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  text-align: left;
+  color: var(--workspace-muted);
+}
+
+.workspace-clone__entity-session-toggle-icon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.workspace-clone__entity-session-toggle-label {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .workspace-clone__entity-item--channel {
   min-height: 52px;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -2035,6 +2062,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .workspace-clone__drawer-filter {
@@ -2046,9 +2074,13 @@
   border-radius: var(--dc-radius-pill);
   background: transparent;
   color: var(--workspace-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font: inherit;
   font-size: 12px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .workspace-clone__drawer-filter.is-active {
@@ -2073,6 +2105,7 @@
   flex: 1;
   min-height: 0;
   padding: 10px 16px 16px;
+  overflow-x: hidden;
   overflow-y: auto;
   display: grid;
   gap: 10px;
@@ -2099,6 +2132,7 @@
 .workspace-clone__composer-inline-card,
 .workspace-clone__resource-card {
   padding: 14px;
+  min-width: 0;
 }
 
 .workspace-clone__drawer-card {
@@ -2106,11 +2140,28 @@
   gap: 6px;
 }
 
+.workspace-clone__drawer-filters--logs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+}
+
+.workspace-clone__drawer-filter--logs {
+  min-height: 28px;
+  width: 100%;
+  min-width: 0;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
 .workspace-clone__drawer-card--button {
   width: 100%;
+  min-width: 0;
   border: 1px solid var(--workspace-line);
   background: var(--dc-workspace-panel-elevated);
   color: var(--workspace-ink);
+  overflow: hidden;
   text-align: left;
   cursor: pointer;
   transition:
@@ -2136,6 +2187,12 @@
   padding: 16px 14px;
 }
 
+.workspace-clone__drawer-card--log {
+  gap: 8px;
+  padding: 12px;
+  min-width: 0;
+}
+
 .workspace-clone__drawer-card-title {
   display: -webkit-box;
   overflow: hidden;
@@ -2149,6 +2206,100 @@
   color: var(--workspace-muted);
   font-size: 12px;
   line-height: 1.2;
+}
+
+.workspace-clone__runtime-log-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.workspace-clone__runtime-log-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  display: -webkit-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.workspace-clone__runtime-log-summary {
+  margin: 0;
+  min-width: 0;
+  color: var(--workspace-muted);
+  font-size: 12px;
+  line-height: 1.55;
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  word-break: break-word;
+}
+
+.workspace-clone__runtime-log-meta {
+  display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
+  gap: 6px 8px;
+  color: var(--workspace-faint);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.workspace-clone__runtime-log-meta span,
+.workspace-clone__runtime-log-detail-meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0 8px;
+  border: 1px solid var(--workspace-line);
+  border-radius: var(--dc-radius-pill);
+  background: var(--dc-workspace-panel-elevated);
+  overflow-wrap: anywhere;
+}
+
+.workspace-clone__runtime-log-level {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: var(--dc-radius-pill);
+  border: 1px solid var(--workspace-line);
+  background: var(--dc-workspace-panel-elevated);
+  color: var(--workspace-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.workspace-clone__runtime-log-level.is-error {
+  border-color: var(--dc-workspace-danger-border);
+  background: var(--dc-workspace-danger-surface);
+  color: var(--dc-workspace-danger-text);
+}
+
+.workspace-clone__runtime-log-level.is-warn,
+.workspace-clone__runtime-log-level.is-warning {
+  border-color: var(--dc-workspace-warning-border);
+  background: var(--dc-workspace-warning-surface);
+  color: var(--dc-workspace-warning-text);
+}
+
+.workspace-clone__runtime-log-level.is-success {
+  border-color: var(--dc-workspace-success-border);
+  background: var(--dc-workspace-success-surface);
+  color: var(--dc-workspace-success-text);
 }
 
 .workspace-clone__drawer-empty {
@@ -2827,6 +2978,97 @@
   word-break: break-word;
   line-height: 1.65;
   overflow: auto;
+}
+
+.workspace-clone__runtime-log-detail-copy {
+  gap: 8px;
+}
+
+.workspace-clone__runtime-log-detail-copy strong {
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.workspace-clone__runtime-log-detail-sections {
+  display: grid;
+  gap: 12px;
+}
+
+.workspace-clone__runtime-log-detail-section {
+  display: grid;
+  gap: 8px;
+}
+
+.workspace-clone__runtime-log-detail-label {
+  color: var(--workspace-faint);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workspace-clone__runtime-log-detail-section pre {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--workspace-line);
+  border-radius: 14px;
+  background: var(--workspace-panel-soft);
+  color: var(--dc-workspace-ink-soft);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.62;
+  font-family: var(--dc-font-mono);
+  user-select: text;
+  cursor: text;
+}
+
+.workspace-clone__runtime-log-detail-section.is-summary pre {
+  font-family: var(--dc-font-body);
+  font-size: 13px;
+}
+
+.workspace-clone__runtime-log-raw-wrap {
+  position: relative;
+}
+
+.workspace-clone__runtime-log-raw-wrap pre {
+  padding-right: 44px;
+}
+
+.workspace-clone__runtime-log-copy {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--workspace-line);
+  border-radius: 10px;
+  background: var(--dc-workspace-panel-elevated);
+  color: var(--workspace-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--dc-motion-duration-fast) var(--dc-motion-ease-standard),
+    color var(--dc-motion-duration-fast) var(--dc-motion-ease-standard),
+    border-color var(--dc-motion-duration-fast) var(--dc-motion-ease-standard),
+    background var(--dc-motion-duration-fast) var(--dc-motion-ease-standard);
+}
+
+.workspace-clone__runtime-log-raw-wrap:hover .workspace-clone__runtime-log-copy,
+.workspace-clone__runtime-log-raw-wrap:focus-within .workspace-clone__runtime-log-copy,
+.workspace-clone__runtime-log-copy.is-copied {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.workspace-clone__runtime-log-copy.is-copied {
+  color: var(--dc-workspace-success-text);
+  border-color: var(--dc-workspace-success-border);
+  background: var(--dc-workspace-success-surface);
 }
 
 .workspace-clone__info-grid,
@@ -3867,6 +4109,7 @@
 .workspace-clone__drawer-filter:not(:disabled):hover,
 .workspace-clone__entity-expander:not(:disabled):hover,
 .workspace-clone__entity-session-item:not(:disabled):hover,
+.workspace-clone__entity-session-toggle:not(:disabled):hover,
 .workspace-clone__composer-pill:not(:disabled):hover,
 .workspace-clone__composer-icon-round:not(:disabled):hover,
 .workspace-clone__dialog-tab:not(:disabled):not(.is-active):hover,
@@ -3924,6 +4167,7 @@
 .workspace-clone__entity-branch-main:focus-visible,
 .workspace-clone__entity-expander:focus-visible,
 .workspace-clone__entity-session-item:focus-visible,
+.workspace-clone__entity-session-toggle:focus-visible,
 .workspace-clone__mini-create:focus-visible,
 .workspace-clone__mini-tab:focus-visible,
 .workspace-clone__mini-entity:focus-visible,

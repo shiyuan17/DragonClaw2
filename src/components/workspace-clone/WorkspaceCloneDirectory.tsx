@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import type { WorkspaceEntityType } from "../../types";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
 import type {
@@ -8,6 +8,9 @@ import type {
   WorkspaceEntity,
   WorkspaceTypeTab,
 } from "./workspaceCloneTypes";
+
+export const DEFAULT_VISIBLE_AGENT_RECENT_SESSIONS = 3;
+const MAX_VISIBLE_AGENT_RECENT_SESSIONS = 7;
 
 const WorkspaceCloneChannelBindingModal = lazy(() =>
   import("./WorkspaceCloneChannelBindingModal").then((module) => ({
@@ -20,6 +23,7 @@ interface WorkspaceCloneDirectoryProps {
   activeType: WorkspaceEntityType;
   entities: WorkspaceEntity[];
   selectedEntityId: string;
+  currentSessionKey: string;
   isCollapsed: boolean;
   searchQuery: string;
   contextMenu: DirectoryContextMenuState;
@@ -57,6 +61,7 @@ interface WorkspaceCloneDirectoryProps {
   onToggleCollapsed: () => void;
   onSelectType: (type: WorkspaceEntityType) => void;
   onSelectEntity: (entityId: string) => void;
+  onSelectSession: (sessionKey: string, fallbackAgentId?: string | null) => void;
   onSearchChange: (value: string) => void;
   onOpenContextMenu: (event: React.MouseEvent<HTMLButtonElement>, entity: WorkspaceEntity) => void;
   onCloseContextMenu: () => void;
@@ -210,6 +215,7 @@ export function WorkspaceCloneDirectory({
   activeType,
   entities,
   selectedEntityId,
+  currentSessionKey,
   isCollapsed,
   searchQuery: _searchQuery,
   contextMenu,
@@ -247,6 +253,7 @@ export function WorkspaceCloneDirectory({
   onToggleCollapsed,
   onSelectType,
   onSelectEntity,
+  onSelectSession,
   onSearchChange: _onSearchChange,
   onOpenContextMenu,
   onCloseContextMenu,
@@ -268,11 +275,140 @@ export function WorkspaceCloneDirectory({
   onSaveChannelBinding,
   onRemoveChannelBinding,
 }: WorkspaceCloneDirectoryProps) {
+  const [expandedAgentIds, setExpandedAgentIds] = useState<Record<string, boolean>>({});
   const emptyLabel = activeType === "channels" ? "暂无频道结果" : activeType === "teams" ? "暂无团队结果" : "暂无数字员工结果";
   const directoryToggleLabel = isCollapsed ? "展开目录栏" : "收起目录栏";
   const visibleEntities = activeType === "agents" ? entities : entities.slice(0, 6);
   const boundChannels = activeType === "channels" ? entities.filter((entity) => entity.isBoundChannel) : [];
   const catalogChannels = activeType === "channels" ? entities.filter((entity) => entity.isCatalogEntry) : [];
+
+  useEffect(() => {
+    if (activeType !== "agents") {
+      return;
+    }
+
+    setExpandedAgentIds((current) => {
+      let changed = false;
+      const next = { ...current };
+      const validAgentIds = new Set<string>();
+
+      entities.forEach((entity) => {
+        if (entity.entityType !== "agents") {
+          return;
+        }
+
+        validAgentIds.add(entity.id);
+      });
+
+      Object.keys(next).forEach((agentId) => {
+        if (validAgentIds.has(agentId)) {
+          return;
+        }
+
+        delete next[agentId];
+        changed = true;
+      });
+
+      return changed ? next : current;
+    });
+  }, [activeType, entities]);
+
+  const renderDirectoryEntity = (entity: WorkspaceEntity) => {
+    if (activeType !== "agents") {
+      return renderEntityButton(
+        entity,
+        selectedEntityId,
+        activeType,
+        onSelectEntity,
+        onOpenContextMenu,
+        onOpenChannelBindingModal,
+      );
+    }
+
+    const recentSessions = entity.recentSessions ?? [];
+    const hasRecentSessions = recentSessions.length > 0;
+    const hasOverflowSessions = recentSessions.length > DEFAULT_VISIBLE_AGENT_RECENT_SESSIONS;
+    const isExpanded = expandedAgentIds[entity.id] ?? false;
+    const visibleSessions = recentSessions.slice(
+      0,
+      isExpanded ? MAX_VISIBLE_AGENT_RECENT_SESSIONS : DEFAULT_VISIBLE_AGENT_RECENT_SESSIONS,
+    );
+    const isActive = selectedEntityId === entity.id;
+    const toggleRecentSessions = () => {
+      setExpandedAgentIds((current) => ({
+        ...current,
+        [entity.id]: !(current[entity.id] ?? false),
+      }));
+    };
+
+    return (
+      <article
+        key={entity.id}
+        className={[
+          "workspace-clone__entity-item",
+          "workspace-clone__entity-branch",
+          isActive ? "is-active" : "",
+          isExpanded ? "is-expanded" : "",
+        ].join(" ").trim()}
+      >
+        <div className="workspace-clone__entity-branch-head">
+          <button
+            type="button"
+            className="workspace-clone__entity-branch-main"
+            onClick={() => onSelectEntity(entity.id)}
+          >
+            <span className="workspace-clone__entity-avatar-shell">
+              <span className={`workspace-clone__entity-avatar is-${entity.accent}`}>
+                {renderEntityAvatar(entity)}
+              </span>
+              <i className={`workspace-clone__entity-status workspace-clone__entity-status--avatar is-${entity.status}`} />
+            </span>
+            <span className="workspace-clone__entity-text">
+              <strong>{entity.name}</strong>
+              {entity.subtitle ? <small title={entity.subtitle}>{entity.subtitle}</small> : null}
+            </span>
+          </button>
+        </div>
+
+        {hasRecentSessions ? (
+          <div className="workspace-clone__entity-session-list">
+            {visibleSessions.map((session) => (
+              <button
+                key={session.id}
+                type="button"
+                className={`workspace-clone__entity-session-item ${session.active || session.sessionKey === currentSessionKey ? "is-active" : ""}`}
+                onClick={() => onSelectSession(session.sessionKey || session.id, entity.id)}
+              >
+                <span className="workspace-clone__entity-session-icon">
+                  <WorkspaceCloneIcon name="message-circle" size={14} strokeWidth={1.8} />
+                </span>
+                <span className="workspace-clone__entity-session-copy">
+                  <strong>{session.title}</strong>
+                  <small>{session.isMain ? `${session.time} / Main` : session.time}</small>
+                </span>
+              </button>
+            ))}
+            {hasOverflowSessions ? (
+              <button
+                type="button"
+                className="workspace-clone__entity-session-toggle"
+                aria-expanded={isExpanded}
+                aria-label={isExpanded ? `收起 ${entity.name} 的更多会话` : `展开 ${entity.name} 的更多会话`}
+                onClick={toggleRecentSessions}
+              >
+                <span className="workspace-clone__entity-session-toggle-icon">
+                  <WorkspaceCloneIcon name="more" size={14} strokeWidth={2} />
+                </span>
+                <span className="workspace-clone__entity-session-toggle-label">
+                  {isExpanded ? "收起更多" : "展开更多"}
+                </span>
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </article>
+    );
+  };
 
   return (
     <>
@@ -395,16 +531,7 @@ export function WorkspaceCloneDirectory({
             ) : (
               <section className={`workspace-clone__entity-list ${activeType === "agents" ? "is-agents" : ""}`}>
                 {visibleEntities.length > 0 ? (
-                  visibleEntities.map((entity) =>
-                    renderEntityButton(
-                      entity,
-                      selectedEntityId,
-                      activeType,
-                      onSelectEntity,
-                      onOpenContextMenu,
-                      onOpenChannelBindingModal,
-                    ),
-                  )
+                  visibleEntities.map((entity) => renderDirectoryEntity(entity))
                 ) : (
                   <div className="workspace-clone__entity-empty">
                     <div className="workspace-clone__empty-card">

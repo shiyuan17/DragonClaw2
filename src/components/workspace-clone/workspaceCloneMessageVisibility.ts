@@ -11,6 +11,12 @@ const RAW_JSON_EXEC_SIGNAL_RE =
   /"tool"\s*:\s*"exec"|"status"\s*:\s*"error"|exec host=sandbox|Microsoft\.PowerShell\.Commands\.InvokeWebRequestCommand/i;
 const EXTERNAL_CONTENT_RE =
   /EXTERNAL_UNTRUSTED_CONTENT|SECURITY NOTICE: The following content is from an EXTERNAL, UNTRUSTED source/i;
+const COMMAND_STILL_RUNNING_RE =
+  /^\s*Command still running \(session [^)]+\)\.\s*Use process \(list\/poll\/log\/write\/kill\/clear\/remove\) for follow-up\.?\s*$/i;
+const VIEW_IN_BROWSER_LINE_RE = /^\s*View in browser\b/i;
+const RAW_HTML_LINE_RE = /^\s*<(?:!doctype|html|head|body|div|span|p|h[1-6]|table|tr|td|style|script)\b/i;
+const RAW_PROCESS_TAIL_SIGNAL_RE =
+  /"attachments"\s*:|"externalContent"\s*:|"toolCallId"\s*:|"stdout"\s*:|"stderr"\s*:|"exitCode"\s*:|"snippet"\s*:|"results"\s*:|"subject"\s*:|"from"\s*:|"html"\s*:|<div\b|<html\b/i;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -49,14 +55,12 @@ function getJsonCandidate(text: string) {
   return "";
 }
 
-function looksLikeHiddenProcessPayloadJson(text: string) {
-  const jsonCandidate = getJsonCandidate(text);
-  const parsed = jsonCandidate ? tryParseJsonRecord(jsonCandidate) : null;
-  if (!parsed) {
-    return false;
-  }
-
+function looksLikeHiddenProcessPayloadRecord(parsed: Record<string, unknown>) {
   const keys = new Set(Object.keys(parsed));
+  const type = typeof parsed.type === "string" ? parsed.type.trim().toLowerCase() : "";
+  const parsedText = typeof parsed.text === "string" ? parsed.text : "";
+  const parsedTitle = typeof parsed.title === "string" ? parsed.title : "";
+  const parsedTool = typeof parsed.tool === "string" ? parsed.tool : "";
   const hasExternalContent = keys.has("externalContent");
   const hasFetchShape =
     keys.has("url") &&
@@ -69,18 +73,19 @@ function looksLikeHiddenProcessPayloadJson(text: string) {
   const hasExecShape =
     (keys.has("tool") || keys.has("command") || keys.has("stderr") || keys.has("stdout") || keys.has("exitCode")) &&
     (keys.has("status") || keys.has("error") || keys.has("cwd"));
-  const parsedText = typeof parsed.text === "string" ? parsed.text : "";
-  const parsedTitle = typeof parsed.title === "string" ? parsed.title : "";
-  const parsedTool = typeof parsed.tool === "string" ? parsed.tool : "";
 
   if (
     hasExternalContent ||
     hasFetchShape ||
     hasSearchShape ||
-    (hasExecShape && /exec|shell|terminal|command/i.test(parsedTool || jsonCandidate)) ||
+    (hasExecShape && /exec|shell|terminal|command/i.test(parsedTool || JSON.stringify(parsed))) ||
     EXTERNAL_CONTENT_RE.test(parsedText) ||
     /EXTERNAL_UNTRUSTED_CONTENT/i.test(parsedTitle)
   ) {
+    return true;
+  }
+
+  if (["tool", "tool_result", "tool-call", "tool_call", "command_output"].includes(type)) {
     return true;
   }
 
@@ -108,6 +113,16 @@ function looksLikeHiddenProcessPayloadJson(text: string) {
   const hasUserFacingSignal = userFacingSignals.some((key) => keys.has(key));
 
   return processSignalCount >= 3 && !hasUserFacingSignal;
+}
+
+function looksLikeHiddenProcessPayloadJson(text: string) {
+  const jsonCandidate = getJsonCandidate(text);
+  const parsed = jsonCandidate ? tryParseJsonRecord(jsonCandidate) : null;
+  if (!parsed) {
+    return false;
+  }
+
+  return looksLikeHiddenProcessPayloadRecord(parsed);
 }
 
 function isTranscriptLine(line: string) {
@@ -179,6 +194,153 @@ function looksLikeRawExecutionTranscript(text: string) {
   return transcriptLineCount >= 3 && transcriptLineCount / nonEmptyLines.length >= 0.6;
 }
 
+function looksLikeStandaloneProcessStatus(text: string) {
+  const normalized = text.trim();
+  if (!normalized) {
+    return false;
+  }
+
+  return COMMAND_STILL_RUNNING_RE.test(normalized);
+}
+
+function isMeaningfulUserFacingPrefix(text: string) {
+  const normalized = text.trim();
+  return Boolean(normalized) && /[\u4E00-\u9FFFA-Za-z0-9]/.test(normalized) && !isWorkspaceRawProcessEcho(normalized);
+}
+
+function looksLikeMixedProcessTail(text: string) {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  if (isWorkspaceRawProcessEcho(trimmed)) {
+    return true;
+  }
+
+  const nonEmptyLines = trimmed
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const firstLine = nonEmptyLines[0] ?? "";
+
+  if (COMMAND_STILL_RUNNING_RE.test(trimmed) || COMMAND_STILL_RUNNING_RE.test(firstLine)) {
+    return true;
+  }
+
+  if (
+    VIEW_IN_BROWSER_LINE_RE.test(firstLine) &&
+    (RAW_PROCESS_TAIL_SIGNAL_RE.test(trimmed) || /\n\s*[\[{]/.test(trimmed) || nonEmptyLines.some((line) => RAW_HTML_LINE_RE.test(line)))
+  ) {
+    return true;
+  }
+
+  if (nonEmptyLines.some((line) => RAW_HTML_LINE_RE.test(line)) && RAW_PROCESS_TAIL_SIGNAL_RE.test(trimmed)) {
+    return true;
+  }
+
+  return false;
+}
+
+function trimMixedProcessTail(text: string) {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  const lines = trimmed
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd());
+  const lineStartOffsets: number[] = [];
+  let offset = 0;
+  for (const line of lines) {
+    lineStartOffsets.push(offset);
+    offset += line.length + 1;
+  }
+
+  for (let index = 1; index < lines.length; index += 1) {
+    const suffix = lines.slice(index).join("\n").trim();
+    const prefix = lines.slice(0, index).join("\n").trimEnd();
+    if (!isMeaningfulUserFacingPrefix(prefix)) {
+      continue;
+    }
+
+    if (looksLikeMixedProcessTail(suffix)) {
+      return prefix.trim();
+    }
+  }
+
+  const candidates = [
+    trimmed.search(/\n\s*Command still running \(session [^)]+\)\./i),
+    trimmed.search(/\n\s*View in browser\b/i),
+    trimmed.search(/\n\s*EXTERNAL_UNTRUSTED_CONTENT/i),
+  ].filter((value) => value >= 0);
+  const rawTailStart = candidates.length > 0 ? Math.min(...candidates) : -1;
+  if (rawTailStart >= 0) {
+    const prefix = trimmed.slice(0, rawTailStart).trimEnd();
+    const suffix = trimmed.slice(rawTailStart).trim();
+    if (isMeaningfulUserFacingPrefix(prefix) && looksLikeMixedProcessTail(suffix)) {
+      return prefix.trim();
+    }
+  }
+
+  const htmlTailMatch = trimmed.match(/\n\s*<(?:!doctype|html|head|body|div|span|p|h[1-6]|table|tr|td|style|script)\b/i);
+  if (htmlTailMatch?.index !== undefined) {
+    const prefix = trimmed.slice(0, htmlTailMatch.index).trimEnd();
+    const suffix = trimmed.slice(htmlTailMatch.index).trim();
+    if (isMeaningfulUserFacingPrefix(prefix) && looksLikeMixedProcessTail(suffix)) {
+      return prefix.trim();
+    }
+  }
+
+  for (let index = 1; index < lines.length; index += 1) {
+    const line = lines[index]?.trim() ?? "";
+    if (!line || !/^[\[{]/.test(line)) {
+      continue;
+    }
+
+    const suffixStart = lineStartOffsets[index] ?? -1;
+    if (suffixStart < 0) {
+      continue;
+    }
+
+    const prefix = trimmed.slice(0, suffixStart).trimEnd();
+    const suffix = trimmed.slice(suffixStart).trim();
+    if (!isMeaningfulUserFacingPrefix(prefix)) {
+      continue;
+    }
+
+    if (looksLikeHiddenProcessPayloadJson(suffix)) {
+      return prefix.trim();
+    }
+  }
+
+  return trimmed;
+}
+
+function extractTextFromContentBlock(block: unknown): string {
+  if (typeof block === "string") {
+    return block;
+  }
+
+  if (!isRecord(block)) {
+    return "";
+  }
+
+  if (looksLikeHiddenProcessPayloadRecord(block)) {
+    return "";
+  }
+
+  const candidates = [block.text, block.content, block.input, block.output];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string") {
+      return candidate;
+    }
+  }
+
+  return "";
+}
+
 export function isWorkspaceRawProcessEcho(text: string) {
   const trimmed = text.trim();
   if (!trimmed) {
@@ -186,10 +348,64 @@ export function isWorkspaceRawProcessEcho(text: string) {
   }
 
   return (
+    looksLikeStandaloneProcessStatus(trimmed) ||
     EXTERNAL_CONTENT_RE.test(trimmed) ||
     looksLikeHiddenProcessPayloadJson(trimmed) ||
     looksLikeRawExecutionTranscript(trimmed)
   );
+}
+
+export function sanitizeWorkspaceAssistantText(text: string): { text: string; shouldHide: boolean } {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return { text: "", shouldHide: true };
+  }
+
+  if (isWorkspaceRawProcessEcho(trimmed)) {
+    return { text: "", shouldHide: true };
+  }
+
+  const cleaned = trimMixedProcessTail(trimmed);
+  if (!cleaned || isWorkspaceRawProcessEcho(cleaned)) {
+    return { text: "", shouldHide: true };
+  }
+
+  return { text: cleaned, shouldHide: false };
+}
+
+export function sanitizeWorkspaceAssistantContent(content: unknown): { text: string; shouldHide: boolean } {
+  if (typeof content === "string") {
+    return sanitizeWorkspaceAssistantText(content);
+  }
+
+  if (Array.isArray(content)) {
+    const fragments = content
+      .map((block) => sanitizeWorkspaceAssistantText(extractTextFromContentBlock(block)))
+      .filter((fragment) => !fragment.shouldHide && fragment.text)
+      .map((fragment) => fragment.text.trim());
+    const merged = fragments.join("\n\n").trim();
+    return merged ? { text: merged, shouldHide: false } : { text: "", shouldHide: true };
+  }
+
+  if (isRecord(content)) {
+    if (typeof content.text === "string" && content.text.trim()) {
+      return sanitizeWorkspaceAssistantText(content.text);
+    }
+
+    if (Array.isArray(content.content)) {
+      return sanitizeWorkspaceAssistantContent(content.content);
+    }
+
+    if ("message" in content) {
+      return sanitizeWorkspaceAssistantContent(content.message);
+    }
+
+    if (typeof content.text === "string") {
+      return sanitizeWorkspaceAssistantText(content.text);
+    }
+  }
+
+  return { text: "", shouldHide: true };
 }
 
 export function shouldHideWorkspaceMessage(message: WorkspaceMessage) {
@@ -197,5 +413,9 @@ export function shouldHideWorkspaceMessage(message: WorkspaceMessage) {
     return true;
   }
 
-  return message.role === "assistant" && isWorkspaceRawProcessEcho(message.text);
+  if (message.role !== "assistant") {
+    return false;
+  }
+
+  return sanitizeWorkspaceAssistantText(message.text).shouldHide;
 }

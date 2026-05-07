@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { WORKSPACE_HOME_SUGGESTIONS } from "./workspaceCloneData";
 import { shouldHideWorkspaceMessage } from "./workspaceCloneMessageVisibility";
 import type {
@@ -11,6 +11,7 @@ import type {
   WorkspaceMessage,
   WorkspaceRelatedResource,
   WorkspaceResourceItem,
+  WorkspaceRuntimeLogItem,
   WorkspaceSessionSectionKey,
   WorkspaceToolItem,
   WorkspaceUtilityPanel,
@@ -71,12 +72,17 @@ interface WorkspaceCloneChatViewProps {
   messages: WorkspaceMessage[];
   liveSteps: WorkspaceLiveStep[];
   connectionError: string | null;
+  pendingTaskRunBridge?: {
+    title: string;
+    message: string;
+  } | null;
   historyLoading: boolean;
   isGenerating: boolean;
   utilityPanel: WorkspaceUtilityPanel;
   activeSessionSection: WorkspaceSessionSectionKey;
   historyItems: WorkspaceHistoryItem[];
-  logs: Array<{ id: string; title: string; subtitle: string }>;
+  logs: WorkspaceRuntimeLogItem[];
+  selectedRuntimeLogId: string | null;
   tasks: WorkspaceCronJob[];
   selectedTaskId: string | null;
   selectedTaskRuns: WorkspaceCronRunRecord[];
@@ -112,6 +118,7 @@ interface WorkspaceCloneChatViewProps {
   onStart: () => void;
   onOpenModelConfig: () => void;
   onOpenLogs: () => void;
+  onOpenRuntimeLogDetail: (logId: string) => void;
   onRefreshTasks: () => void;
   onSelectTask: (taskId: string) => void;
   onToggleTaskEnabled: (task: WorkspaceCronJob) => void;
@@ -127,12 +134,14 @@ export function WorkspaceCloneChatView({
   messages,
   liveSteps,
   connectionError,
+  pendingTaskRunBridge = null,
   historyLoading,
   isGenerating,
   utilityPanel,
   activeSessionSection,
   historyItems,
   logs,
+  selectedRuntimeLogId,
   tasks,
   selectedTaskId,
   selectedTaskRuns,
@@ -161,6 +170,7 @@ export function WorkspaceCloneChatView({
   onStart,
   onOpenModelConfig,
   onOpenLogs,
+  onOpenRuntimeLogDetail,
   onRefreshTasks,
   onSelectTask,
   onToggleTaskEnabled,
@@ -229,6 +239,25 @@ export function WorkspaceCloneChatView({
     setShowScrollToBottom(false);
   }, []);
 
+  const dismissUtilityDrawerFromBlankArea = useCallback(() => {
+    if (!utilityPanel) {
+      return;
+    }
+
+    onCloseUtilityPanel();
+  }, [onCloseUtilityPanel, utilityPanel]);
+
+  const handleBlankAreaClick = useCallback(
+    (event: ReactMouseEvent<HTMLElement>) => {
+      if (event.target !== event.currentTarget) {
+        return;
+      }
+
+      dismissUtilityDrawerFromBlankArea();
+    },
+    [dismissUtilityDrawerFromBlankArea],
+  );
+
   useEffect(() => {
     if (!hasMessages) {
       lastMessageSignatureRef.current = "";
@@ -264,7 +293,13 @@ export function WorkspaceCloneChatView({
   return (
     <div className={`workspace-clone__chat-layout ${utilityPanel ? "drawer-open" : ""}`}>
       <div className="workspace-clone__chat-main">
-        <div className="workspace-clone__canvas">
+        <div className="workspace-clone__canvas" onClick={handleBlankAreaClick}>
+          {pendingTaskRunBridge ? (
+            <div className="workspace-clone__task-feedback-card is-note">
+              <strong>{pendingTaskRunBridge.title}</strong>
+              <span>{pendingTaskRunBridge.message}</span>
+            </div>
+          ) : null}
           {showStartupPanel && serviceStartup.phase !== "ready" ? (
             <WorkspaceCloneServiceStartupPanel
               phase={serviceStartup.phase}
@@ -275,7 +310,7 @@ export function WorkspaceCloneChatView({
               onRetry={onStart}
             />
           ) : showDisconnectedState ? (
-            <section className="workspace-clone__empty-state">
+            <section className="workspace-clone__empty-state" onClick={handleBlankAreaClick}>
               <div className="workspace-clone__empty-state-icon">
                 <WorkspaceCloneIcon name={running ? "terminal" : "panel"} size={18} strokeWidth={1.9} />
               </div>
@@ -314,13 +349,14 @@ export function WorkspaceCloneChatView({
               </div>
             </section>
           ) : hasMessages ? (
-            <div className="workspace-clone__message-stage">
+            <div className="workspace-clone__message-stage" onClick={handleBlankAreaClick}>
               <div
                 ref={messageScrollRef}
                 className="workspace-clone__message-scroll"
                 onScroll={updateScrollToBottomVisibility}
+                onClick={handleBlankAreaClick}
               >
-                <div className="workspace-clone__message-list">
+                <div className="workspace-clone__message-list" onClick={handleBlankAreaClick}>
                   {renderedMessages.map((message) => {
                     const isStreaming = message.status === "streaming";
                     const hasStreamText = message.text.trim().length > 0;
@@ -361,7 +397,7 @@ export function WorkspaceCloneChatView({
                     </article>
                   ) : null}
                 </div>
-                <div className="workspace-clone__canvas-fill" />
+                <div className="workspace-clone__canvas-fill" onClick={dismissUtilityDrawerFromBlankArea} />
               </div>
               {showScrollToBottom ? (
                 <button
@@ -376,7 +412,7 @@ export function WorkspaceCloneChatView({
               ) : null}
             </div>
           ) : (
-            <section className="workspace-clone__welcome-state">
+            <section className="workspace-clone__welcome-state" onClick={handleBlankAreaClick}>
               <article className="workspace-clone__message workspace-clone__message--minimal">
                 <div className="workspace-clone__message-marker">
                   {renderAvatarMarker(selectedEntity, selectedEntity?.avatarLabel || "A")}
@@ -391,7 +427,7 @@ export function WorkspaceCloneChatView({
                 </div>
               </article>
 
-              <div className="workspace-clone__canvas-fill" />
+              <div className="workspace-clone__canvas-fill" onClick={dismissUtilityDrawerFromBlankArea} />
 
               {showHomeSuggestions && (
                 <div className="workspace-clone__suggestion-strip">
@@ -430,6 +466,7 @@ export function WorkspaceCloneChatView({
             activeSessionSection={activeSessionSection}
             historyItems={historyItems}
             logs={logs}
+            selectedRuntimeLogId={selectedRuntimeLogId}
             tasks={tasks}
             selectedTaskId={selectedTaskId}
             selectedTaskRuns={selectedTaskRuns}
@@ -454,6 +491,7 @@ export function WorkspaceCloneChatView({
             onSelectHistorySession={onSelectHistorySession}
             onOpenRelatedResource={onOpenRelatedResource}
             onOpenModelConfig={onOpenModelConfig}
+            onOpenRuntimeLogDetail={onOpenRuntimeLogDetail}
             onRefreshTasks={onRefreshTasks}
             onSelectTask={onSelectTask}
             onToggleTaskEnabled={onToggleTaskEnabled}

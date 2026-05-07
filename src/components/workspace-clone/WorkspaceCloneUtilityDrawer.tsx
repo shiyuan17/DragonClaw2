@@ -6,6 +6,12 @@ import {
   getWorkspaceCronEditDisabledReason,
   getWorkspaceCronStatusTone,
 } from "./workspaceCloneCron";
+import {
+  filterWorkspaceRuntimeLogs,
+  getWorkspaceRuntimeLogCategoryLabel,
+  getWorkspaceRuntimeLogRawTypeLabel,
+  WORKSPACE_RUNTIME_LOG_FILTERS,
+} from "./workspaceCloneLogs";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
 import { formatWorkspaceTaskScheduleLine } from "./workspaceCloneTaskScheduleDisplay";
 import { resolveWorkspaceTaskScheduleView } from "./workspaceCloneTaskSchedule";
@@ -18,6 +24,8 @@ import type {
   WorkspaceHistoryItem,
   WorkspaceRelatedResource,
   WorkspaceResourceItem,
+  WorkspaceRuntimeLogCategoryFilter,
+  WorkspaceRuntimeLogItem,
   WorkspaceSessionSectionKey,
   WorkspaceToolItem,
   WorkspaceUtilityPanel,
@@ -29,7 +37,8 @@ interface WorkspaceCloneUtilityDrawerProps {
   selectedEntity: WorkspaceEntity | null;
   activeSessionSection: WorkspaceSessionSectionKey;
   historyItems: WorkspaceHistoryItem[];
-  logs: Array<{ id: string; title: string; subtitle: string }>;
+  logs: WorkspaceRuntimeLogItem[];
+  selectedRuntimeLogId: string | null;
   tasks: WorkspaceCronJob[];
   selectedTaskId: string | null;
   selectedTaskRuns: WorkspaceCronRunRecord[];
@@ -54,6 +63,7 @@ interface WorkspaceCloneUtilityDrawerProps {
   onSelectHistorySession: (sessionKey: string) => void;
   onOpenRelatedResource: (resource: WorkspaceRelatedResource) => void;
   onOpenModelConfig: () => void;
+  onOpenRuntimeLogDetail: (logId: string) => void;
   onRefreshTasks: () => void;
   onSelectTask: (taskId: string) => void;
   onToggleTaskEnabled: (task: WorkspaceCronJob) => void;
@@ -103,6 +113,7 @@ export function WorkspaceCloneUtilityDrawer({
   activeSessionSection,
   historyItems,
   logs,
+  selectedRuntimeLogId,
   tasks,
   selectedTaskId,
   taskLoading,
@@ -124,6 +135,7 @@ export function WorkspaceCloneUtilityDrawer({
   onSelectHistorySession,
   onOpenRelatedResource,
   onOpenModelConfig,
+  onOpenRuntimeLogDetail,
   onRefreshTasks,
   onSelectTask,
   onToggleTaskEnabled,
@@ -132,6 +144,7 @@ export function WorkspaceCloneUtilityDrawer({
   onDeleteTask,
 }: WorkspaceCloneUtilityDrawerProps) {
   const [taskFilter, setTaskFilter] = useState<TaskFilterKey>("enabled");
+  const [logFilter, setLogFilter] = useState<WorkspaceRuntimeLogCategoryFilter>("all");
   const [openTaskMenuId, setOpenTaskMenuId] = useState<string | null>(null);
   const taskMenuRef = useRef<HTMLDivElement | null>(null);
   const taskFilterInitKeyRef = useRef<string | null>(null);
@@ -181,6 +194,12 @@ export function WorkspaceCloneUtilityDrawer({
     setOpenTaskMenuId(null);
   }, [taskFilter]);
 
+  useEffect(() => {
+    if (panel !== "logs") {
+      setLogFilter("all");
+    }
+  }, [panel]);
+
   if (!panel) {
     return null;
   }
@@ -222,6 +241,7 @@ export function WorkspaceCloneUtilityDrawer({
   const visibleTasks = taskFilter === "enabled"
     ? tasks.filter((task) => task.enabled)
     : tasks.filter((task) => !task.enabled);
+  const filteredLogs = filterWorkspaceRuntimeLogs(logs, logFilter);
 
   return (
     <aside className="workspace-clone__drawer">
@@ -264,6 +284,21 @@ export function WorkspaceCloneUtilityDrawer({
                 className={`workspace-clone__drawer-filter workspace-clone__drawer-filter--task ${taskFilter === filter.key ? "is-active" : ""}`}
                 aria-selected={taskFilter === filter.key}
                 onClick={() => setTaskFilter(filter.key)}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {panel === "logs" ? (
+          <div className="workspace-clone__drawer-filters workspace-clone__drawer-filters--logs" role="tablist" aria-label="运行日志分类筛选">
+            {WORKSPACE_RUNTIME_LOG_FILTERS.map((filter) => (
+              <button
+                key={filter.key}
+                type="button"
+                className={`workspace-clone__drawer-filter workspace-clone__drawer-filter--logs ${logFilter === filter.key ? "is-active" : ""}`}
+                aria-selected={logFilter === filter.key}
+                onClick={() => setLogFilter(filter.key)}
               >
                 {filter.label}
               </button>
@@ -349,12 +384,35 @@ export function WorkspaceCloneUtilityDrawer({
           </section>
         ) : null}
 
-        {panel === "logs" && logs.map((item) => (
-          <section key={item.id} className="workspace-clone__drawer-card">
-            <strong>{item.title}</strong>
-            <small>{item.subtitle}</small>
-          </section>
+        {panel === "logs" && filteredLogs.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`workspace-clone__drawer-card workspace-clone__drawer-card--button workspace-clone__drawer-card--log ${selectedRuntimeLogId === item.id ? "is-active" : ""}`}
+            onClick={() => onOpenRuntimeLogDetail(item.id)}
+          >
+            <p className="workspace-clone__runtime-log-summary">{item.summary}</p>
+            <div className="workspace-clone__runtime-log-meta">
+              <span>{item.time}</span>
+              <span>{getWorkspaceRuntimeLogCategoryLabel(item.category)}</span>
+              <span>{getWorkspaceRuntimeLogRawTypeLabel(item.rawType)}</span>
+            </div>
+          </button>
         ))}
+
+        {panel === "logs" && logs.length === 0 ? (
+          <section className="workspace-clone__empty-card workspace-clone__drawer-empty">
+            <strong>暂无运行日志</strong>
+            <small>当前还没有可展示的运行日志。</small>
+          </section>
+        ) : null}
+
+        {panel === "logs" && logs.length > 0 && filteredLogs.length === 0 ? (
+          <section className="workspace-clone__empty-card workspace-clone__drawer-empty">
+            <strong>当前分类暂无日志</strong>
+            <small>{`没有命中“${WORKSPACE_RUNTIME_LOG_FILTERS.find((item) => item.key === logFilter)?.label || "当前分类"}”的日志。`}</small>
+          </section>
+        ) : null}
 
         {panel === "schedule" ? (
           <>

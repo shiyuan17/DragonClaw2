@@ -1,6 +1,7 @@
 import { createAgentSessionKey, filterAgentSessions } from "./client";
 import type { WorkspaceGatewaySessionRow, WorkspaceGatewaySessionsListResult, WorkspaceHistoryItem, WorkspaceMessage } from "../../components/workspace-clone/workspaceCloneTypes";
-import { isWorkspaceRawProcessEcho } from "../../components/workspace-clone/workspaceCloneMessageVisibility";
+import { stripWorkspaceHiddenPromptBlocks } from "../../components/workspace-clone/workspaceCloneManualTaskExecution";
+import { isWorkspaceRawProcessEcho, sanitizeWorkspaceAssistantContent } from "../../components/workspace-clone/workspaceCloneMessageVisibility";
 import { formatClockTime, formatHistorySessionTime, formatRelativeSessionTime } from "./time-formatters";
 
 const SESSION_TITLE_MAX_LENGTH = 56;
@@ -71,7 +72,7 @@ function extractTextFromContentBlock(block: unknown): string {
 
 export function extractGatewayMessageText(message: unknown): string {
   if (typeof message === "string") {
-    return message;
+    return stripWorkspaceHiddenPromptBlocks(message);
   }
 
   if (!message || typeof message !== "object") {
@@ -85,11 +86,11 @@ export function extractGatewayMessageText(message: unknown): string {
   };
 
   if (typeof candidate.text === "string") {
-    return candidate.text;
+    return stripWorkspaceHiddenPromptBlocks(candidate.text);
   }
 
   if (Array.isArray(candidate.content)) {
-    return candidate.content.map(extractTextFromContentBlock).filter(Boolean).join("\n\n");
+    return stripWorkspaceHiddenPromptBlocks(candidate.content.map(extractTextFromContentBlock).filter(Boolean).join("\n\n"));
   }
 
   if (candidate.message) {
@@ -120,7 +121,8 @@ export function normalizeGatewayMessage(
     ["assistant", "user", "system", "tool"].includes(message.role)
       ? (message.role as WorkspaceMessage["role"])
       : "assistant";
-  const text = extractGatewayMessageText(message).trim();
+  const assistantContent = role === "assistant" ? sanitizeWorkspaceAssistantContent(message) : null;
+  const text = (assistantContent?.text ?? extractGatewayMessageText(message)).trim();
 
   if (!text) {
     return null;
@@ -130,7 +132,7 @@ export function normalizeGatewayMessage(
     return null;
   }
 
-  if (role === "assistant" && isWorkspaceRawProcessEcho(text)) {
+  if (role === "assistant" && (assistantContent?.shouldHide || isWorkspaceRawProcessEcho(text))) {
     return null;
   }
 
@@ -195,7 +197,10 @@ export function extractLastMeaningfulMessageSummary(messages: unknown[]) {
       continue;
     }
 
-    const text = extractGatewayMessageText(rawMessage).trim();
+    const text =
+      message.role === "assistant"
+        ? sanitizeWorkspaceAssistantContent(rawMessage).text.trim()
+        : extractGatewayMessageText(rawMessage).trim();
     if (!text || isWorkspaceRawProcessEcho(text)) {
       continue;
     }

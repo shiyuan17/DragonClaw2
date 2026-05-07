@@ -53,7 +53,7 @@ function buildDraft(job: WorkspaceCronJob): TaskEditorDraft {
     enabled: job.enabled,
     sessionTarget: job.sessionTarget,
     wakeMode: job.wakeMode,
-    payloadText: job.payload.kind === "systemEvent" ? job.payload.text : "",
+    payloadText: job.payload.kind === "agentTurn" ? job.payload.message : job.payload.text,
     scheduleMode: scheduleView.mode,
     scheduleDate: scheduleView.dateValue,
     scheduleTime: scheduleView.timeValue,
@@ -168,24 +168,31 @@ export function WorkspaceCloneTaskEditorModal({
     [draft?.scheduleMode],
   );
 
-  if (!job || !draft || job.payload.kind !== "systemEvent") {
+  if (!job || !draft) {
     return null;
   }
 
   const formLocked = saving || draft.scheduleMode === "advanced";
 
   const handleSave = async () => {
-    const nextPayload: WorkspaceCronPayload = {
-      kind: "systemEvent",
-      text: draft.payloadText.trim(),
-    };
+    const nextPayload: WorkspaceCronPayload = job.payload.kind === "agentTurn"
+      ? {
+          ...(job.payload.kind === "agentTurn" ? job.payload : {}),
+          kind: "agentTurn",
+          message: draft.payloadText.trim(),
+        }
+      : {
+          kind: "systemEvent",
+          text: draft.payloadText.trim(),
+        };
 
     if (!draft.name.trim()) {
       setValidationError("请输入任务名称");
       return;
     }
 
-    if (!nextPayload.text) {
+    const payloadText = draft.payloadText.trim();
+    if (!payloadText) {
       setValidationError("请输入任务指令");
       return;
     }

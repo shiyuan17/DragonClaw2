@@ -25,18 +25,21 @@ import { useWorkspaceServiceStartupStatus } from "../../hooks/workspace-clone/us
 import { useWorkspaceToolsAdmin } from "../../hooks/workspace-clone/useWorkspaceToolsAdmin";
 import {
   buildWorkspaceEntities,
-  buildWorkspaceLogs,
   WORKSPACE_HISTORY,
   WORKSPACE_MENU_ITEMS,
   WORKSPACE_TYPE_TABS,
   WORKSPACE_WORKBENCH,
 } from "./workspaceCloneData";
+import { buildWorkspaceRuntimeLogs } from "./workspaceCloneLogs";
 import { formatAgentAvatar } from "./workspaceCloneGateway";
 import { workspaceCloneAvatarCategoryTabs } from "./workspaceCloneAvatarPresets";
 import { resolveWorkspaceGatewayAvatarUrl } from "./workspaceCloneAvatarUtils";
 import { WorkspaceCloneChatView } from "./WorkspaceCloneChatView";
 import { WorkspaceCloneComposer } from "./WorkspaceCloneComposer";
-import { WorkspaceCloneDirectory } from "./WorkspaceCloneDirectory";
+import {
+  DEFAULT_VISIBLE_AGENT_RECENT_SESSIONS,
+  WorkspaceCloneDirectory,
+} from "./WorkspaceCloneDirectory";
 import { useWorkspaceCloneAvatarState } from "./useWorkspaceCloneAvatarState";
 import { WorkspaceCloneEmailBindingModal } from "./WorkspaceCloneEmailBindingModal";
 import { WorkspaceCloneHeader } from "./WorkspaceCloneHeader";
@@ -44,6 +47,7 @@ import { WorkspaceCloneCompactView } from "./WorkspaceCloneCompactView";
 import { WorkspaceCloneScenePresetSwitcher } from "./WorkspaceCloneScenePresetSwitcher";
 import { WorkspaceCloneSidebar } from "./WorkspaceCloneSidebar";
 import { WorkspaceCloneTaskEditorModal } from "./WorkspaceCloneTaskEditorModal";
+import { buildWorkspaceManualTaskExecutionContent } from "./workspaceCloneManualTaskExecution";
 import { resolveWorkspaceTaskDisplayTitle } from "./workspaceCloneTaskTitle";
 import {
   buildWorkspaceScenePresetStateKey,
@@ -61,10 +65,12 @@ import type {
   WorkspaceEntity,
   WorkspaceGatewayAgentRow,
   WorkspaceGatewayAgentsListResult,
+  WorkspaceHistoryItem,
   WorkspaceGatewaySkillStatusResult,
   WorkspaceMemoryFile,
   WorkspaceRelatedResource,
   WorkspaceResourceItem,
+  WorkspaceRuntimeLogItem,
   WorkspaceSlashCommandDefinition,
   WorkspaceSessionSectionKey,
   WorkspaceSidebarAdminPanel,
@@ -171,10 +177,10 @@ function WorkspaceCloneSectionFallback({ label }: { label: string }) {
 }
 
 function WorkspaceCloneLazyFallback({ label }: { label: string }) {
-  const isEmployeesLabel = label === "数字员工" || label.includes("数");
-  const isSkillsLabel = label === "技能市场" || label.includes("技");
-  const isModelConfigLabel = label === "模型配置" || label.includes("模");
-  const normalizedLabel = isEmployeesLabel ? "数字员工" : isSkillsLabel ? "技能市场" : label;
+  const isEmployeesLabel = label === "\u6570\u5b57\u5458\u5de5" || label.includes("\u6570");
+  const isSkillsLabel = label === "\u6280\u80fd\u5e02\u573a" || label.includes("\u6280");
+  const isModelConfigLabel = label === "\u6a21\u578b\u914d\u7f6e" || label.includes("\u6a21");
+  const normalizedLabel = isEmployeesLabel ? "\u6570\u5b57\u5458\u5de5" : isSkillsLabel ? "\u6280\u80fd\u5e02\u573a" : label;
 
   if (!isModelConfigLabel) {
     return <WorkspaceCloneSectionFallback label={normalizedLabel} />;
@@ -184,8 +190,8 @@ function WorkspaceCloneLazyFallback({ label }: { label: string }) {
     <div className="workspace-clone__compact-panel">
       <div className="workspace-clone__compact-hero">
         <div className="workspace-clone__compact-badge">{label}</div>
-        <h1>正在加载</h1>
-        <p>页面资源准备中，请稍候。</p>
+        <h1>\u6b63\u5728\u52a0\u8f7d</h1>
+        <p>\u9875\u9762\u8d44\u6e90\u51c6\u5907\u4e2d\uff0c\u8bf7\u7a0d\u5019\u3002</p>
       </div>
     </div>
   );
@@ -199,6 +205,7 @@ function buildGatewayAgentEntities(params: {
   sessionsResult: ReturnType<typeof useWorkspaceGatewayChat>["sessionsResult"];
   agentListSource: ReturnType<typeof useWorkspaceGatewayChat>["agentListSource"];
   agentLastMessageById: ReturnType<typeof useWorkspaceGatewayChat>["agentLastMessageById"];
+  recentSessionsByAgentId: Record<string, WorkspaceHistoryItem[]>;
   running: boolean;
   isGenerating: boolean;
   currentModelName: string;
@@ -213,6 +220,7 @@ function buildGatewayAgentEntities(params: {
     sessionsResult,
     agentListSource,
     agentLastMessageById,
+    recentSessionsByAgentId,
     running,
     isGenerating,
     currentModelName,
@@ -228,7 +236,7 @@ function buildGatewayAgentEntities(params: {
     const modelLabel =
       [mainSession?.modelProvider || currentProviderName, mainSession?.model || currentModelName]
         .filter(Boolean)
-        .join(" / ") || "OpenClaw 主会话";
+        .join(" / ") || "OpenClaw \u4e3b\u4f1a\u8bdd";
 
     return {
       id: agent.id,
@@ -238,6 +246,7 @@ function buildGatewayAgentEntities(params: {
         .filter(Boolean)
         .join(" "),
       subtitle: agentLastMessageById[agent.id] || "",
+      recentSessions: recentSessionsByAgentId[agent.id] ?? [],
       status:
         isCachedAgentList || !running
           ? "offline"
@@ -251,12 +260,12 @@ function buildGatewayAgentEntities(params: {
       accent: agent.id,
       currentWork:
         isCachedAgentList
-          ? "连接后同步最新 Agent 状态。"
+          ? "\u8fde\u63a5\u540e\u540c\u6b65\u6700\u65b0 Agent \u72b6\u6001\u3002"
           : !running
-          ? "服务尚未启动，首页聊天暂不可用。"
+          ? "\u670d\u52a1\u5c1a\u672a\u542f\u52a8\uff0c\u9996\u9875\u804a\u5929\u6682\u4e0d\u53ef\u7528\u3002"
           : isGenerating && isAgentSessionActive
-            ? "正在生成当前主会话回复。"
-            : "首页已接入当前 Agent 的主会话。",
+            ? "\u6b63\u5728\u751f\u6210\u5f53\u524d\u4e3b\u4f1a\u8bdd\u56de\u590d\u3002"
+            : "\u9996\u9875\u5df2\u63a5\u5165\u5f53\u524d Agent \u7684\u4e3b\u4f1a\u8bdd\u3002",
       recentOutput: modelLabel,
     };
   });
@@ -292,7 +301,7 @@ export function WorkspaceClonePage({
   const [adminOpen, setAdminOpen] = useState(false);
   const [adminPanel, setAdminPanel] = useState<WorkspaceSidebarAdminPanel>(null);
   const [showAgentInfo, setShowAgentInfo] = useState(false);
-  const [showRuntimeLogDetail, setShowRuntimeLogDetail] = useState(false);
+  const [selectedRuntimeLogId, setSelectedRuntimeLogId] = useState<string | null>(null);
   const [showSettingsTextPreview, setShowSettingsTextPreview] = useState(false);
   const [relatedResource, setRelatedResource] = useState<WorkspaceRelatedResource>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -482,6 +491,7 @@ export function WorkspaceClonePage({
             sessionsResult: homepageChat.sessionsResult,
             agentListSource: mergedAgentListSource,
             agentLastMessageById: homepageChat.agentLastMessageById,
+            recentSessionsByAgentId: homepageChat.agentRecentSessionsById,
             running,
             isGenerating: homepageChat.isGenerating,
             currentModelName: workspaceModelName,
@@ -502,6 +512,7 @@ export function WorkspaceClonePage({
       homepageChat.currentMainSession,
       homepageChat.currentSessionKey,
       homepageChat.agentLastMessageById,
+      homepageChat.agentRecentSessionsById,
       homepageChat.isGenerating,
       homepageChat.selectedAgentId,
       homepageChat.sessionsResult,
@@ -528,6 +539,53 @@ export function WorkspaceClonePage({
     );
   }, [activeType, entitiesByType, searchQuery]);
 
+  const visibleAgentHistoryTitlePrefetch = useMemo(() => {
+    if (!showDirectory || activeType !== "agents") {
+      return { signature: "", targets: [] as Array<{ agentId: string; sessionKeys: string[] }> };
+    }
+
+    const targets = filteredEntities
+      .map((entity) => {
+        const sessionKeys = (entity.recentSessions ?? [])
+          .slice(0, DEFAULT_VISIBLE_AGENT_RECENT_SESSIONS)
+          .map((session) => session.sessionKey || session.id)
+          .filter((sessionKey): sessionKey is string => Boolean(sessionKey));
+
+        return {
+          agentId: entity.id,
+          sessionKeys,
+        };
+      })
+      .filter((entry) => entry.sessionKeys.length > 0);
+
+    return {
+      signature: JSON.stringify(targets),
+      targets,
+    };
+  }, [activeType, filteredEntities, showDirectory]);
+  const visibleAgentHistoryTitlePrefetchTargetsRef = useRef(visibleAgentHistoryTitlePrefetch.targets);
+
+  useEffect(() => {
+    visibleAgentHistoryTitlePrefetchTargetsRef.current = visibleAgentHistoryTitlePrefetch.targets;
+  }, [visibleAgentHistoryTitlePrefetch.targets]);
+
+  useEffect(() => {
+    if (!homepageChat.connected || visibleAgentHistoryTitlePrefetchTargetsRef.current.length === 0) {
+      return;
+    }
+
+    homepageChat.loadHistoryTitles({
+      agentIds: visibleAgentHistoryTitlePrefetchTargetsRef.current.map((target) => target.agentId),
+      sessionKeysByAgentId: Object.fromEntries(
+        visibleAgentHistoryTitlePrefetchTargetsRef.current.map((target) => [target.agentId, target.sessionKeys]),
+      ),
+    });
+  }, [
+    homepageChat.connected,
+    homepageChat.loadHistoryTitles,
+    visibleAgentHistoryTitlePrefetch.signature,
+  ]);
+
   useEffect(() => {
     if (activeType === "agents" && homepageChat.selectedAgentId && selectedEntityId !== homepageChat.selectedAgentId) {
       setSelectedEntityId(homepageChat.selectedAgentId);
@@ -551,7 +609,7 @@ export function WorkspaceClonePage({
       setShowAgentInfo(false);
       setIsModelConfigOpen(false);
       setSavedProvidersLoading(false);
-      setShowRuntimeLogDetail(false);
+      setSelectedRuntimeLogId(null);
       setShowSettingsTextPreview(false);
       workspaceEmailBinding.closeEmailBindingModal({ clearStatus: true, force: true });
     }
@@ -630,18 +688,18 @@ export function WorkspaceClonePage({
   useWorkspaceCloneFeedback({
     memoryNotice: memoryAdmin.memoryNotice,
     memoryError: memoryAdmin.memoryError,
-    memoryErrorTitle: "记忆",
+    memoryErrorTitle: "璁板繂",
     skillNotice: skillsAdmin.skillNotice,
     skillError: skillsAdmin.skillError,
-    skillErrorTitle: "技能库",
+    skillErrorTitle: "鎶€鑳藉簱",
     toolNotice: toolsAdmin.toolNotice,
     toolError: toolsAdmin.toolError,
-    toolErrorTitle: "工具权限",
+    toolErrorTitle: "宸ュ叿鏉冮檺",
     commandNotice: commandsAdmin.commandNotice,
     commandError: commandsAdmin.commandError,
     channelNotice: workspaceChannels.modalNotice,
     channelError: workspaceChannels.modalError,
-    channelErrorTitle: "频道绑定",
+    channelErrorTitle: "\u6e20\u9053\u7ed1\u5b9a",
     taskFeedbackEvent: cronTasks.taskFeedbackEvent,
     activeChannelId: workspaceChannels.modal.channelId,
     weixinQrStarting: workspaceChannels.weixinQrStarting,
@@ -771,8 +829,8 @@ export function WorkspaceClonePage({
     }
   }, [homepageChat.loadHistoryTitles, utilityPanel]);
 
-  const uptimeLabel = running ? formatUptime(uptime) : "未启动";
-  const shouldBuildLogRows = utilityPanel === "logs" || showRuntimeLogDetail;
+  const uptimeLabel = running ? formatUptime(uptime) : "\u672a\u542f\u52a8";
+  const shouldBuildLogRows = utilityPanel === "logs" || Boolean(selectedRuntimeLogId);
   const shouldBuildMemoryRows =
     memoryAdmin.showMemoryModal || relatedResource === "memory" || (utilityPanel === "session" && activeSessionSection === "memory");
   const shouldBuildSkillRows =
@@ -782,7 +840,14 @@ export function WorkspaceClonePage({
     toolsAdmin.showToolsModal || relatedResource === "tools" || (utilityPanel === "session" && activeSessionSection === "tools");
   const shouldBuildChannelRows =
     relatedResource === "channel" || (utilityPanel === "session" && activeSessionSection === "channel");
-  const derivedLogs = useMemo(() => (shouldBuildLogRows ? buildWorkspaceLogs(logs) : []), [logs, shouldBuildLogRows]);
+  const derivedLogs = useMemo(
+    () => (shouldBuildLogRows ? buildWorkspaceRuntimeLogs(logs) : []),
+    [logs, shouldBuildLogRows],
+  );
+  const selectedRuntimeLog = useMemo<WorkspaceRuntimeLogItem | null>(
+    () => derivedLogs.find((item) => item.id === selectedRuntimeLogId) ?? null,
+    [derivedLogs, selectedRuntimeLogId],
+  );
   const memoryResourceItems = useMemo(
     () => (shouldBuildMemoryRows ? buildWorkspaceMemoryResourceItems(memoryAdmin.memoryFiles) : []),
     [memoryAdmin.memoryFiles, shouldBuildMemoryRows],
@@ -829,6 +894,10 @@ export function WorkspaceClonePage({
     setActiveSessionSection(section);
     setUtilityPanel("session");
   };
+
+  const openRuntimeLogDetail = useCallback((logId: string) => {
+    setSelectedRuntimeLogId(logId);
+  }, []);
 
   const handleOpenRelatedResource = (resource: WorkspaceRelatedResource) => {
     if (!resource) return;
@@ -898,7 +967,7 @@ export function WorkspaceClonePage({
 
   const handleDeleteTask = useCallback((task: WorkspaceCronJob) => {
     const taskDisplayTitle = resolveWorkspaceTaskDisplayTitle(task);
-    const confirmed = window.confirm(`确认删除任务“${taskDisplayTitle}”吗？这会直接删除 OpenClaw 中的真实任务配置。`);
+    const confirmed = window.confirm(`\u786e\u8ba4\u5220\u9664\u4efb\u52a1\u201c${taskDisplayTitle}\u201d\u5417\uff1f\u8fd9\u4f1a\u76f4\u63a5\u5220\u9664 OpenClaw \u4e2d\u7684\u771f\u5b9e\u4efb\u52a1\u914d\u7f6e\u3002`);
     if (!confirmed) {
       return;
     }
@@ -907,7 +976,6 @@ export function WorkspaceClonePage({
   }, [cronTasks]);
 
   const handleRunTask = useCallback(async (task: WorkspaceCronJob) => {
-    const taskDisplayTitle = resolveWorkspaceTaskDisplayTitle(task);
     const taskAgentId =
       task.agentId?.trim()
       || currentMemoryAgentId
@@ -915,64 +983,24 @@ export function WorkspaceClonePage({
       || selectedEntity?.runtimeAgentId
       || selectedEntity?.id
       || "main";
-    const taskRunSessionKey = homepageChat.createTaskRunConversation({
-      agentId: taskAgentId,
-      taskId: task.id,
-      taskName: task.name,
-      taskDisplayTitle,
-      initialMessage: `任务「${taskDisplayTitle}」正在执行中…`,
-    });
+    const mainParentSessionKey = homepageChat.sessionsResult?.sessions.find((session) => session.key === `agent:${taskAgentId}:main`)?.key || null;
+    const executionContent = buildWorkspaceManualTaskExecutionContent(task);
 
+    setActiveType("agents");
+    setSelectedEntityId(taskAgentId);
     setUtilityPanel(null);
+    cronTasks.clearTaskStatus();
 
-    await cronTasks.runTaskNow(task.id, {
-      onAccepted: ({ runId }) => {
-        homepageChat.setTaskRunConversationStatus(
-          taskRunSessionKey,
-          "pending",
-          `任务「${taskDisplayTitle}」正在执行中…`,
-        );
-        if (runId) {
-          homepageChat.beginTaskRunConversationExecution(taskRunSessionKey, runId);
-        }
-      },
-      onSkipped: ({ reason }) => {
-        const reasonMessage =
-          reason === "already-running"
-            ? `任务「${taskDisplayTitle}」未执行：该任务已在运行中`
-            : reason === "invalid-spec"
-              ? `任务「${taskDisplayTitle}」未执行：任务配置当前不可执行，请检查任务规则`
-              : `任务「${taskDisplayTitle}」未执行：当前未到执行时机`;
-        homepageChat.setTaskRunConversationStatus(taskRunSessionKey, "skipped", reasonMessage);
-      },
-      onError: ({ message }) => {
-        homepageChat.setTaskRunConversationStatus(
-          taskRunSessionKey,
-          "error",
-          `任务「${taskDisplayTitle}」执行失败：${message}`,
-        );
-      },
-      onTerminalRunResolved: ({ status, summary, error }) => {
-        const resolvedMessage =
-          status === "ok"
-            ? `任务「${taskDisplayTitle}」执行完成${summary?.trim() ? `：${summary.trim()}` : ""}`
-            : status === "skipped"
-              ? `任务「${taskDisplayTitle}」未执行：${error?.trim() || "该任务已跳过"}`
-              : `任务「${taskDisplayTitle}」执行失败：${error?.trim() || "未返回更多错误信息"}`;
-        homepageChat.setTaskRunConversationStatus(
-          taskRunSessionKey,
-          status === "ok" ? "resolved" : status === "skipped" ? "skipped" : "error",
-          resolvedMessage,
-        );
-      },
-      onSessionResolved: ({ sessionKey, sessionId }) => {
-        void homepageChat.bindTaskRunConversationToResult(taskRunSessionKey, { sessionKey, sessionId });
-      },
+    await homepageChat.runTaskInNewChat({
+      agentId: taskAgentId,
+      content: executionContent,
+      parentSessionKey: mainParentSessionKey,
     });
   }, [
     cronTasks,
     currentMemoryAgentId,
     homepageChat,
+    homepageChat.sessionsResult,
     selectedEntity?.id,
     selectedEntity?.runtimeAgentId,
   ]);
@@ -996,7 +1024,7 @@ export function WorkspaceClonePage({
     memoryAdmin.showMemoryModal ||
     skillsAdmin.showSkillsModal ||
     toolsAdmin.showToolsModal ||
-    showRuntimeLogDetail ||
+    selectedRuntimeLog ||
     showSettingsTextPreview ||
     relatedResource,
   );
@@ -1046,6 +1074,7 @@ export function WorkspaceClonePage({
             activeType={activeType}
             entities={filteredEntities}
             selectedEntityId={selectedEntity?.id || ""}
+            currentSessionKey={homepageChat.currentSessionKey}
             isCollapsed={isDirectoryCollapsed}
             searchQuery={searchQuery}
             contextMenu={workspaceChannels.contextMenu}
@@ -1095,6 +1124,7 @@ export function WorkspaceClonePage({
                 }
               }
             }}
+            onSelectSession={homepageChat.selectSession}
             onSearchChange={setSearchQuery}
             onOpenContextMenu={(event, entity) => {
               event.stopPropagation();
@@ -1184,12 +1214,17 @@ export function WorkspaceClonePage({
                 messages={chatEnabled ? homepageChat.messages : []}
                 liveSteps={chatEnabled ? homepageChat.liveSteps : []}
                 connectionError={homepageChat.error}
+                pendingTaskRunBridge={cronTasks.pendingRunNowBridge ? {
+                  title: cronTasks.pendingRunNowBridge.taskDisplayTitle,
+                  message: cronTasks.pendingRunNowBridge.message,
+                } : null}
                 historyLoading={homepageChat.historyLoading}
                 isGenerating={homepageChat.isGenerating}
                 utilityPanel={utilityPanel}
                 activeSessionSection={activeSessionSection}
                 historyItems={chatEnabled ? homepageChat.historyItems : WORKSPACE_HISTORY}
                 logs={derivedLogs}
+                selectedRuntimeLogId={selectedRuntimeLog?.id ?? null}
                 tasks={cronTasks.tasks}
                 selectedTaskId={cronTasks.selectedTaskId}
                 selectedTaskRuns={cronTasks.selectedTaskRuns}
@@ -1215,9 +1250,10 @@ export function WorkspaceClonePage({
                  onSelectHistorySession={homepageChat.selectSession}
                  onOpenRelatedResource={handleOpenRelatedResource}
                  onOpenSettingsTextPreview={() => setShowSettingsTextPreview(true)}
-                 onStart={handleStart}
+                onStart={handleStart}
                 onOpenModelConfig={openModelConfigModal}
                 onOpenLogs={() => toggleUtilityPanel("logs")}
+                onOpenRuntimeLogDetail={openRuntimeLogDetail}
                 onRefreshTasks={() => {
                   void cronTasks.refreshTasks({ showLoading: true });
                 }}
@@ -1276,15 +1312,15 @@ export function WorkspaceClonePage({
                 onClearActiveSlashCommand={() => commandsAdmin.handleActivateSlashCommand("")}
                 onSend={(value) => homepageChat.sendMessage(value, { activeCommand: commandsAdmin.activeSlashCommand || undefined })}
                 onAbort={homepageChat.abortMessage}
-                onResetSession={homepageChat.resetSession}
+                onResetSession={() => homepageChat.createNewSession().then((result) => Boolean(result))}
               />
             </>
           ) : activeMenu === "employees" ? (
-            <Suspense fallback={<WorkspaceCloneLazyFallback label="数字员工" />}>
+            <Suspense fallback={<WorkspaceCloneLazyFallback label="\u6570\u5b57\u5458\u5de5" />}> 
               <WorkspaceCloneEmployeesView onAgentRosterChanged={handleAgentRosterChanged} />
             </Suspense>
           ) : activeMenu === "skills" ? (
-            <Suspense fallback={<WorkspaceCloneLazyFallback label="技能市场" />}>
+            <Suspense fallback={<WorkspaceCloneLazyFallback label="\u6280\u80fd\u5e02\u573a" />}> 
               <WorkspaceCloneSkillsMarketView
                 currentAgentId={currentMemoryAgentId}
                 onRefreshCurrentAgentSkills={() => skillsAdmin.refreshSkillOptions({ showLoading: true })}
@@ -1309,7 +1345,7 @@ export function WorkspaceClonePage({
               showMemoryModal={memoryAdmin.showMemoryModal}
               showSkillsModal={skillsAdmin.showSkillsModal}
               showToolsModal={toolsAdmin.showToolsModal}
-              showRuntimeLogDetail={showRuntimeLogDetail}
+              runtimeLog={selectedRuntimeLog}
               showSettingsTextPreview={showSettingsTextPreview}
               relatedResource={relatedResource}
               memoryFiles={memoryAdmin.memoryFiles}
@@ -1420,7 +1456,9 @@ export function WorkspaceClonePage({
               onSaveCommandDraft={() => {
                 void commandsAdmin.handleSaveSlashCommandDraft();
               }}
-              onCloseRuntimeLogDetail={() => setShowRuntimeLogDetail(false)}
+              onCloseRuntimeLogDetail={() => {
+                setSelectedRuntimeLogId(null);
+              }}
               onCloseSettingsTextPreview={() => setShowSettingsTextPreview(false)}
               onCloseRelatedResource={() => setRelatedResource(null)}
             />
@@ -1428,7 +1466,7 @@ export function WorkspaceClonePage({
         ) : null}
 
         {isModelConfigOpen ? (
-          <Suspense fallback={<WorkspaceCloneLazyFallback label="模型配置" />}>
+          <Suspense fallback={<WorkspaceCloneLazyFallback label="\u6a21\u578b\u914d\u7f6e" />}> 
             <WorkspaceCloneModelConfigModal
               show={isModelConfigOpen}
               savedProviders={savedProviders}

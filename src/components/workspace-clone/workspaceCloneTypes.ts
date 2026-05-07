@@ -21,6 +21,19 @@ export type WorkspaceUtilityPanel = "session" | "history" | "logs" | "schedule" 
 export type WorkspaceSessionSectionKey = "model" | "memory" | "skills" | "commands" | "tools" | "channel" | "schedule";
 export type WorkspaceRelatedResource = WorkspaceSessionSectionKey | null;
 export type WorkspaceHistoryFilter = "all" | "today" | "yesterday";
+export type WorkspaceRuntimeLogCategory = "tool" | "skill" | "system" | "other";
+export type WorkspaceRuntimeLogCategoryFilter = "all" | WorkspaceRuntimeLogCategory;
+export type WorkspaceRuntimeLogRawType =
+  | "tool"
+  | "skill"
+  | "command"
+  | "search"
+  | "plan"
+  | "approval"
+  | "patch"
+  | "thinking"
+  | "system"
+  | "other";
 export type WorkspaceSidebarAdminPanel = "theme" | "language" | null;
 export type WorkspaceComposerModal = "knowledge" | "knowledge-delete" | "slash-command" | "email-binding" | null;
 export type WorkspaceSuggestionMode = "slash" | "mention" | null;
@@ -160,6 +173,26 @@ export interface WorkspaceResourceItem {
   title: string;
   subtitle: string;
   tag?: string;
+}
+
+export interface WorkspaceRuntimeLogDetailSection {
+  id: string;
+  label: string;
+  content: string;
+  tone: "summary" | "meta" | "raw";
+}
+
+export interface WorkspaceRuntimeLogItem {
+  id: string;
+  time: string;
+  level: string;
+  message: string;
+  humanized?: string;
+  category: WorkspaceRuntimeLogCategory;
+  rawType: WorkspaceRuntimeLogRawType;
+  title: string;
+  summary: string;
+  detailSections: WorkspaceRuntimeLogDetailSection[];
 }
 
 export interface WorkspaceSlashCommandRecord {

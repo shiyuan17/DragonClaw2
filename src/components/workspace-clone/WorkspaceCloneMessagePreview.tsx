@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
 import type { WorkspaceMessage } from "./workspaceCloneTypes";
-import { shouldHideWorkspaceMessage } from "./workspaceCloneMessageVisibility";
+import { sanitizeWorkspaceAssistantText, shouldHideWorkspaceMessage } from "./workspaceCloneMessageVisibility";
 
 type WorkspaceMessagePreviewKind = "plain" | "markdown" | "json";
 
@@ -51,20 +51,25 @@ function resolvePreview(message: WorkspaceMessage): {
   kind: WorkspaceMessagePreviewKind;
   content: string;
 } {
+  const content =
+    message.role === "assistant"
+      ? sanitizeWorkspaceAssistantText(message.text).text
+      : message.text;
+
   if (message.role !== "assistant" || message.status === "streaming") {
-    return { kind: "plain", content: message.text };
+    return { kind: "plain", content };
   }
 
-  const formattedJson = tryFormatJsonPreview(message.text);
+  const formattedJson = tryFormatJsonPreview(content);
   if (formattedJson) {
     return { kind: "json", content: formattedJson };
   }
 
-  if (looksLikeMarkdown(message.text)) {
-    return { kind: "markdown", content: message.text };
+  if (looksLikeMarkdown(content)) {
+    return { kind: "markdown", content };
   }
 
-  return { kind: "plain", content: message.text };
+  return { kind: "plain", content };
 }
 
 export function WorkspaceCloneMessagePreview({ message }: WorkspaceCloneMessagePreviewProps) {
