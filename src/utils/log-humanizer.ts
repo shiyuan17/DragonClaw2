@@ -19,7 +19,7 @@ const LOG_TRANSLATIONS: [RegExp, string][] = [
     [/ENOTFOUND/i, "[!] 域名解析失败，检查网络连接"],
     [/compiling/i, "正在编译..."],
     [/deprecated/i, "有过时的依赖（不影响使用）"],
-    [/ready in/i, "[OK] 启动完成！"],
+    [/ready in/i, "[OK] 启动完成"],
 ];
 
 /**

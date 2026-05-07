@@ -6,6 +6,7 @@ import type {
   WorkspaceRuntimeLogItem,
   WorkspaceRuntimeLogRawType,
 } from "./workspaceCloneTypes";
+import { sanitizeReadableText } from "../../utils/text-mojibake";
 
 const SYSTEM_EVENT_PATTERN =
   /(^|\s)\[ws\]|\bgateway\b|\bopenclaw\b|\bservice\b|\bwebsocket\b|\bconnection\b|\bconnected\b|\bconnecting\b|\bdisconnected\b|\bstartup\b|\blaunch\b|\bdiagnostic\b|\bliveness\b|\bheartbeat\b|\blistening\b|\bready\b|\brpc\b|\btoken\b|\bauth\b|\bunauthorized\b|\bport\b|\bremoved\b/i;
@@ -63,11 +64,32 @@ function normalizeInlineText(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function stripAnsiCodes(value: string) {
+  return value.replace(/\u001b\[[0-9;]*m/g, "");
+}
+
 function stripLeadingTimestamp(value: string) {
   return value.replace(
     /^\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?\s*/i,
     "",
   ).trim();
+}
+
+function buildReadableMessage(value: string) {
+  const withoutAnsi = stripAnsiCodes(value);
+  const collapsed = normalizeInlineText(withoutAnsi);
+  return stripLeadingTimestamp(collapsed) || collapsed;
+}
+
+function pickFirstNonEmpty(values: string[]) {
+  for (const value of values) {
+    const normalized = normalizeInlineText(value);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return "";
 }
 
 function resolveRawType(message: string): WorkspaceRuntimeLogRawType {
@@ -98,34 +120,30 @@ function resolveCategory(rawType: WorkspaceRuntimeLogRawType): WorkspaceRuntimeL
 }
 
 function buildTitle(entry: LogEntry, cleanedMessage: string) {
-  const primaryLine = normalizeInlineText(cleanedMessage.split("\n", 1)[0] ?? cleanedMessage);
-  const strippedLine = stripLeadingTimestamp(primaryLine);
+  const primaryLine = buildReadableMessage(cleanedMessage.split("\n", 1)[0] ?? cleanedMessage);
+  const humanized = sanitizeReadableText(entry.humanized);
 
-  if (entry.humanized?.trim()) {
-    return truncateText(entry.humanized.trim(), 88);
+  if (humanized) {
+    return truncateText(humanized, 88);
   }
 
-  return truncateText(strippedLine || primaryLine || "\u65e5\u5fd7\u4e8b\u4ef6", 88);
+  return truncateText(primaryLine || "\u65e5\u5fd7\u4e8b\u4ef6", 88);
 }
 
 function buildSummary(entry: LogEntry, cleanedMessage: string, title: string) {
-  const collapsed = normalizeInlineText(cleanedMessage);
-  const stripped = stripLeadingTimestamp(collapsed) || collapsed;
+  const summary = pickFirstNonEmpty([
+    sanitizeReadableText(entry.humanized),
+    buildReadableMessage(cleanedMessage),
+    title,
+    "\u65e5\u5fd7\u5185\u5bb9\u4e3a\u7a7a",
+  ]);
 
-  if (stripped) {
-    return truncateText(stripped, 180);
-  }
-
-  if (entry.humanized?.trim()) {
-    return truncateText(entry.humanized.trim(), 180);
-  }
-
-  return truncateText(title, 180);
+  return truncateText(summary || "\u65e5\u5fd7\u5185\u5bb9\u4e3a\u7a7a", 220);
 }
 
 function buildDetailSections(entry: LogEntry, summary: string): WorkspaceRuntimeLogDetailSection[] {
   const sections: WorkspaceRuntimeLogDetailSection[] = [];
-  const humanized = entry.humanized?.trim();
+  const humanized = sanitizeReadableText(entry.humanized);
 
   if (humanized && humanized !== summary) {
     sections.push({

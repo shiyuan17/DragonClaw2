@@ -1,11 +1,25 @@
 import { createAgentSessionKey, filterAgentSessions } from "./client";
-import type { WorkspaceGatewaySessionRow, WorkspaceGatewaySessionsListResult, WorkspaceHistoryItem, WorkspaceMessage } from "../../components/workspace-clone/workspaceCloneTypes";
+import type {
+  WorkspaceGatewaySessionRow,
+  WorkspaceGatewaySessionsListResult,
+  WorkspaceHistoryItem,
+  WorkspaceMessage,
+} from "../../components/workspace-clone/workspaceCloneTypes";
 import { stripWorkspaceHiddenPromptBlocks } from "../../components/workspace-clone/workspaceCloneManualTaskExecution";
 import { isWorkspaceRawProcessEcho, sanitizeWorkspaceAssistantContent } from "../../components/workspace-clone/workspaceCloneMessageVisibility";
+import { looksLikeMojibakeText, normalizeVisibleText } from "../../utils/text-mojibake";
 import { formatClockTime, formatHistorySessionTime, formatRelativeSessionTime } from "./time-formatters";
 
 const SESSION_TITLE_MAX_LENGTH = 56;
 const AGENT_LAST_MESSAGE_MAX_LENGTH = 44;
+const NON_MEANINGFUL_SESSION_TITLES = new Set([
+  "undefined",
+  "null",
+  "nan",
+  "[object object]",
+]);
+type WorkspaceSessionTitleSource = Pick<WorkspaceGatewaySessionRow, "key" | "displayName" | "label">;
+export type WorkspaceSessionHistoryTitleSource = "cache" | "memory" | "persisted" | "fallback";
 
 export function extractAgentIdFromSessionKey(sessionKey: string) {
   const match = /^agent:([^:]+):/.exec(sessionKey);
@@ -18,56 +32,74 @@ export function isRawSessionDisplayTitle(value?: string | null) {
 }
 
 export function normalizeSessionTitle(value: string) {
-  const normalized = value
-    .replace(/\s+/g, " ")
-    .replace(/^[`"'“”‘’]+|[`"'“”‘’]+$/g, "")
+  const normalized = normalizeVisibleText(value)
+    .replace(/^[`"'+]+|[`"'+]+$/g, "")
     .trim();
 
   if (normalized.length <= SESSION_TITLE_MAX_LENGTH) {
     return normalized;
   }
 
-  return `${normalized.slice(0, SESSION_TITLE_MAX_LENGTH - 1).trimEnd()}…`;
+  return `${normalized.slice(0, SESSION_TITLE_MAX_LENGTH - 3).trimEnd()}...`;
 }
 
 export function isMeaningfulSessionTitle(value: string) {
   return /[A-Za-z0-9\u4E00-\u9FFF]/.test(value);
 }
 
-function extractTextFromContentBlock(block: unknown): string {
-  if (typeof block === "string") {
-    return block;
+export function sanitizeMeaningfulSessionTitle(value?: string | null) {
+  const normalized = normalizeSessionTitle(value?.trim() || "");
+  if (
+    !normalized
+    || isRawSessionDisplayTitle(normalized)
+    || looksLikeMojibakeText(normalized)
+    || NON_MEANINGFUL_SESSION_TITLES.has(normalized.toLowerCase())
+    || !isMeaningfulSessionTitle(normalized)
+  ) {
+    return null;
   }
 
-  if (!block || typeof block !== "object") {
+  return normalized;
+}
+
+function extractTextValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(extractTextValue).filter(Boolean).join("\n\n");
+  }
+
+  if (!value || typeof value !== "object") {
     return "";
   }
 
-  const candidate = block as {
-    type?: unknown;
+  const candidate = value as {
     text?: unknown;
+    value?: unknown;
     content?: unknown;
     input?: unknown;
     output?: unknown;
+    title?: unknown;
+    prompt?: unknown;
   };
 
-  if (typeof candidate.text === "string") {
-    return candidate.text;
-  }
+  return [
+    candidate.text,
+    candidate.value,
+    candidate.content,
+    candidate.input,
+    candidate.output,
+    candidate.title,
+    candidate.prompt,
+  ]
+    .map(extractTextValue)
+    .find(Boolean) ?? "";
+}
 
-  if (typeof candidate.content === "string") {
-    return candidate.content;
-  }
-
-  if (typeof candidate.input === "string") {
-    return candidate.input;
-  }
-
-  if (typeof candidate.output === "string") {
-    return candidate.output;
-  }
-
-  return "";
+function extractTextFromContentBlock(block: unknown): string {
+  return extractTextValue(block);
 }
 
 export function extractGatewayMessageText(message: unknown): string {
@@ -111,7 +143,6 @@ export function normalizeGatewayMessage(
   const message = raw as {
     id?: unknown;
     role?: unknown;
-    content?: unknown;
     timestamp?: unknown;
     sessionKey?: unknown;
   };
@@ -124,11 +155,7 @@ export function normalizeGatewayMessage(
   const assistantContent = role === "assistant" ? sanitizeWorkspaceAssistantContent(message) : null;
   const text = (assistantContent?.text ?? extractGatewayMessageText(message)).trim();
 
-  if (!text) {
-    return null;
-  }
-
-  if (role === "tool") {
+  if (!text || role === "tool") {
     return null;
   }
 
@@ -141,9 +168,8 @@ export function normalizeGatewayMessage(
     role === "assistant"
       ? resolveAssistantAuthor(sessionKey)
       : role === "user"
-        ? "你"
-        : "系统";
-
+        ? "\u4f60"
+        : "\u7cfb\u7edf";
   const timestamp = typeof message.timestamp === "number" ? message.timestamp : null;
 
   return {
@@ -166,12 +192,10 @@ export function extractFirstMeaningfulSessionTitle(messages: unknown[]) {
       continue;
     }
 
-    const normalized = normalizeSessionTitle(extractGatewayMessageText(rawMessage));
-    if (!normalized || !isMeaningfulSessionTitle(normalized)) {
-      continue;
+    const normalized = sanitizeMeaningfulSessionTitle(extractGatewayMessageText(rawMessage));
+    if (normalized) {
+      return normalized;
     }
-
-    return normalized;
   }
 
   return null;
@@ -214,23 +238,69 @@ export function extractLastMeaningfulMessageSummary(messages: unknown[]) {
   return null;
 }
 
-export function resolveSessionFallbackTitle(session: WorkspaceGatewaySessionRow) {
+export function getSessionGenericTitle(sessionKey: string) {
+  return sessionKey.endsWith(":main") ? "\u4e3b\u4f1a\u8bdd" : "\u5386\u53f2\u4f1a\u8bdd";
+}
+
+function isSessionGenericTitle(title: string, sessionKey: string) {
+  return title === getSessionGenericTitle(sessionKey);
+}
+
+export function resolveSessionFallbackTitle(session: WorkspaceSessionTitleSource) {
   const candidates = [session.displayName, session.label];
 
   for (const candidate of candidates) {
-    const normalized = normalizeSessionTitle(candidate?.trim() || "");
-    if (!normalized || isRawSessionDisplayTitle(normalized) || !isMeaningfulSessionTitle(normalized)) {
-      continue;
+    const normalized = sanitizeMeaningfulSessionTitle(candidate);
+    if (normalized) {
+      return normalized;
     }
-
-    return normalized;
   }
 
-  if (session.key.endsWith(":main")) {
-    return "主会话";
+  return getSessionGenericTitle(session.key);
+}
+
+export function resolveSessionHistoryTitle(
+  session: WorkspaceSessionTitleSource,
+  params?: {
+    cachedTitle?: string | null;
+    memoryMessages?: unknown[];
+    persistedMessages?: unknown[];
+  },
+) {
+  return resolveSessionHistoryTitleDetails(session, params).title;
+}
+
+export function resolveSessionHistoryTitleDetails(
+  session: WorkspaceSessionTitleSource,
+  params?: {
+    cachedTitle?: string | null;
+    memoryMessages?: unknown[];
+    persistedMessages?: unknown[];
+  },
+): { title: string; source: WorkspaceSessionHistoryTitleSource } {
+  const cachedTitle = sanitizeMeaningfulSessionTitle(params?.cachedTitle);
+  if (cachedTitle && !isSessionGenericTitle(cachedTitle, session.key)) {
+    return { title: cachedTitle, source: "cache" };
   }
 
-  return session.key;
+  if (params?.memoryMessages?.length) {
+    const memoryTitle = extractFirstMeaningfulSessionTitle(params.memoryMessages);
+    if (memoryTitle) {
+      return { title: memoryTitle, source: "memory" };
+    }
+  }
+
+  if (params?.persistedMessages?.length) {
+    const persistedTitle = extractFirstMeaningfulSessionTitle(params.persistedMessages);
+    if (persistedTitle) {
+      return { title: persistedTitle, source: "persisted" };
+    }
+  }
+
+  return {
+    title: resolveSessionFallbackTitle(session),
+    source: "fallback",
+  };
 }
 
 export function buildSessionHistorySubtitle(session: WorkspaceGatewaySessionRow) {
@@ -239,16 +309,24 @@ export function buildSessionHistorySubtitle(session: WorkspaceGatewaySessionRow)
     return modelLabel;
   }
 
-  return session.key.endsWith(":main") ? "默认会话" : "历史会话";
+  return session.key.endsWith(":main") ? "\u9ed8\u8ba4\u4f1a\u8bdd" : "\u5386\u53f2\u4f1a\u8bdd";
 }
 
 export function buildSessionHistoryItem(
   session: WorkspaceGatewaySessionRow,
   params: {
-    cachedTitle?: string;
+    cachedTitle?: string | null;
+    memoryMessages?: unknown[];
+    persistedMessages?: unknown[];
     currentSessionKey: string;
   },
 ): WorkspaceHistoryItem {
+  const resolvedTitle = resolveSessionHistoryTitleDetails(session, {
+    cachedTitle: params.cachedTitle,
+    memoryMessages: params.memoryMessages,
+    persistedMessages: params.persistedMessages,
+  });
+
   return {
     id: session.key,
     sessionKey: session.key,
@@ -256,7 +334,7 @@ export function buildSessionHistoryItem(
     active: session.key === params.currentSessionKey,
     isMain: session.key.endsWith(":main"),
     kind: "gateway",
-    title: params.cachedTitle || resolveSessionFallbackTitle(session),
+    title: resolvedTitle.title,
     subtitle: buildSessionHistorySubtitle(session),
     time: formatHistorySessionTime(session.updatedAt),
   };
@@ -281,15 +359,11 @@ export function resolveAgentSessionKey(
 }
 
 export function buildLegacySessionHistoryItem(session: WorkspaceGatewaySessionRow): WorkspaceHistoryItem {
-  const title =
-    session.displayName?.trim() ||
-    session.label?.trim() ||
-    (session.key.endsWith(":main") ? "主会话" : session.key);
   const modelLabel = [session.modelProvider, session.model].filter(Boolean).join(" / ");
 
   return {
     id: session.key,
-    title,
+    title: resolveSessionFallbackTitle(session),
     subtitle: modelLabel || session.key,
     time: formatRelativeSessionTime(session.updatedAt),
   };

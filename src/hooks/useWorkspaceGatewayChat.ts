@@ -17,7 +17,7 @@ import { isWorkspaceRawProcessEcho, sanitizeWorkspaceAssistantContent } from "..
 import type { CurrentConfig } from "../types";
 import { buildAgentRecentSessionsById } from "./workspace-gateway/agent-recent-sessions";
 import { buildCachedAgentsResult, parseCachedMessagesJson, sanitizeAgentsResult, serializeCachedMessages, sortSessionsByUpdatedAt, toAgentCachePayload } from "./workspace-gateway/session-cache";
-import { buildSessionHistoryItem, extractAgentIdFromSessionKey, extractFirstMeaningfulSessionTitle, extractLastMeaningfulMessageSummary, normalizeGatewayMessage, resolveAgentSessionKey } from "./workspace-gateway/message-normalizers";
+import { buildSessionHistoryItem, extractAgentIdFromSessionKey, extractLastMeaningfulMessageSummary, normalizeGatewayMessage, resolveAgentSessionKey, resolveSessionHistoryTitle, resolveSessionHistoryTitleDetails } from "./workspace-gateway/message-normalizers";
 import { loadWorkspaceHistoryTitles } from "./workspace-gateway/history-titles";
 import { buildTaskRunHistoryItem } from "./workspace-gateway/task-run-sessions";
 import { adoptWorkspaceActiveRunSession, bindWorkspaceTaskRunConversationToResult, clearWorkspaceActiveRunRefs, endWorkspaceActiveRun, ensureWorkspaceTaskRunConversationBound, initializeWorkspaceActiveRun } from "./workspace-gateway/task-run-bridge";
@@ -442,6 +442,8 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
 
       setHistoryLoading(false);
 
+      const sessionRow = gatewaySessionKey ? sessionsResult?.sessions.find((session) => session.key === gatewaySessionKey) ?? null : null;
+
       if (!hasAnyCache) {
         try {
           const cachedRow = gatewaySessionKey
@@ -456,14 +458,14 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
             updateSessionHistoryCache(gatewaySessionKey, cachedMessages);
             hasAnyCache = true;
 
-            const cachedTitle = cachedRow.title?.trim();
-            existingCachedTitle = cachedTitle || null;
-            if (cachedTitle) {
-              setHistoryTitleCache((current) => (
-                current[gatewaySessionKey] === cachedTitle
-                  ? current
-                  : { ...current, [gatewaySessionKey]: cachedTitle }
-              ));
+            const restoredTitle = resolveSessionHistoryTitleDetails(sessionRow ?? { key: gatewaySessionKey, displayName: undefined, label: undefined }, { cachedTitle: cachedRow.title, persistedMessages: cachedMessages });
+            existingCachedTitle = restoredTitle.source === "fallback" ? null : restoredTitle.title;
+            if (restoredTitle.title) {
+              setHistoryTitleCache((current) => (current[gatewaySessionKey] === restoredTitle.title ? current : { ...current, [gatewaySessionKey]: restoredTitle.title }));
+            }
+
+            if (restoredTitle.source !== "fallback" && cachedRow.title?.trim() !== restoredTitle.title) {
+              await saveSessionHistoryCache(gatewaySessionKey, agentId, cachedMessages, cachedRow.updatedAt, restoredTitle.title).catch(() => undefined);
             }
           }
         } catch {
@@ -493,8 +495,10 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
 
         updateSessionHistoryCache(gatewaySessionKey, messages);
 
-        const sessionRow = sessionsResult?.sessions.find((session) => session.key === gatewaySessionKey) ?? null;
-        const nextTitle = extractFirstMeaningfulSessionTitle(messages);
+        const nextTitle = resolveSessionHistoryTitle(
+          sessionRow ?? { key: gatewaySessionKey, displayName: undefined, label: undefined },
+          { cachedTitle: existingCachedTitle, memoryMessages: messages },
+        );
         if (nextTitle) {
           setHistoryTitleCache((current) => (
             current[gatewaySessionKey] === nextTitle
@@ -964,11 +968,10 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     }
 
     void Promise.all(agentIds.map((agentId) => loadWorkspaceHistoryTitles({
-      agentId, connected, sessionsResult, sessionKeys: options?.sessionKeysByAgentId?.[agentId],
-      historyTitleFetches: historyTitleFetchesRef.current, setHistoryTitleCache, loadSessionHistoryMessages,
-      updateSessionHistoryCache, saveSessionHistoryCache,
+      agentId, connected, sessionsResult, sessionKeys: options?.sessionKeysByAgentId?.[agentId], historyTitleFetches: historyTitleFetchesRef.current, setHistoryTitleCache,
+      loadSessionHistoryMessages, loadPersistedSessionHistoryCache, updateSessionHistoryCache, saveSessionHistoryCache,
     }))).catch(() => undefined);
-  }, [connected, loadSessionHistoryMessages, saveSessionHistoryCache, selectedAgentId, sessionsResult, updateSessionHistoryCache]);
+  }, [connected, loadPersistedSessionHistoryCache, loadSessionHistoryMessages, saveSessionHistoryCache, selectedAgentId, sessionsResult, updateSessionHistoryCache]);
 
   const selectAgent = useCallback((agentId: string) => {
     setSelectedAgentId(agentId);
@@ -1169,18 +1172,19 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     const gatewayHistoryItems = filterAgentSessions(sessionsResult, selectedAgentId)
       .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0))
       .filter((session) => !hiddenGatewaySessionKeys.has(session.key))
-      .map((session) => buildSessionHistoryItem(session, {
-        cachedTitle: historyTitleCache[session.key],
-        currentSessionKey,
-      }));
+      .map((session) => {
+        const resolvedTitle = resolveSessionHistoryTitleDetails(session, { cachedTitle: historyTitleCache[session.key], memoryMessages: sessionHistoryCache[session.key] });
+        const item = buildSessionHistoryItem(session, { cachedTitle: resolvedTitle.title, memoryMessages: sessionHistoryCache[session.key], currentSessionKey });
+        return import.meta.env.DEV ? { ...item, _historyTitleSource: resolvedTitle.source } : item;
+      });
 
     return [...taskRunHistoryItems, ...gatewayHistoryItems]
       .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0));
-  }, [currentSessionKey, historyTitleCache, selectedAgentId, sessionsResult, taskRunSessions]);
+  }, [currentSessionKey, historyTitleCache, selectedAgentId, sessionHistoryCache, sessionsResult, taskRunSessions]);
 
   const agentRecentSessionsById = useMemo(() => buildAgentRecentSessionsById({
-    agents, sessionsResult, historyTitleCache, currentSessionKey: currentGatewaySessionKey || currentSessionKey,
-  }), [agents, currentGatewaySessionKey, currentSessionKey, historyTitleCache, sessionsResult]);
+    agents, sessionsResult, historyTitleCache, sessionHistoryCache, currentSessionKey: currentGatewaySessionKey || currentSessionKey,
+  }), [agents, currentGatewaySessionKey, currentSessionKey, historyTitleCache, sessionHistoryCache, sessionsResult]);
 
   const normalizedHistoryMessages = useMemo(() => (
     (currentGatewaySessionKey ? sessionHistoryCache[currentGatewaySessionKey] ?? [] : [])
