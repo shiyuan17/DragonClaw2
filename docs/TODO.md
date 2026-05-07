@@ -4,7 +4,9 @@
 - [ ] Prevent false OpenClaw startup failure while gateway sidecars are warming up by separating true `gateway ready` log detection from HTTP listening, widening RPC probe timeouts, and preserving persistent-service reuse without changing Tauri command or `invoke()` contracts.
 
 ## Phase 5.56: Workspace Task Card and Editor Refresh
-- [ ] Rebuild the `workspace-clone` task drawer cards and task editor modal into the new compact layout, remove the inline recent-runs block, keep task titles human-readable via one shared display-title resolver, preserve manual `enabled / disabled` filter selection, correct the task dropdown menu styling, show concrete trigger timing for task loops, add a running-only animated indicator in the list without affecting the title line, bridge manual `Run now` with an optimistic running state until real run signals arrive, pass accepted `cron.run` `runId` values into the existing live timeline state, and make manual `Run now` open an independent frontend task-run conversation that first shows a system `?????` reply, then attaches to the real OpenClaw result session or a terminal no-session fallback without changing real cron / Gateway / `invoke()` contracts.
+- [ ] Rebuild the `workspace-clone` task drawer cards and task editor modal into the new compact layout, remove the inline recent-runs block, keep task titles human-readable via one shared display-title resolver, preserve manual `enabled / disabled` filter selection, correct the task dropdown menu styling, show concrete trigger timing for task loops, add a running-only animated indicator in the list without affecting the title line, bridge manual `Run now` with an optimistic running state until real run signals arrive, pass accepted `cron.run` `runId` values into the existing live timeline state, and make manual `Run now` open an independent frontend task-run conversation that first shows a system `正在执行中` reply, then attaches to the real OpenClaw result session or a terminal no-session fallback without changing real cron / Gateway / `invoke()` contracts.
+
+- [ ] Phase 5.56.3: realign manual `Run now` with official OpenClaw task semantics by avoiding pre-opened synthetic task chats, switching into real sessions only when upstream produces one, forcing immediate wake for `main + systemEvent` manual runs, removing the extra visible `模式` UI, and restoring legacy synthetic task sessions by binding them to real gateway sessions before send/reset/new-chat actions continue.
 
 ## Phase 5.55: Startup Flow Single Source and Persistent Service
 - [ ] Unify startup into the React guide/setup surface, remove the static Booting splash and duplicate OpenClaw startup overlay, keep homepage chat from replaying the normal startup checklist, and leave OpenClaw running across DragonClaw quits for fast reuse without changing Tauri command or `invoke()` contracts.
@@ -37,7 +39,7 @@
 - [ ] 收敛占位信息架构，补启动/配置/渠道/聊天关键自动化护栏，并继续下调大文件 baseline 与编码门禁。
 
 ## Phase 5.50: workspace-clone 聊天原始工具/命令回显隐藏
-- [ ] 为 `workspace-clone` 聊天区隐藏原始工具/命令回显气泡，保留精简 live timeline 与最终面向用户的正文回答，不修改网关协议或 `invoke()` 契约。
+- [ ] 为 `workspace-clone` 聊天区隐藏原始工具/命令回显与混入最终答复的工具噪音，保留精简 live timeline 与最终面向用户的正文回答，不修改网关协议或 `invoke()` 契约。
 ## Phase 5.51: 首页聊天连通失败与网关真相修复
 - [ ] 修复首页聊天长期停留在“正在验证网关 / 连接聊天”却始终连不上的问题，统一 ready 真相为 PID 存活 + 端口监听 + RPC/token 校验通过，并在 stale runtime state 或浏览器侧握手失败时返回真实失败态而不是假复用。
 ## Phase 5.41: State and Config Consolidation
@@ -402,6 +404,8 @@
 - [ ] Limit ready homepage eager data to chat essentials; lazy load logs, history title backfill, channels, memory, skills, tools, model config, drawers, and modals after user interaction
 
 - [ ] Phase 5.20.1: fix `workspace-clone > employees` install/remove roster refresh so chat agent directory, channel-binding agent picker, and local cached/offline roster stay in sync without changing Tauri command signatures or frontend `invoke()` contracts.
+
+- [ ] Phase 5.20.2: add a recent-3-session nested list to the `workspace-clone > chat` employee directory, add an expand/collapse affordance on the right side, and default cards with more than one session to expanded without changing Gateway/session/`invoke()` contracts.
 
 ## Phase 5.31: Homepage Chat Freeze Fix
 - [ ] Fix ready homepage chat freezes by guarding gateway reconnect loops, deduplicating initial history loads, lazy-loading markdown rendering, and batching high-frequency log updates.
