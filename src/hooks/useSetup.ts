@@ -17,6 +17,7 @@ import {
   getOnboardingSkillInstallDiagnostics,
   markOnboardingSkillInstallRequired,
 } from "../utils/onboardingSkillInstaller";
+import { captureSetupCompleted, captureSetupServiceStartRequested, captureWorkspaceConfigured } from "./setup-telemetry";
 import {
   beginSetupEnvironmentCheck,
   configureSetupWorkspace,
@@ -86,7 +87,6 @@ export function useSetup({
   useEffect(() => {
     serviceLifecycleRef.current = serviceLifecycle;
   }, [serviceLifecycle]);
-
   useEffect(() => {
     if (typeof serviceLifecycle?.port === "number" && serviceLifecycle.port > 0) {
       setServicePort(serviceLifecycle.port);
@@ -117,26 +117,22 @@ export function useSetup({
       addLog("error", errorMessage);
     }
   }, [addLog, serviceLifecycle, setRunning]);
-
   const setSetupPhase = useCallback((nextPhase: AppPhase) => {
     phaseRef.current = nextPhase;
     setPhase(nextPhase);
   }, []);
-
   const clearLaunchFallback = useCallback(() => {
     if (launchFallbackRef.current) {
       clearTimeout(launchFallbackRef.current);
       launchFallbackRef.current = null;
     }
   }, []);
-
   const clearEnvironmentCheckTimeout = useCallback(() => {
     if (environmentCheckTimeoutRef.current) {
       clearTimeout(environmentCheckTimeoutRef.current);
       environmentCheckTimeoutRef.current = null;
     }
   }, []);
-
   const clearOnboardingSchedule = useCallback(() => {
     if (onboardingDelayRef.current) {
       clearTimeout(onboardingDelayRef.current);
@@ -148,20 +144,10 @@ export function useSetup({
       onboardingIdleRef.current = null;
     }
   }, []);
-
-  const syncWorkspacePath = useCallback((fallback?: string) => {
-    return syncSetupWorkspacePath({
-      fallback,
-      setWorkspacePath,
-    });
-  }, []);
-
-  const configureWorkspace = useCallback((nextWorkspacePath?: string | null) => {
-    return configureSetupWorkspace({
-      nextWorkspacePath,
-      setWorkspacePath,
-    });
-  }, []);
+  const syncWorkspacePath = useCallback((fallback?: string) => syncSetupWorkspacePath({ fallback, setWorkspacePath }), []);
+  const configureWorkspace = useCallback((nextWorkspacePath?: string | null) => (
+    configureSetupWorkspace({ nextWorkspacePath, setWorkspacePath })
+  ), []);
 
   const backfillOnboardingSkillStateIfNeeded = useCallback(async () => {
     try {
@@ -251,6 +237,7 @@ export function useSetup({
     setLoading(true);
     setSetupError(null);
     setProgress(98);
+    captureSetupServiceStartRequested();
     setProgressMsg("正在启动 OpenClaw 服务...");
 
     try {
@@ -282,6 +269,7 @@ export function useSetup({
     try {
       await invoke("setup_openclaw");
       await markOnboardingSkillInstallRequired();
+      captureSetupCompleted();
       addLog("success", "OpenClaw 初始化完成");
       await launchService();
     } catch (err) {
@@ -352,6 +340,7 @@ export function useSetup({
         addLog("info", "首次使用，正在自动配置默认工作区...");
         try {
           const resolvedWorkspacePath = await configureWorkspace(null);
+          captureWorkspaceConfigured("auto");
           addLog("success", `[OK] 已自动配置默认工作区: ${resolvedWorkspacePath || "默认目录"}`);
         } catch (configError) {
           setSetupPhase("workspace");
@@ -490,6 +479,7 @@ export function useSetup({
 
     try {
       const resolvedWorkspacePath = await configureWorkspace(workspacePath);
+      captureWorkspaceConfigured("manual");
       addLog("success", `[OK] 工作区已配置: ${resolvedWorkspacePath || "默认目录"}`);
       await launchService();
     } catch (err) {
@@ -515,6 +505,7 @@ export function useSetup({
       try {
         await invoke("inject_default_config", { workspacePath: selected });
         await syncWorkspacePath(selected);
+        captureWorkspaceConfigured("switch");
         addLog("success", `[OK] 工作区已切换到: ${selected}`);
       } catch (err) {
         addLog("error", `切换失败: ${err}`);

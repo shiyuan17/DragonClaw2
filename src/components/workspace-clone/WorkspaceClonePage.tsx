@@ -53,6 +53,7 @@ import { WorkspaceCloneHeader } from "./WorkspaceCloneHeader";
 import { WorkspaceCloneCompactView } from "./WorkspaceCloneCompactView";
 import { WorkspaceCloneProductLandingView } from "./WorkspaceCloneProductLandingView";
 import { WorkspaceCloneScenePresetSwitcher } from "./WorkspaceCloneScenePresetSwitcher";
+import { WorkspaceCloneSettingsModal } from "./WorkspaceCloneSettingsModal";
 import { WorkspaceCloneSidebar } from "./WorkspaceCloneSidebar";
 import { WorkspaceCloneTaskEditorModal } from "./WorkspaceCloneTaskEditorModal";
 import { buildWorkspaceManualTaskExecutionContent } from "./workspaceCloneManualTaskExecution";
@@ -68,6 +69,13 @@ import { useWorkspaceChannels } from "../../hooks/workspace-clone/useWorkspaceCh
 import { useWorkspaceComposerModelMenu } from "../../hooks/workspace-clone/useWorkspaceComposerModelMenu";
 import { useWorkspaceEmailBinding } from "../../hooks/workspace-clone/useWorkspaceEmailBinding";
 import { loadLocalAgentRoster } from "../../hooks/workspace-gateway/local-agent-roster";
+import {
+  captureTelemetryEvent,
+  getTelemetryEnabled,
+  getTelemetryHost,
+  isTelemetryConfigured,
+  setTelemetryEnabled,
+} from "../../utils/telemetry";
 import type {
   WorkspaceCronJob,
   WorkspaceChatFileItem,
@@ -312,7 +320,8 @@ export function WorkspaceClonePage({
   const [adminPanel, setAdminPanel] = useState<WorkspaceSidebarAdminPanel>(null);
   const [showAgentInfo, setShowAgentInfo] = useState(false);
   const [selectedRuntimeLogId, setSelectedRuntimeLogId] = useState<string | null>(null);
-  const [showSettingsTextPreview, setShowSettingsTextPreview] = useState(false);
+  const [showWorkspaceSettingsModal, setShowWorkspaceSettingsModal] = useState(false);
+  const [telemetryEnabled, setTelemetryEnabledState] = useState(() => getTelemetryEnabled());
   const [relatedResource, setRelatedResource] = useState<WorkspaceRelatedResource>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [isModelConfigOpen, setIsModelConfigOpen] = useState(false);
@@ -325,6 +334,8 @@ export function WorkspaceClonePage({
   const homepageChat = useWorkspaceGatewayChat({ running, servicePort, gatewayToken });
   const savedProvidersLoadSeqRef = useRef(0);
   const modelConfigOpenRef = useRef(false);
+  const telemetryConfigured = isTelemetryConfigured();
+  const telemetryHost = getTelemetryHost();
   const showDirectory = activeMenu === "chat";
   const workspaceChannels = useWorkspaceChannels({ configVersion, enabled: showDirectory });
   const { setContextMenu } = workspaceChannels;
@@ -617,7 +628,7 @@ export function WorkspaceClonePage({
       setIsModelConfigOpen(false);
       setSavedProvidersLoading(false);
       setSelectedRuntimeLogId(null);
-      setShowSettingsTextPreview(false);
+      setShowWorkspaceSettingsModal(false);
       workspaceEmailBinding.closeEmailBindingModal({ clearStatus: true, force: true });
     }
   }, [activeMenu, composerModelMenu.closeMenu, setContextMenu, workspaceEmailBinding.closeEmailBindingModal]);
@@ -1014,11 +1025,17 @@ export function WorkspaceClonePage({
     setUtilityPanel(null);
     cronTasks.clearTaskStatus();
 
-    await homepageChat.runTaskInNewChat({
+    const started = await homepageChat.runTaskInNewChat({
       agentId: taskAgentId,
       content: executionContent,
       parentSessionKey: mainParentSessionKey,
     });
+    if (started) {
+      captureTelemetryEvent("launcher_task_run_started", {
+        trigger: "manual",
+        agent_id: taskAgentId,
+      });
+    }
   }, [
     cronTasks,
     currentMemoryAgentId,
@@ -1042,6 +1059,16 @@ export function WorkspaceClonePage({
     }
   }, [cronTasks, editingTask]);
 
+  const handleOpenWorkspaceSettingsModal = useCallback(() => {
+    setShowWorkspaceSettingsModal(true);
+    setAdminOpen(false);
+    setAdminPanel(null);
+  }, []);
+
+  const handleToggleTelemetry = useCallback((enabled: boolean) => {
+    setTelemetryEnabledState(setTelemetryEnabled(enabled));
+  }, []);
+
   const shouldRenderOverlayStack = Boolean(
     avatarState.isAvatarModalOpen ||
     showAgentInfo ||
@@ -1050,7 +1077,6 @@ export function WorkspaceClonePage({
     toolsAdmin.showToolsModal ||
     selectedRuntimeLogId ||
     selectedRuntimeLog ||
-    showSettingsTextPreview ||
     relatedResource,
   );
 
@@ -1091,6 +1117,7 @@ export function WorkspaceClonePage({
             setAdminOpen(true);
             setAdminPanel(panel);
           }}
+          onOpenSettings={handleOpenWorkspaceSettingsModal}
         />
 
         {showDirectory && (
@@ -1276,7 +1303,7 @@ export function WorkspaceClonePage({
                  onSelectSessionSection={setActiveSessionSection}
                  onSelectHistorySession={homepageChat.selectSession}
                  onOpenRelatedResource={handleOpenRelatedResource}
-                 onOpenSettingsTextPreview={() => setShowSettingsTextPreview(true)}
+                 onOpenSettingsTextPreview={handleOpenWorkspaceSettingsModal}
                 onStart={handleStart}
                 onOpenModelConfig={openModelConfigModal}
                 onOpenLogs={() => toggleUtilityPanel("logs")}
@@ -1357,13 +1384,13 @@ export function WorkspaceClonePage({
               />
             </Suspense>
           ) : activeMenu === "tasks" ? (
-              <WorkspaceCloneProductLandingView
-                workspaceModelName={workspaceModelName}
-                running={running}
-                uptimeLabel={uptimeLabel}
-              />
-            ) : (
-              <WorkspaceCloneCompactView
+            <WorkspaceCloneProductLandingView
+              workspaceModelName={workspaceModelName}
+              running={running}
+              uptimeLabel={uptimeLabel}
+            />
+          ) : (
+            <WorkspaceCloneCompactView
               activeMenu={activeMenu}
               workspaceModelName={workspaceModelName}
               running={running}
@@ -1383,7 +1410,6 @@ export function WorkspaceClonePage({
               showToolsModal={toolsAdmin.showToolsModal}
               showRuntimeLogDetail={Boolean(selectedRuntimeLogId)}
               runtimeLog={selectedRuntimeLog}
-              showSettingsTextPreview={showSettingsTextPreview}
               relatedResource={relatedResource}
               memoryFiles={memoryAdmin.memoryFiles}
               selectedMemoryFileId={memoryAdmin.selectedMemoryFileId}
@@ -1495,11 +1521,19 @@ export function WorkspaceClonePage({
               onCloseRuntimeLogDetail={() => {
                 setSelectedRuntimeLogId(null);
               }}
-              onCloseSettingsTextPreview={() => setShowSettingsTextPreview(false)}
               onCloseRelatedResource={() => setRelatedResource(null)}
             />
           </Suspense>
         ) : null}
+
+        <WorkspaceCloneSettingsModal
+          show={showWorkspaceSettingsModal}
+          telemetryEnabled={telemetryEnabled}
+          telemetryConfigured={telemetryConfigured}
+          posthogHost={telemetryHost}
+          onClose={() => setShowWorkspaceSettingsModal(false)}
+          onToggleTelemetry={handleToggleTelemetry}
+        />
 
         {isModelConfigOpen ? (
           <Suspense fallback={<WorkspaceCloneLazyFallback label="\u6a21\u578b\u914d\u7f6e" />}> 

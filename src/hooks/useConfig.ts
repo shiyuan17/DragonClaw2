@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { CurrentConfig, ProviderInfo } from "../types";
+import { captureTelemetryEvent } from "../utils/telemetry";
 
 interface UseConfigOptions {
     addLog: (level: string, message: string) => void;
@@ -77,6 +78,11 @@ export function useConfig({ addLog, running, setRunning }: UseConfigOptions) {
                 model: selectedModel || null,
             });
 
+            captureTelemetryEvent("launcher_api_config_saved", {
+                provider: selectedProvider || "custom",
+                has_base_url: Boolean(baseUrlInput.trim()),
+                has_model: Boolean(selectedModel.trim()),
+            });
             setConfigStatus(result);
             addLog("success", result);
             await refreshCurrentConfig().catch((error) => {
@@ -107,6 +113,7 @@ export function useConfig({ addLog, running, setRunning }: UseConfigOptions) {
     const handleSetModel = useCallback(async (modelId: string) => {
         try {
             const result = await invoke<string>("set_default_model", { modelId });
+            captureTelemetryEvent("launcher_default_model_changed");
             setSelectedModel(modelId);
             setConfigStatus(result);
             addLog("success", result);
@@ -151,6 +158,7 @@ export function useConfig({ addLog, running, setRunning }: UseConfigOptions) {
             modelOptions: payload.modelOptions ?? [],
         });
 
+        captureTelemetryEvent("launcher_saved_provider_upserted");
         setConfigStatus(result);
         addLog("success", result);
         await refreshCurrentConfig().catch((error) => {
@@ -177,6 +185,7 @@ export function useConfig({ addLog, running, setRunning }: UseConfigOptions) {
     const handleDeleteSavedProviderConfig = useCallback(async (providerKey: string) => {
         const result = await invoke<string>("delete_saved_provider_config", { providerKey });
 
+        captureTelemetryEvent("launcher_saved_provider_deleted");
         setConfigStatus(result);
         addLog("success", result);
         await refreshCurrentConfig().catch((error) => {
@@ -216,6 +225,7 @@ export function useConfig({ addLog, running, setRunning }: UseConfigOptions) {
         setShowResetModal(false);
         try {
             const result = await invoke<string>("reset_config");
+            captureTelemetryEvent("launcher_config_reset_confirmed");
             await refreshCurrentConfig().catch(() => {
                 setCurrentConfig({
                     has_api_key: false,

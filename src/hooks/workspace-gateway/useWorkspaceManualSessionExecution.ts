@@ -5,6 +5,7 @@ import type { WorkspaceManualTaskExecutionContent } from "../../components/works
 import type { WorkspaceLiveStep, WorkspaceMessage } from "../../components/workspace-clone/workspaceCloneTypes";
 import type { WorkspaceGatewaySessionsListResult } from "../../components/workspace-clone/workspaceCloneTypes";
 import type { WorkspaceGatewayClient } from "./client";
+import type { WorkspaceChatTelemetrySessionType } from "./chat-telemetry";
 import { createWorkspaceSession } from "./session-creation";
 
 export function useWorkspaceManualSessionExecution(params: {
@@ -25,6 +26,7 @@ export function useWorkspaceManualSessionExecution(params: {
       preserveSessionSwitch?: boolean;
       displayText?: string;
       transportText?: string;
+      telemetrySessionType?: WorkspaceChatTelemetrySessionType;
     },
   ) => Promise<boolean>;
   setSelectedAgentId: Dispatch<SetStateAction<string>>;
@@ -86,6 +88,7 @@ export function useWorkspaceManualSessionExecution(params: {
       preserveSessionSwitch: true,
       displayText: task.content.displayMessage,
       transportText: task.content.transportMessage,
+      telemetrySessionType: "task_run",
     });
   }, [createNewSession, params]);
 

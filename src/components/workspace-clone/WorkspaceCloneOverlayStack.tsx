@@ -1,7 +1,6 @@
 import type { ChangeEvent } from "react";
 
 import { MAIN_AGENT_DISPLAY_NAME } from "../../data/agencyRoster";
-import { Modal } from "../ui/Modal";
 import { WorkspaceCloneAgentInfoModal } from "./WorkspaceCloneAgentInfoModal";
 import { WorkspaceCloneAvatarModal } from "./WorkspaceCloneAvatarModal";
 import { WorkspaceCloneCommandsModal } from "./WorkspaceCloneCommandsModal";
@@ -39,7 +38,6 @@ interface WorkspaceCloneOverlayStackProps {
   showToolsModal: boolean;
   showRuntimeLogDetail?: boolean;
   runtimeLog: WorkspaceRuntimeLogItem | null;
-  showSettingsTextPreview: boolean;
   relatedResource: WorkspaceRelatedResource;
   memoryFiles: WorkspaceMemoryFile[];
   selectedMemoryFileId: string;
@@ -124,7 +122,6 @@ interface WorkspaceCloneOverlayStackProps {
   onUpdateCommandDraft: (draft: WorkspaceSlashCommandDraftInput) => void;
   onSaveCommandDraft: () => void;
   onCloseRuntimeLogDetail: () => void;
-  onCloseSettingsTextPreview: () => void;
   onCloseRelatedResource: () => void;
 }
 
@@ -137,7 +134,6 @@ export function WorkspaceCloneOverlayStack({
   showToolsModal,
   showRuntimeLogDetail = false,
   runtimeLog,
-  showSettingsTextPreview,
   relatedResource,
   memoryFiles,
   selectedMemoryFileId,
@@ -222,7 +218,6 @@ export function WorkspaceCloneOverlayStack({
   onUpdateCommandDraft,
   onSaveCommandDraft,
   onCloseRuntimeLogDetail,
-  onCloseSettingsTextPreview,
   onCloseRelatedResource,
 }: WorkspaceCloneOverlayStackProps) {
   return (
@@ -335,22 +330,6 @@ export function WorkspaceCloneOverlayStack({
         runtimeLog={runtimeLog}
         onClose={onCloseRuntimeLogDetail}
       />
-
-      <Modal show={showSettingsTextPreview} onClose={onCloseSettingsTextPreview} title="设置文本预览" maxWidth={680}>
-        <div className="workspace-clone__dialog-body">
-          <div className="workspace-clone__dialog-copy">
-            <strong>完整内容预览</strong>
-            <p>这里对应聊天工作区里的说明性预览弹层，用来承接纯界面阶段的详细文案。</p>
-          </div>
-          <pre className="workspace-clone__preview-block">
-{`workspace-clone / chat
-- minimal header
-- single welcome message
-- lightweight suggestion cards
-- one-layer composer`}
-          </pre>
-        </div>
-      </Modal>
 
       <WorkspaceCloneRelatedResourceModal
         relatedResource={relatedResource}

@@ -21,6 +21,7 @@ import { useLogs } from "./hooks/useLogs";
 import { useService } from "./hooks/useService";
 import { useServiceLifecycle } from "./hooks/useServiceLifecycle";
 import { useSetup } from "./hooks/useSetup";
+import { captureTelemetryEvent } from "./utils/telemetry";
 
 const WorkspaceCloneReadyPage = lazy(() => import("./components/ready/WorkspaceCloneReadyPage"));
 
@@ -46,6 +47,12 @@ function AppShell() {
   const [infoModalTitle, setInfoModalTitle] = useState("");
   const [appVersion, setAppVersion] = useState("0.0.0");
   const updateChecked = useRef(false);
+  const readyWorkspaceTracked = useRef(false);
+  const lastSetupErrorSignature = useRef("");
+
+  useEffect(() => {
+    captureTelemetryEvent("launcher_app_opened");
+  }, []);
 
   useEffect(() => {
     getVersion().then((version) => setAppVersion(version)).catch(() => {});
@@ -144,6 +151,11 @@ function AppShell() {
       return;
     }
 
+    if (!readyWorkspaceTracked.current) {
+      readyWorkspaceTracked.current = true;
+      captureTelemetryEvent("launcher_ready_workspace_entered");
+    }
+
     let cancelled = false;
 
     async function refreshGatewayConfig() {
@@ -215,10 +227,18 @@ function AppShell() {
 
   useEffect(() => {
     if (!setupError) {
+      lastSetupErrorSignature.current = "";
       return;
     }
 
     const isLaunchingError = phase === "launching";
+    const nextErrorSignature = `${phase}:${setupError}`;
+    if (lastSetupErrorSignature.current !== nextErrorSignature) {
+      lastSetupErrorSignature.current = nextErrorSignature;
+      captureTelemetryEvent("launcher_setup_failed", {
+        stage: phase,
+      });
+    }
     pushFeedback({
       tone: "error",
       title: isLaunchingError ? "启动失败" : "初始化失败",

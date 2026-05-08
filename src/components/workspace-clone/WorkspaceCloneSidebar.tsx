@@ -13,9 +13,12 @@ interface WorkspaceCloneSidebarProps {
   onToggleCollapsed: () => void;
   onToggleAdmin: () => void;
   onSelectAdminPanel: (panel: WorkspaceSidebarAdminPanel) => void;
+  onOpenSettings: () => void;
 }
 
-function resolveSidebarMenuLabel(key: WorkspaceMenuKey, fallbackLabel: string) {
+const ADMIN_LABEL = "管理员（工作台）";
+
+function resolveSidebarMenuLabel(key: WorkspaceMenuKey) {
   switch (key) {
     case "chat":
       return "聊天";
@@ -30,7 +33,7 @@ function resolveSidebarMenuLabel(key: WorkspaceMenuKey, fallbackLabel: string) {
     case "tasks":
       return "产品落地";
     default:
-      return fallbackLabel;
+      return key;
   }
 }
 
@@ -44,9 +47,8 @@ export function WorkspaceCloneSidebar({
   onToggleCollapsed,
   onToggleAdmin,
   onSelectAdminPanel,
+  onOpenSettings,
 }: WorkspaceCloneSidebarProps) {
-  const adminLabel = "管理员（工作台）";
-
   return (
     <aside className={`workspace-clone__sidebar ${isCollapsed ? "is-collapsed" : ""}`}>
       <div className="workspace-clone__sidebar-rail">
@@ -54,10 +56,10 @@ export function WorkspaceCloneSidebar({
           <div className="workspace-clone__edge-trigger workspace-clone__edge-trigger--sidebar">
             <button
               className="workspace-clone__directory-edge-btn workspace-clone__directory-edge-btn--sidebar"
-            type="button"
-            onClick={onToggleCollapsed}
-            title={isCollapsed ? "展开侧栏" : "收起侧栏"}
-          >
+              type="button"
+              onClick={onToggleCollapsed}
+              title={isCollapsed ? "展开侧栏" : "收起侧栏"}
+            >
               <WorkspaceCloneIcon
                 name="chevron-right"
                 size={14}
@@ -70,7 +72,7 @@ export function WorkspaceCloneSidebar({
 
         <div className="workspace-clone__sidebar-menu">
           {menuItems.map((item) => {
-            const displayLabel = resolveSidebarMenuLabel(item.key, item.label);
+            const displayLabel = resolveSidebarMenuLabel(item.key);
             return (
               <button
                 key={item.key}
@@ -78,7 +80,6 @@ export function WorkspaceCloneSidebar({
                   "workspace-clone__menu-item",
                   activeMenu === item.key ? "is-active" : "",
                   isCollapsed ? "is-collapsed" : "",
-
                 ].join(" ").trim()}
                 type="button"
                 title={displayLabel}
@@ -100,12 +101,12 @@ export function WorkspaceCloneSidebar({
         <div className={`workspace-clone__sidebar-actions ${isCollapsed ? "is-collapsed" : ""}`}>
           <div className={`workspace-clone__sidebar-footer-row ${isCollapsed ? "is-collapsed" : ""}`}>
             {!isCollapsed && (
-              <div className="workspace-clone__profile-summary" aria-label={adminLabel}>
+              <div className="workspace-clone__profile-summary" aria-label={ADMIN_LABEL}>
                 <span className="workspace-clone__avatar-wrap workspace-clone__avatar-wrap--identity">
                   <img src={dragonclawLogo} alt="" className="workspace-clone__sidebar-avatar-image" />
                 </span>
                 <span className="workspace-clone__profile-copy">
-                  <span className="workspace-clone__profile-title">{adminLabel}</span>
+                  <span className="workspace-clone__profile-title">{ADMIN_LABEL}</span>
                 </span>
               </div>
             )}
@@ -138,7 +139,7 @@ export function WorkspaceCloneSidebar({
                       <span>语言</span>
                       <WorkspaceCloneIcon name="chevron-right" size={12} strokeWidth={2} />
                     </button>
-                    <button className="workspace-clone__admin-item" type="button">
+                    <button className="workspace-clone__admin-item" type="button" onClick={onOpenSettings}>
                       <span className="workspace-clone__admin-item-icon">
                         <WorkspaceCloneIcon name="settings" size={14} strokeWidth={1.9} />
                       </span>
@@ -151,13 +152,17 @@ export function WorkspaceCloneSidebar({
                       <div className="workspace-clone__theme-toggle">
                         <div>
                           <strong>浅色工作台</strong>
-                          <small>当前仅保留前端主题选项样式，不连接真实主题切换。</small>
+                          <small>当前先保留前端主题预览样式，不接入真实主题切换。</small>
                         </div>
                         <span className="workspace-clone__theme-pill">Air</span>
                       </div>
                       <div className="workspace-clone__secondary-options">
                         {["Air", "Pure", "Mist", "Calm"].map((tone) => (
-                          <button key={tone} className={`workspace-clone__secondary-option ${tone === "Air" ? "is-active" : ""}`} type="button">
+                          <button
+                            key={tone}
+                            className={`workspace-clone__secondary-option ${tone === "Air" ? "is-active" : ""}`}
+                            type="button"
+                          >
                             <span className="workspace-clone__secondary-swatch" />
                             <span>{tone}</span>
                           </button>
@@ -169,7 +174,11 @@ export function WorkspaceCloneSidebar({
                   {adminPanel === "language" && (
                     <div className="workspace-clone__admin-secondary workspace-clone__admin-secondary--language">
                       {["中文", "English", "日本語"].map((label, index) => (
-                        <button key={label} className={`workspace-clone__secondary-option ${index === 0 ? "is-active" : ""}`} type="button">
+                        <button
+                          key={label}
+                          className={`workspace-clone__secondary-option ${index === 0 ? "is-active" : ""}`}
+                          type="button"
+                        >
                           <span>{label}</span>
                           <small>{index === 0 ? "zh-CN" : index === 1 ? "en" : "ja"}</small>
                         </button>
@@ -187,7 +196,7 @@ export function WorkspaceCloneSidebar({
                 ].join(" ").trim()}
                 type="button"
                 onClick={onToggleAdmin}
-                title={adminLabel}
+                title={ADMIN_LABEL}
               >
                 <WorkspaceCloneIcon name="settings" size={14} strokeWidth={1.85} />
               </button>

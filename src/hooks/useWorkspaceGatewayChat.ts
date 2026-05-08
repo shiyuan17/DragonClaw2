@@ -26,6 +26,7 @@ import { useWorkspaceCachedAgentLastMessages } from "./workspace-gateway/useWork
 import { useWorkspaceManualSessionExecution } from "./workspace-gateway/useWorkspaceManualSessionExecution";
 import { useWorkspaceTaskRunSessions } from "./workspace-gateway/useWorkspaceTaskRunSessions";
 import { shouldSkipMirroredWorkspaceLiveStep } from "./workspace-gateway/live-step-dedupe";
+import { captureWorkspaceChatMessageSent, type WorkspaceChatTelemetrySessionType } from "./workspace-gateway/chat-telemetry";
 import { buildLiveStepFromAgentEvent, buildPostToolThinkingStep, getPostToolThinkingStepId, isRecord, isTerminalLiveStepStatus, toFiniteTimestamp, toStringValue, type WorkspaceGatewayAgentEventPayload, type WorkspaceLiveStepDedupeEntry, type WorkspaceLiveStepEventSource, updateLiveStepList } from "./workspace-gateway/live-steps";
 import { formatClockTime } from "./workspace-gateway/time-formatters";
 
@@ -990,6 +991,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     targetAgentId?: string | null;
     preserveSessionSwitch?: boolean;
     displayText?: string; transportText?: string;
+    telemetrySessionType?: WorkspaceChatTelemetrySessionType;
   }) => {
       const client = clientRef.current;
       const message = (options?.displayText ?? value).trim(); const outboundText = (options?.transportText ?? value).trim();
@@ -1022,6 +1024,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
           time: formatClockTime(Date.now()),
         },
       });
+      captureWorkspaceChatMessageSent(gatewaySessionKey, targetAgentId, options?.telemetrySessionType);
       setSending(true);
 
       try {

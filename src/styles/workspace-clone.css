@@ -3101,6 +3101,79 @@
   line-height: 1.65;
 }
 
+.workspace-clone__settings-section {
+  display: grid;
+  gap: 14px;
+}
+
+.workspace-clone__settings-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 1px solid var(--workspace-line);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, var(--dc-workspace-panel-glass) 0%, var(--workspace-panel-soft) 100%);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+  cursor: pointer;
+}
+
+.workspace-clone__settings-toggle input {
+  margin: 2px 0 0;
+  inline-size: 18px;
+  block-size: 18px;
+  accent-color: var(--workspace-accent);
+  flex: 0 0 auto;
+}
+
+.workspace-clone__settings-toggle-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.workspace-clone__settings-toggle-copy strong {
+  font-size: 14px;
+  color: var(--workspace-ink);
+}
+
+.workspace-clone__settings-toggle-copy small {
+  color: var(--workspace-muted);
+  line-height: 1.6;
+}
+
+.workspace-clone__settings-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.workspace-clone__settings-meta > div {
+  padding: 14px;
+  border: 1px solid var(--workspace-line);
+  border-radius: 14px;
+  background: var(--workspace-panel-soft);
+}
+
+.workspace-clone__settings-meta strong,
+.workspace-clone__settings-meta span {
+  display: block;
+}
+
+.workspace-clone__settings-meta strong {
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--workspace-faint);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.workspace-clone__settings-meta span {
+  color: var(--workspace-ink);
+  line-height: 1.6;
+  word-break: break-word;
+}
+
 .workspace-clone__dialog-tabs,
 .workspace-clone__log-detail-tabs,
 .workspace-clone__inline-actions,
@@ -4771,6 +4844,7 @@
   font-size: 12px;
   font-weight: 700;
 }
+
 .workspace-clone__workspace.is-employees {
   overflow: auto;
 }
@@ -7628,11 +7702,6 @@
 
   .workspace-clone__sidebar,
   .workspace-clone__directory,
-  .workspace-product-landing__hero,
-  .workspace-product-landing__layout {
-    grid-template-columns: 1fr;
-  }
-
   .workspace-clone__workspace {
     min-height: auto;
   }
@@ -7655,6 +7724,7 @@
   .workspace-clone__chat-layout.drawer-open,
   .workspace-clone__binding-layout,
   .workspace-clone__info-grid,
+  .workspace-clone__settings-meta,
   .workspace-clone__binding-grid,
   .workspace-employees__hero-stats,
   .workspace-clone__resource-grid,
