@@ -50,6 +50,7 @@ import { useWorkspaceCloneAvatarState } from "./useWorkspaceCloneAvatarState";
 import { WorkspaceCloneEmailBindingModal } from "./WorkspaceCloneEmailBindingModal";
 import { WorkspaceCloneHeader } from "./WorkspaceCloneHeader";
 import { WorkspaceCloneCompactView } from "./WorkspaceCloneCompactView";
+import { WorkspaceCloneProductLandingView } from "./WorkspaceCloneProductLandingView";
 import { WorkspaceCloneScenePresetSwitcher } from "./WorkspaceCloneScenePresetSwitcher";
 import { WorkspaceCloneSidebar } from "./WorkspaceCloneSidebar";
 import { WorkspaceCloneTaskEditorModal } from "./WorkspaceCloneTaskEditorModal";
@@ -1195,6 +1196,7 @@ export function WorkspaceClonePage({
             activeMenu !== "chat" && activeMenu !== "employees" && activeMenu !== "skills" ? "is-compact" : "",
             activeMenu === "employees" ? "is-employees" : "",
             activeMenu === "skills" ? "is-skills" : "",
+            activeMenu === "tasks" ? "is-product-landing" : "",
           ].join(" ").trim()}
         >
           {activeMenu === "chat" ? (
@@ -1339,8 +1341,14 @@ export function WorkspaceClonePage({
                 onRefreshCurrentAgentSkills={() => skillsAdmin.refreshSkillOptions({ showLoading: true })}
               />
             </Suspense>
-          ) : (
-            <WorkspaceCloneCompactView
+          ) : activeMenu === "tasks" ? (
+              <WorkspaceCloneProductLandingView
+                workspaceModelName={workspaceModelName}
+                running={running}
+                uptimeLabel={uptimeLabel}
+              />
+            ) : (
+              <WorkspaceCloneCompactView
               activeMenu={activeMenu}
               workspaceModelName={workspaceModelName}
               running={running}

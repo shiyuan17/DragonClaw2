@@ -4530,6 +4530,247 @@
   font-weight: 700;
 }
 
+.workspace-product-landing {
+  min-height: 100%;
+  border: 1px solid var(--workspace-line);
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(250, 249, 247, 0.98) 100%);
+  box-shadow: var(--dc-workspace-shadow-soft);
+  padding: 24px;
+  display: grid;
+  gap: 18px;
+}
+
+.workspace-product-landing__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
+  gap: 16px;
+}
+
+.workspace-product-landing__hero-copy,
+.workspace-product-landing__hero-stats,
+.workspace-product-landing__panel,
+.workspace-product-landing__card {
+  border: 1px solid var(--dc-workspace-line-soft);
+  border-radius: 22px;
+  background: var(--dc-workspace-panel-elevated);
+  box-shadow: var(--dc-workspace-shadow-soft);
+}
+
+.workspace-product-landing__hero-copy {
+  padding: 24px;
+  display: grid;
+  gap: 12px;
+  background: var(--dc-workspace-hero-surface);
+}
+
+.workspace-product-landing__eyebrow,
+.workspace-product-landing__panel-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--dc-workspace-chip-surface);
+  color: var(--dc-workspace-chip-text);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.workspace-product-landing__hero-copy h1,
+.workspace-product-landing__panel-head h2,
+.workspace-product-landing__card-copy h2 {
+  margin: 0;
+  color: var(--dc-workspace-ink);
+}
+
+.workspace-product-landing__hero-copy h1 {
+  font-size: 34px;
+  line-height: 1.08;
+  max-width: 12ch;
+}
+
+.workspace-product-landing__hero-copy p,
+.workspace-product-landing__panel li,
+.workspace-product-landing__card-copy p {
+  margin: 0;
+  color: var(--workspace-muted);
+  line-height: 1.65;
+}
+
+.workspace-product-landing__hero-stats {
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  background: linear-gradient(180deg, rgba(250, 249, 247, 0.98), rgba(245, 245, 245, 0.98));
+}
+
+.workspace-product-landing__stat {
+  padding: 14px;
+  border: 1px solid var(--dc-workspace-line-soft);
+  border-radius: 18px;
+  background: var(--dc-workspace-panel-soft);
+  display: grid;
+  gap: 6px;
+}
+
+.workspace-product-landing__stat span {
+  color: var(--workspace-faint);
+  font-size: 12px;
+}
+
+.workspace-product-landing__stat strong {
+  color: var(--dc-workspace-ink-soft);
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.workspace-product-landing__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(300px, 0.76fr);
+  gap: 16px;
+  min-height: 0;
+}
+
+.workspace-product-landing__sections,
+.workspace-product-landing__sidebar,
+.workspace-product-landing__step-list,
+.workspace-product-landing__note-list {
+  display: grid;
+  gap: 12px;
+}
+
+.workspace-product-landing__card {
+  padding: 18px;
+  transition:
+    border-color var(--dc-motion-duration-fast) var(--dc-motion-ease-standard),
+    box-shadow var(--dc-motion-duration-fast) var(--dc-motion-ease-standard),
+    transform var(--dc-motion-duration-fast) var(--dc-motion-ease-standard);
+}
+
+.workspace-product-landing__card:hover {
+  border-color: var(--dc-workspace-hover-border);
+  box-shadow: var(--dc-workspace-shadow);
+  transform: translateY(-1px);
+}
+
+.workspace-product-landing__card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.workspace-product-landing__card-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: var(--dc-workspace-accent-orb);
+  color: var(--dc-color-on-primary);
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.workspace-product-landing__card-copy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.workspace-product-landing__card-copy h2 {
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.workspace-product-landing__card-copy p {
+  font-size: 13px;
+}
+
+.workspace-product-landing__chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.workspace-product-landing__chip {
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--dc-workspace-chip-border);
+  border-radius: 999px;
+  background: var(--dc-workspace-chip-surface);
+  color: var(--dc-workspace-chip-text);
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.workspace-product-landing__panel {
+  padding: 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.workspace-product-landing__panel--muted {
+  background: linear-gradient(180deg, rgba(250, 249, 247, 0.98), rgba(245, 245, 245, 0.98));
+}
+
+.workspace-product-landing__panel-head {
+  display: grid;
+  gap: 8px;
+}
+
+.workspace-product-landing__panel-head h2 {
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.workspace-product-landing__step-list,
+.workspace-product-landing__note-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.workspace-product-landing__step-list li,
+.workspace-product-landing__note-list li {
+  padding: 14px;
+  border: 1px solid var(--dc-workspace-line-soft);
+  border-radius: 16px;
+  background: var(--dc-workspace-panel-soft);
+}
+
+.workspace-product-landing__step-list {
+  counter-reset: product-landing-step;
+}
+
+.workspace-product-landing__step-list li {
+  counter-increment: product-landing-step;
+  position: relative;
+  padding-left: 52px;
+}
+
+.workspace-product-landing__step-list li::before {
+  content: counter(product-landing-step);
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--dc-workspace-panel-inverse);
+  color: var(--dc-color-on-primary);
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+}
 .workspace-clone__workspace.is-employees {
   overflow: auto;
 }
@@ -7387,6 +7628,11 @@
 
   .workspace-clone__sidebar,
   .workspace-clone__directory,
+  .workspace-product-landing__hero,
+  .workspace-product-landing__layout {
+    grid-template-columns: 1fr;
+  }
+
   .workspace-clone__workspace {
     min-height: auto;
   }
@@ -7394,6 +7640,11 @@
   .workspace-clone__directory {
     order: 2;
     padding: 14px;
+  }
+
+  .workspace-product-landing__hero,
+  .workspace-product-landing__layout {
+    grid-template-columns: 1fr;
   }
 
   .workspace-clone__workspace {

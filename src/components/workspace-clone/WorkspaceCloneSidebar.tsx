@@ -15,6 +15,25 @@ interface WorkspaceCloneSidebarProps {
   onSelectAdminPanel: (panel: WorkspaceSidebarAdminPanel) => void;
 }
 
+function resolveSidebarMenuLabel(key: WorkspaceMenuKey, fallbackLabel: string) {
+  switch (key) {
+    case "chat":
+      return "聊天";
+    case "schedule":
+      return "任务";
+    case "knowledge":
+      return "知识库管理";
+    case "employees":
+      return "数字员工";
+    case "skills":
+      return "技能市场";
+    case "tasks":
+      return "产品落地";
+    default:
+      return fallbackLabel;
+  }
+}
+
 export function WorkspaceCloneSidebar({
   menuItems,
   activeMenu,
@@ -51,7 +70,7 @@ export function WorkspaceCloneSidebar({
 
         <div className="workspace-clone__sidebar-menu">
           {menuItems.map((item) => {
-            const isMuted = item.key === "tasks";
+            const displayLabel = resolveSidebarMenuLabel(item.key, item.label);
             return (
               <button
                 key={item.key}
@@ -59,10 +78,10 @@ export function WorkspaceCloneSidebar({
                   "workspace-clone__menu-item",
                   activeMenu === item.key ? "is-active" : "",
                   isCollapsed ? "is-collapsed" : "",
-                  isMuted ? "is-muted" : "",
+
                 ].join(" ").trim()}
                 type="button"
-                title={item.label}
+                title={displayLabel}
                 onClick={() => onSelectMenu(item.key)}
               >
                 <WorkspaceCloneIcon
@@ -70,7 +89,7 @@ export function WorkspaceCloneSidebar({
                   size={17}
                   strokeWidth={1.9}
                 />
-                {!isCollapsed && <span>{item.label}</span>}
+                {!isCollapsed && <span>{displayLabel}</span>}
               </button>
             );
           })}
