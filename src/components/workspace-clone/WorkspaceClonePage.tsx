@@ -16,6 +16,7 @@ import type {
   WorkspaceMenuKey,
 } from "../../types";
 import { useWorkspaceGatewayChat } from "../../hooks/useWorkspaceGatewayChat";
+import { useFeedback } from "../../hooks/useFeedback";
 import { useWorkspaceCommandsAdmin } from "../../hooks/workspace-clone/useWorkspaceCommandsAdmin";
 import { useWorkspaceCloneFeedback } from "../../hooks/workspace-clone/useWorkspaceCloneFeedback";
 import { useWorkspaceCronTasks } from "../../hooks/workspace-clone/useWorkspaceCronTasks";
@@ -297,6 +298,7 @@ export function WorkspaceClonePage({
   handleUpsertSavedProviderConfig,
   handleDeleteSavedProviderConfig,
 }: WorkspaceClonePageProps) {
+  const { pushFeedback } = useFeedback();
   const [activeMenu, setActiveMenu] = useState<WorkspaceMenuKey>("chat");
   const [activeType, setActiveType] = useState<WorkspaceEntityType>("agents");
   const [selectedEntityId, setSelectedEntityId] = useState("main");
