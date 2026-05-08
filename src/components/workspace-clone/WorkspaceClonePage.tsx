@@ -996,6 +996,18 @@ export function WorkspaceClonePage({
       || "main";
     const mainParentSessionKey = homepageChat.sessionsResult?.sessions.find((session) => session.key === `agent:${taskAgentId}:main`)?.key || null;
     const executionContent = buildWorkspaceManualTaskExecutionContent(task);
+    const taskRunNotice = executionContent.displayTitle.trim()
+      ? `“${executionContent.displayTitle}”正在执行中`
+      : "任务正在执行中";
+
+    pushFeedback({
+      tone: "info",
+      title: "立即执行任务",
+      message: taskRunNotice,
+      dedupeKey: `workspace-task-run-starting-${task.id}`,
+      persistent: false,
+      autoCloseMs: 2400,
+    });
 
     setActiveType("agents");
     setSelectedEntityId(taskAgentId);
@@ -1012,6 +1024,7 @@ export function WorkspaceClonePage({
     currentMemoryAgentId,
     homepageChat,
     homepageChat.sessionsResult,
+    pushFeedback,
     selectedEntity?.id,
     selectedEntity?.runtimeAgentId,
   ]);
