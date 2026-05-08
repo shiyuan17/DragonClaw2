@@ -13,6 +13,7 @@
 - [ ] Phase 5.56.4: restore local Rust/Tauri testability first, reproduce one real task run from the current list, then make manual `Run now` bridge directly into real target sessions by `sessionTarget + job.sessionKey`, initialize live-run state immediately from accepted `runId`, and keep `cron.runs` only as a fallback closeout/binding path without changing Tauri or Gateway contracts.
 - [ ] Phase 5.56.5: replace manual task `Run now` with a chat-first new-session flow that creates a real gateway session for the task agent, inserts a local `正在执行任务` system hint, sends the task payload as a user message, and aligns homepage `新对话` with true `sessions.create` behavior instead of `sessions.reset`.
 - [ ] Phase 5.56.6a: de-duplicate chat-first manual task execution content, strip schedule/time wording from manual-run hints and visible user messages, and inject a hidden guardrail prompt so running an existing task does not create or mutate task records unless the user explicitly asks for task management in-chat.
+- [ ] Phase 5.56.7: show an immediate `执行中` toast when the user clicks manual task `Run now`, then continue the existing chat-first execution flow without changing any Tauri / Gateway / `invoke()` contracts.
 - [ ] Phase 5.56.6: allow clicking blank space in the `workspace-clone` chat canvas to close the right utility drawer, while keeping message cards, composer controls, task actions, and all existing `invoke()` / session handlers unchanged.
 
 ## Phase 5.57: Workspace 运行日志分类与详情优化
@@ -24,6 +25,9 @@
 
 ## Phase 5.58: Workspace 聊天文件侧栏
 - [ ] Add a `文件` entry to the `workspace-clone` chat more-menu, open a right-side file drawer for the current session, extract user and assistant file or link targets from chat messages, support `全部 / 网站 / 文档 / excel / ppt / 图片 / 视频 / 音频` filters, and open targets directly without changing existing Tauri commands, Gateway contracts, or `invoke()` signatures.
+
+## Phase 5.59: Workspace 侧边栏产品落地项开放
+- [ ] Open the `workspace-clone` sidebar `产品落地` item as a first-class menu entry, remove its muted placeholder styling, correct the touched sidebar copy, and replace the generic compact placeholder with a dedicated frontend-only product landing view without changing any Tauri / Gateway / `invoke()` contracts.
 
 ## Phase 5.58y: Windows 运行态 Logo 修复
 - [ ] 修复 Windows 运行态窗口/任务栏/托盘/安装产物图标一致性，统一主窗口与托盘共享 `src-tauri/icons/icon.ico` 对应的默认图标来源，并保持现有 Tauri command / `invoke()` 契约不变。
