@@ -11,6 +11,7 @@ The current `workspace-clone` right drawer still renders static mock schedule ca
 
 - Replace the mock task drawer with real OpenClaw cron data.
 - Scope the drawer to the currently selected agent.
+- Open the left sidebar `任务` entry as a real task management page that reuses the same cron data and actions.
 - Keep the drawer focused on management instead of creation.
 - Preserve existing workspace chat, session, and gateway contracts.
 
@@ -38,6 +39,11 @@ The current `workspace-clone` right drawer still renders static mock schedule ca
 - Make the task-related overlay show real task details and recent runs instead of static placeholder tags.
 - Keep task details read-only in the related-resource view; editing happens through the dedicated modal.
 
+5. Promote the sidebar `任务` entry into a page
+- Reuse the live cron list and task actions for the sidebar task page.
+- Keep the screenshot-style page shell with a title, helper copy, and a visual-only "new task" button.
+- Do not introduce a task-creation flow in this phase.
+
 ## Acceptance
 
 - When the Gateway is connected, the right drawer loads real cron jobs for the selected agent.
@@ -47,4 +53,5 @@ The current `workspace-clone` right drawer still renders static mock schedule ca
 - `立即运行` calls `cron.run` and recent run information is refreshed from `cron.runs`.
 - Deleting a task removes it from the live list and it does not reappear after refresh.
 - When the Gateway is unavailable, the drawer shows a real unavailable state and does not fall back to mock tasks.
+- Clicking the sidebar `任务` entry opens the real task management page instead of the placeholder product landing surface.
 - No Tauri command signature or existing `invoke()` contract changes are introduced.
