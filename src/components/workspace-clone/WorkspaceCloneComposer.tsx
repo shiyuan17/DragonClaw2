@@ -316,7 +316,7 @@ export function WorkspaceCloneComposer({
             ) : null}
             <button
               type="button"
-              className={`workspace-clone__composer-pill workspace-clone__composer-pill--muted ${emailBindingBound ? "is-active" : ""}`}
+              className="workspace-clone__composer-pill workspace-clone__composer-pill--muted"
               onClick={onOpenEmailBindingModal}
               disabled={!chatEnabled}
             >
@@ -424,11 +424,17 @@ export function WorkspaceCloneComposer({
           <div className="workspace-clone__composer-actions">
             <button
               type="button"
-              className="workspace-clone__composer-action-text"
+              className="workspace-clone__composer-icon-round"
               onClick={() => void onResetSession()}
               disabled={!chatEnabled || !running || connectionStatus !== "connected" || resettingSession}
+              title={resettingSession ? "重置中" : "新对话"}
+              aria-label={resettingSession ? "重置中" : "新对话"}
             >
-              {resettingSession ? "重置中..." : "新对话"}
+              <WorkspaceCloneIcon
+                name={resettingSession ? "refresh" : "message-square-plus"}
+                size={15}
+                strokeWidth={2}
+              />
             </button>
             <button type="button" className="workspace-clone__composer-icon-round" title="语音" disabled>
               <WorkspaceCloneIcon name="voice" size={15} strokeWidth={1.9} />
@@ -450,7 +456,7 @@ export function WorkspaceCloneComposer({
                 onClick={() => void handleSubmit()}
                 disabled={!canSend || !draftValue.trim()}
               >
-                <WorkspaceCloneIcon name="chevron-right" size={16} strokeWidth={2.1} />
+                <WorkspaceCloneIcon name="send-horizontal" size={15} strokeWidth={2.1} />
               </button>
             )}
           </div>
