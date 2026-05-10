@@ -1,18 +1,9 @@
 ﻿import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { WorkspaceGatewayClient, buildGatewayUrl, createAgentSessionKey, filterAgentSessions, findMainAgentSession, formatAgentAvatar, isAgentsListResult, isChatEventPayload, isSessionsListResult } from "./workspace-gateway/client";
-import type {
-  WorkspaceAgentCacheRow,
-  WorkspaceChatSessionCacheRow,
-  WorkspaceGatewayAgentsListResult,
-  WorkspaceGatewaySessionsListResult,
-  WorkspaceGatewayStatus,
-  WorkspaceLiveStep,
-  WorkspaceLiveStepStatus,
-  WorkspaceActiveSlashCommand,
-  WorkspaceMessage,
-} from "../components/workspace-clone/workspaceCloneTypes";
-import { buildWorkspaceSlashCommandTransportMessage } from "../components/workspace-clone/workspaceCloneSlashCommands";
+import type { WorkspaceActiveSkillList, WorkspaceActiveSlashCommand, WorkspaceAgentCacheRow, WorkspaceChatSessionCacheRow, WorkspaceComposerAttachment, WorkspaceGatewayAgentsListResult, WorkspaceGatewaySessionsListResult, WorkspaceGatewayStatus, WorkspaceLiveStep, WorkspaceLiveStepStatus, WorkspaceMessage } from "../components/workspace-clone/workspaceCloneTypes";
+import { buildWorkspaceGatewayChatAttachments } from "../components/workspace-clone/workspaceCloneChatAttachments";
+import { buildWorkspaceComposerTransportMessage } from "../components/workspace-clone/workspaceCloneSlashCommands";
 import { isWorkspaceRawProcessEcho, sanitizeWorkspaceAssistantContent } from "../components/workspace-clone/workspaceCloneMessageVisibility";
 import type { CurrentConfig } from "../types";
 import { buildAgentRecentSessionsById } from "./workspace-gateway/agent-recent-sessions";
@@ -987,26 +978,23 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       ? loadHistory(sessionKey, { agentId: nextAgentId, connectionGeneration: connectionGenerationRef.current }).then(() => true)
       : Promise.resolve(false);
   }, [connected, loadHistory, resolveSessionContext, selectedAgentId]);
-  const sendMessage = useCallback(async (value: string, options?: {
-    activeCommand?: WorkspaceActiveSlashCommand;
-    targetSessionKey?: string | null;
-    targetAgentId?: string | null;
-    preserveSessionSwitch?: boolean;
-    displayText?: string; transportText?: string;
-    telemetrySessionType?: WorkspaceChatTelemetrySessionType;
-  }) => {
+  const sendMessage = useCallback(async (value: string, options?: { activeCommand?: WorkspaceActiveSlashCommand; activeSkills?: WorkspaceActiveSkillList; attachments?: WorkspaceComposerAttachment[]; workspaceDirectory?: string | null; targetSessionKey?: string | null; targetAgentId?: string | null; preserveSessionSwitch?: boolean; displayText?: string; transportText?: string; telemetrySessionType?: WorkspaceChatTelemetrySessionType }) => {
       const client = clientRef.current;
       const message = (options?.displayText ?? value).trim(); const outboundText = (options?.transportText ?? value).trim();
-      const transportMessage = options?.activeCommand
-        ? buildWorkspaceSlashCommandTransportMessage({
-            command: options.activeCommand,
+      const outgoingAttachments = options?.attachments ?? [];
+      const hasAttachments = outgoingAttachments.length > 0;
+      const transportMessage = options?.activeCommand || options?.activeSkills?.length || options?.workspaceDirectory?.trim()
+        ? buildWorkspaceComposerTransportMessage({
+            command: options?.activeCommand,
+            skills: options?.activeSkills,
+            workspaceDirectory: options?.workspaceDirectory,
             userMessage: outboundText,
           })
         : outboundText;
       const gatewaySessionKey = options?.targetSessionKey?.trim() || currentGatewaySessionKey || await ensureTaskRunConversationBound(currentSessionKey, selectedAgentId);
       const targetAgentId = options?.targetAgentId?.trim() || extractAgentIdFromSessionKey(gatewaySessionKey || "") || selectedAgentId;
 
-      if (!client?.connected || !gatewaySessionKey || !message || !outboundText || !targetAgentId) {
+      if (!client?.connected || !gatewaySessionKey || (!message && !hasAttachments) || (!outboundText && !hasAttachments) || !targetAgentId) {
         return false;
       }
 
@@ -1024,6 +1012,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
           role: "user",
           author: "你",
           text: message,
+          attachments: outgoingAttachments.map((attachment) => ({ id: attachment.id, fileName: attachment.fileName, mimeType: attachment.mimeType, kind: attachment.kind, transportType: attachment.transportType, sizeBytes: attachment.sizeBytes, previewUrl: attachment.previewUrl ?? null })),
           time: formatClockTime(Date.now()),
         },
       });
@@ -1036,6 +1025,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
           message: transportMessage,
           deliver: false,
           idempotencyKey: runId,
+          attachments: buildWorkspaceGatewayChatAttachments(outgoingAttachments),
         });
         return true;
       } catch (sendError) {

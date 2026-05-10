@@ -10,6 +10,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { useReducedMotion } from "framer-motion";
+import dragonclawLogo from "../../assets/dragonclaw-logo.png";
 import { WORKSPACE_HOME_SUGGESTIONS } from "./workspaceCloneData";
 import { shouldHideWorkspaceMessage } from "./workspaceCloneMessageVisibility";
 import type {
@@ -32,6 +33,7 @@ import type {
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
 import { WorkspaceCloneLiveTimeline } from "./WorkspaceCloneLiveTimeline";
 import { WorkspaceCloneMessagePreview } from "./WorkspaceCloneMessagePreview";
+import { WorkspaceCloneSessionWorkdirPicker } from "./WorkspaceCloneSessionWorkdirPicker";
 import {
   WorkspaceCloneServiceStartupPanel,
   type WorkspaceServiceStartupLogLine,
@@ -172,6 +174,7 @@ interface WorkspaceCloneChatViewProps {
   currentModelName: string;
   currentProviderName: string;
   running: boolean;
+  selectedWorkspaceDir: string;
   serviceStartup: {
     phase: WorkspaceServiceStartupPhase | "ready";
     message: string;
@@ -189,6 +192,8 @@ interface WorkspaceCloneChatViewProps {
   onStart: () => void;
   onOpenModelConfig: () => void;
   onOpenLogs: () => void;
+  onSelectWorkspaceDir: () => Promise<void> | void;
+  onClearWorkspaceDir: () => void;
   onOpenChatFile: (item: WorkspaceChatFileItem) => void;
   onOpenRuntimeLogDetail: (logId: string) => void;
   onRefreshTasks: () => void;
@@ -233,6 +238,7 @@ export function WorkspaceCloneChatView({
   currentModelName,
   currentProviderName,
   running,
+  selectedWorkspaceDir,
   serviceStartup,
   showHomeSuggestions = true,
   onCloseUtilityPanel,
@@ -243,6 +249,8 @@ export function WorkspaceCloneChatView({
   onStart,
   onOpenModelConfig,
   onOpenLogs,
+  onSelectWorkspaceDir,
+  onClearWorkspaceDir,
   onOpenChatFile,
   onOpenRuntimeLogDetail,
   onRefreshTasks,
@@ -517,7 +525,23 @@ export function WorkspaceCloneChatView({
             </div>
           ) : (
             <section className="workspace-clone__welcome-state" onClick={handleBlankAreaClick}>
-              <article className="workspace-clone__message workspace-clone__message--minimal">
+              <div className="workspace-clone__welcome-hero">
+                <div className="workspace-clone__welcome-logo-shell">
+                  <img src={dragonclawLogo} alt="DragonClaw" className="workspace-clone__welcome-logo" />
+                </div>
+                <div className="workspace-clone__welcome-copy">
+                  <strong>DragonClaw,让Ai更简单</strong>
+                  <p>{historyLoading ? "正在准备当前会话..." : "选择工作目录后，这个会话会默认围绕该目录展开。"}</p>
+                </div>
+                <WorkspaceCloneSessionWorkdirPicker
+                  variant="hero"
+                  selectedPath={selectedWorkspaceDir}
+                  onSelectDirectory={onSelectWorkspaceDir}
+                  onClearDirectory={onClearWorkspaceDir}
+                />
+              </div>
+
+              <article className="workspace-clone__message workspace-clone__message--minimal workspace-clone__welcome-legacy">
                 <div className="workspace-clone__message-marker">
                   {renderAvatarMarker(selectedEntity, selectedEntity?.avatarLabel || "A")}
                 </div>
@@ -531,10 +555,8 @@ export function WorkspaceCloneChatView({
                 </div>
               </article>
 
-              <div className="workspace-clone__canvas-fill" onClick={dismissUtilityDrawerFromBlankArea} />
-
               {showHomeSuggestions && (
-                <div className="workspace-clone__suggestion-strip">
+                <div className="workspace-clone__suggestion-strip workspace-clone__welcome-legacy">
                   {WORKSPACE_HOME_SUGGESTIONS.map((item, index) => (
                     <button
                       key={item.id}

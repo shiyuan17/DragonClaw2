@@ -176,6 +176,23 @@ export function useWorkspaceSkillsAdmin({
     }
   }, [agentId, gatewayConnected, requestSkillStatus]);
 
+  useEffect(() => {
+    const targetAgentId = agentId?.trim() || "";
+    if (!targetAgentId) {
+      setSkillOptions([]);
+      setSkillDraftIds([]);
+      setSkillLoading(false);
+      return;
+    }
+
+    const usedCache = applySkillOptionsCache(targetAgentId);
+    const cacheEntry = skillOptionsCacheRef.current.get(targetAgentId);
+    const cacheExpired = !cacheEntry || (Date.now() - cacheEntry.loadedAt) > SKILL_OPTIONS_CACHE_TTL_MS;
+    if (!usedCache || cacheExpired) {
+      void refreshSkillOptions();
+    }
+  }, [agentId, applySkillOptionsCache, refreshSkillOptions]);
+
   const openSkillsModal = useCallback(() => {
     setShowSkillsModal(true);
     clearSkillStatus();

@@ -23,6 +23,7 @@ export type WorkspaceRelatedResource = WorkspaceSessionSectionKey | null;
 export type WorkspaceHistoryFilter = "all" | "today" | "yesterday";
 export type WorkspaceChatFileCategory = "all" | "website" | "document" | "excel" | "ppt" | "image" | "video" | "audio";
 export type WorkspaceChatFileSourceRole = "user" | "assistant";
+export type WorkspaceChatAttachmentKind = "image" | "document" | "code" | "text" | "audio" | "video" | "archive" | "file";
 export type WorkspaceRuntimeLogCategory = "tool" | "skill" | "system" | "other";
 export type WorkspaceRuntimeLogCategoryFilter = "all" | WorkspaceRuntimeLogCategory;
 export type WorkspaceRuntimeLogRawType =
@@ -114,10 +115,40 @@ export interface WorkspaceMessage {
   role: "assistant" | "user" | "system" | "tool";
   author: string;
   text: string;
+  attachments?: WorkspaceMessageAttachment[];
   meta?: string;
   time: string;
   thinking?: string[];
   status?: "pending" | "streaming" | "error";
+}
+
+export interface WorkspaceComposerAttachment {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  kind: WorkspaceChatAttachmentKind;
+  transportType: "image" | "file";
+  dataUrl: string;
+  previewUrl?: string | null;
+}
+
+export interface WorkspaceMessageAttachment {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  kind: WorkspaceChatAttachmentKind;
+  transportType: "image" | "file";
+  sizeBytes?: number | null;
+  previewUrl?: string | null;
+  sourcePath?: string | null;
+}
+
+export interface WorkspaceGatewayChatAttachmentPayload {
+  type: "image" | "file";
+  mimeType: string;
+  fileName: string;
+  content: string;
 }
 
 export type WorkspaceLiveStepKind =
@@ -223,7 +254,11 @@ export interface WorkspaceSlashCommandDefinition extends WorkspaceSlashCommandRe
 
 export type WorkspaceActiveSlashCommand = Omit<WorkspaceSlashCommandDefinition, "readonly"> | null;
 
+export type WorkspaceActiveSkill = Pick<WorkspaceSkillOption, "id" | "title" | "description" | "tag" | "category"> | null;
+export type WorkspaceActiveSkillList = Array<NonNullable<WorkspaceActiveSkill>>;
+
 export interface WorkspaceSlashCommandDraftInput {
+  command: string;
   name: string;
   description: string;
   instruction: string;

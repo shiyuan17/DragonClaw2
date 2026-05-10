@@ -5,6 +5,7 @@ import type {
   WorkspaceHistoryItem,
   WorkspaceMessage,
 } from "../../components/workspace-clone/workspaceCloneTypes";
+import { extractWorkspaceMessageAttachments } from "../../components/workspace-clone/workspaceCloneChatAttachments";
 import { stripWorkspaceHiddenPromptBlocks } from "../../components/workspace-clone/workspaceCloneManualTaskExecution";
 import { isWorkspaceRawProcessEcho, sanitizeWorkspaceAssistantContent } from "../../components/workspace-clone/workspaceCloneMessageVisibility";
 import { looksLikeMojibakeText, normalizeVisibleText } from "../../utils/text-mojibake";
@@ -154,8 +155,9 @@ export function normalizeGatewayMessage(
       : "assistant";
   const assistantContent = role === "assistant" ? sanitizeWorkspaceAssistantContent(message) : null;
   const text = (assistantContent?.text ?? extractGatewayMessageText(message)).trim();
+  const attachments = extractWorkspaceMessageAttachments(message);
 
-  if (!text || role === "tool") {
+  if ((!text && attachments.length === 0) || role === "tool") {
     return null;
   }
 
@@ -177,6 +179,7 @@ export function normalizeGatewayMessage(
     role,
     author,
     text,
+    attachments: attachments.length > 0 ? attachments : undefined,
     time: formatClockTime(timestamp),
   };
 }

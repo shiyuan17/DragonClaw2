@@ -1,15 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type RefObject } from "react";
+import { mergeWorkspaceComposerAttachments, readWorkspaceComposerFiles } from "./workspaceCloneChatAttachments";
+import { WorkspaceCloneComposerAttachmentList, WorkspaceCloneComposerDropzone } from "./WorkspaceCloneComposerAttachments";
+import { WorkspaceCloneComposerSuggestionPopover, type WorkspaceComposerSuggestionItem, type WorkspaceComposerSuggestionSection } from "./WorkspaceCloneComposerSuggestionPopover";
 import { filterWorkspaceSlashCommands, parseWorkspaceSlashSelection } from "./workspaceCloneSlashCommands";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
+import { resolveWorkspaceMailProviderIcon } from "./workspaceCloneMailProviderIcons";
+import { WorkspaceCloneSessionWorkdirPicker } from "./WorkspaceCloneSessionWorkdirPicker";
+import { useWorkspaceComposerFileDrop } from "./useWorkspaceComposerFileDrop";
 import type { SavedModel } from "../../types";
-import type {
-  WorkspaceActiveSlashCommand,
-  WorkspaceGatewayStatus,
-  WorkspaceSessionSectionKey,
-  WorkspaceSlashCommandDefinition,
-} from "./workspaceCloneTypes";
-
+import type { WorkspaceActiveSkillList, WorkspaceActiveSlashCommand, WorkspaceComposerAttachment, WorkspaceGatewayStatus, WorkspaceSessionSectionKey, WorkspaceSlashCommandDefinition, WorkspaceSkillOption } from "./workspaceCloneTypes";
 interface WorkspaceCloneComposerProps {
+  sessionKey: string;
   running: boolean;
   chatEnabled: boolean;
   connectionStatus: WorkspaceGatewayStatus;
@@ -40,16 +41,25 @@ interface WorkspaceCloneComposerProps {
   onSelectModelMenuItem: (modelId: string) => Promise<void>;
   onOpenModelConfig: () => void;
   emailBindingBound: boolean;
+  emailBindingBoundProvider: string;
+  emailBindingBoundAccount: string;
   emailBindingBoundProviderLabel: string;
+  selectedWorkspaceDir: string;
   slashCommands: WorkspaceSlashCommandDefinition[];
+  skillOptions: WorkspaceSkillOption[];
   activeSlashCommand: WorkspaceActiveSlashCommand;
+  activeSkills: WorkspaceActiveSkillList;
   onActivateSlashCommand: (commandId: string) => void;
   onClearActiveSlashCommand: () => void;
-  onSend: (value: string) => Promise<boolean>;
+  onAppendSkill: (skillId: string) => void;
+  onRemoveActiveSkill: (skillId: string) => void;
+  onClearActiveSkills: () => void;
+  onSelectWorkspaceDir: () => Promise<void> | void;
+  onClearWorkspaceDir: () => void;
+  onSend: (value: string, attachments: WorkspaceComposerAttachment[]) => Promise<boolean>;
   onAbort: () => Promise<boolean>;
   onResetSession: () => Promise<boolean>;
 }
-
 function formatModelLabel(modelName: string) {
   if (!modelName) {
     return "模型";
@@ -58,12 +68,7 @@ function formatModelLabel(modelName: string) {
   return modelName.length > 16 ? `${modelName.slice(0, 16)}...` : modelName;
 }
 
-function resolveComposerStatusText(params: {
-  chatEnabled: boolean;
-  running: boolean;
-  connectionStatus: WorkspaceGatewayStatus;
-  isGenerating: boolean;
-}) {
+function resolveComposerStatusText(params: { chatEnabled: boolean; running: boolean; connectionStatus: WorkspaceGatewayStatus; isGenerating: boolean }) {
   const { chatEnabled, running, connectionStatus, isGenerating } = params;
 
   if (!chatEnabled) {
@@ -86,16 +91,50 @@ function resolveModelMenuOption(model: SavedModel) {
   const [providerKey, ...modelParts] = model.id.split("/");
   const modelLabel = modelParts.length > 0 ? modelParts.join("/") : model.id;
   const providerLabelFromName = model.name?.match(/\(([^()]+)\)\s*$/)?.[1]?.trim();
-
-  return {
-    id: model.id,
-    modelLabel,
-    providerLabel: providerLabelFromName || providerKey,
-    displayLabel: model.name?.trim() || modelLabel,
-  };
+  return { id: model.id, modelLabel, providerLabel: providerLabelFromName || providerKey, displayLabel: model.name?.trim() || modelLabel };
 }
 
+function renderEmailBindingIcon(provider: string, isBound: boolean) {
+  if (!isBound) {
+    return <WorkspaceCloneIcon name="mail" size={14} strokeWidth={1.9} />;
+  }
+
+  return <img className="workspace-clone__composer-provider-icon" src={resolveWorkspaceMailProviderIcon(provider)} alt="" aria-hidden="true" />;
+}
+
+function filterWorkspaceSkillSuggestions(items: WorkspaceSkillOption[], query: string) {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return items;
+  }
+  return items.filter((item) => {
+    const haystack = [item.title, item.description, item.tag].join(" ").toLowerCase();
+    return haystack.includes(normalizedQuery);
+  });
+}
+function resolveSkillMetaLabel(skill: WorkspaceSkillOption, selectedSkillIds: Set<string>) {
+  if (selectedSkillIds.has(skill.id)) {
+    return "已选择";
+  }
+
+  switch (skill.tag) {
+    case "Built-in":
+      return "内置";
+    case "Installed":
+      return "已安装";
+    case "Configured":
+      return "已配置";
+    case "Disabled":
+      return "已禁用";
+    case "Blocked":
+      return "受限";
+    default:
+      return skill.selected ? "已启用" : skill.tag.trim();
+  }
+}
+function focusComposerTextarea(ref: RefObject<HTMLTextAreaElement | null>) { window.requestAnimationFrame(() => ref.current?.focus()); }
 export function WorkspaceCloneComposer({
+  sessionKey,
   running,
   chatEnabled,
   connectionStatus,
@@ -123,39 +162,93 @@ export function WorkspaceCloneComposer({
   onSelectModelMenuItem,
   onOpenModelConfig,
   emailBindingBound,
+  emailBindingBoundProvider,
+  emailBindingBoundAccount,
   emailBindingBoundProviderLabel,
+  selectedWorkspaceDir,
   slashCommands,
+  skillOptions,
   activeSlashCommand,
+  activeSkills,
   onActivateSlashCommand,
   onClearActiveSlashCommand,
+  onAppendSkill,
+  onRemoveActiveSkill,
+  onClearActiveSkills,
+  onSelectWorkspaceDir,
+  onClearWorkspaceDir,
   onSend,
   onAbort,
   onResetSession,
 }: WorkspaceCloneComposerProps) {
   const canSend = chatEnabled && running && connectionStatus === "connected" && !sending && !isGenerating;
-  const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
+  const attachmentsDisabled = !chatEnabled || sending || isGenerating;
+  const [highlightedSuggestionIndex, setHighlightedSuggestionIndex] = useState(0);
+  const [composerAttachments, setComposerAttachments] = useState<WorkspaceComposerAttachment[]>([]);
+  const [attachmentError, setAttachmentError] = useState("");
   const modelMenuRef = useRef<HTMLDivElement | null>(null);
-  const statusText = resolveComposerStatusText({
-    chatEnabled,
-    running,
-    connectionStatus,
-    isGenerating,
-  });
-  const modelMenuOptions = useMemo(
-    () => modelMenuItems.map((item) => resolveModelMenuOption(item)),
-    [modelMenuItems],
-  );
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const statusText = resolveComposerStatusText({ chatEnabled, running, connectionStatus, isGenerating });
+  const modelMenuOptions = useMemo(() => modelMenuItems.map((item) => resolveModelMenuOption(item)), [modelMenuItems]);
   const isModelMenuBusy = Boolean(modelMenuSwitchingId);
+  const selectedSkillIds = useMemo(() => new Set(activeSkills.map((item) => item.id)), [activeSkills]);
   const slashSelection = useMemo(() => parseWorkspaceSlashSelection(draftValue), [draftValue]);
-  const filteredSlashCommands = useMemo(
-    () => filterWorkspaceSlashCommands(slashCommands, slashSelection?.query || ""),
-    [slashCommands, slashSelection?.query],
-  );
-  const showSlashSuggestions = Boolean(slashSelection && filteredSlashCommands.length > 0);
+  const filteredSlashCommands = useMemo(() => filterWorkspaceSlashCommands(slashCommands, slashSelection?.query || ""), [slashCommands, slashSelection?.query]);
+  const filteredSkillSuggestions = useMemo(() => filterWorkspaceSkillSuggestions(skillOptions, slashSelection?.query || ""), [skillOptions, slashSelection?.query]);
+  const suggestionSections = useMemo<WorkspaceComposerSuggestionSection[]>(() => {
+    const nextSections: WorkspaceComposerSuggestionSection[] = [];
+    if (filteredSlashCommands.length > 0) {
+      nextSections.push({
+        key: "commands",
+        label: "命令",
+        items: filteredSlashCommands.map((command) => ({
+          key: `command:${command.id}`,
+          kind: "command",
+          title: command.command,
+          subtitle: command.description || command.name,
+          meta: activeSlashCommand?.id === command.id ? "已选择" : "命令",
+          command,
+        })),
+      });
+    }
+    if (filteredSkillSuggestions.length > 0) {
+      nextSections.push({
+        key: "skills",
+        label: "技能",
+        items: filteredSkillSuggestions.map((skill) => ({
+          key: `skill:${skill.id}`,
+          kind: "skill",
+          title: skill.title,
+          subtitle: skill.description,
+          meta: resolveSkillMetaLabel(skill, selectedSkillIds),
+          skill,
+        })),
+      });
+    }
+
+    return nextSections;
+  }, [activeSlashCommand?.id, filteredSkillSuggestions, filteredSlashCommands, selectedSkillIds]);
+  const flatSuggestions = useMemo(() => suggestionSections.flatMap((section) => section.items), [suggestionSections]);
+  const hasAttachments = composerAttachments.length > 0;
+  const canSubmit = canSend && (draftValue.trim().length > 0 || hasAttachments);
+  const showSlashSuggestions = Boolean(slashSelection);
 
   useEffect(() => {
-    setHighlightedCommandIndex(0);
+    setHighlightedSuggestionIndex(0);
   }, [draftValue]);
+
+  useEffect(() => {
+    setComposerAttachments([]);
+    setAttachmentError("");
+  }, [sessionKey]);
+
+  useEffect(() => {
+    if (highlightedSuggestionIndex < flatSuggestions.length) {
+      return;
+    }
+    setHighlightedSuggestionIndex(0);
+  }, [flatSuggestions.length, highlightedSuggestionIndex]);
 
   useEffect(() => {
     if (!modelMenuOpen) {
@@ -188,32 +281,91 @@ export function WorkspaceCloneComposer({
     }
   }, [chatEnabled, onCloseModelMenu]);
 
-  const handleSelectSlashCommand = (commandId: string) => {
-    const nextDraft = slashSelection?.remainder || "";
-    onActivateSlashCommand(commandId);
-    onDraftValueChange(nextDraft);
-    setHighlightedCommandIndex(0);
+  const clearSlashQuery = () => {
+    onDraftValueChange(slashSelection?.remainder || "");
+    setHighlightedSuggestionIndex(0);
   };
+
+  const handleSelectSlashCommand = (commandId: string) => {
+    onActivateSlashCommand(commandId);
+    clearSlashQuery();
+    focusComposerTextarea(textareaRef);
+  };
+
+  const handleSelectSkill = (skillId: string) => {
+    onAppendSkill(skillId);
+    clearSlashQuery();
+    focusComposerTextarea(textareaRef);
+  };
+
+  const handleSelectSuggestion = (item: WorkspaceComposerSuggestionItem) => {
+    if (item.kind === "command") {
+      handleSelectSlashCommand(item.command.id);
+      return;
+    }
+
+    handleSelectSkill(item.skill.id);
+  };
+
+  const handleDismissSlashSuggestions = () => {
+    clearSlashQuery();
+    focusComposerTextarea(textareaRef);
+  };
+
+  const appendFiles = async (files: File[]) => {
+    if (files.length === 0) {
+      return;
+    }
+    setAttachmentError("");
+    try {
+      const nextAttachments = await readWorkspaceComposerFiles(files);
+      setComposerAttachments((current) => mergeWorkspaceComposerAttachments(current, nextAttachments));
+      focusComposerTextarea(textareaRef);
+    } catch (error) {
+      setAttachmentError(error instanceof Error ? error.message : "读取附件失败");
+    }
+  };
+
+  const handleAttachmentInputChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    await appendFiles(files);
+  };
+
+  const handleOpenAttachmentPicker = () => {
+    if (attachmentsDisabled) return;
+    attachmentInputRef.current?.click();
+  };
+
+  const handleRemoveAttachment = (attachmentId: string) => {
+    setComposerAttachments((current) => current.filter((attachment) => attachment.id !== attachmentId));
+    focusComposerTextarea(textareaRef);
+  };
+  const { rootRef, isDragActive, rootDragProps } = useWorkspaceComposerFileDrop({
+    disabled: attachmentsDisabled,
+    onDropFiles: appendFiles,
+  });
 
   const handleSubmit = async () => {
     const nextValue = draftValue.trim();
     if (showSlashSuggestions) {
-      const selectedCommand = filteredSlashCommands[highlightedCommandIndex] || filteredSlashCommands[0];
-      if (selectedCommand) {
-        handleSelectSlashCommand(selectedCommand.id);
+      const selectedSuggestion = flatSuggestions[highlightedSuggestionIndex] || flatSuggestions[0];
+      if (selectedSuggestion) {
+        handleSelectSuggestion(selectedSuggestion);
         return;
       }
     }
-
-    if (!canSend || !nextValue) {
+    if (!canSubmit) {
       return;
     }
-
     onCloseScenePresets();
-    const success = await onSend(nextValue);
+    const success = await onSend(nextValue, composerAttachments);
     if (success) {
       onDraftValueChange("");
       onClearActiveSlashCommand();
+      onClearActiveSkills();
+      setComposerAttachments([]);
+      setAttachmentError("");
     }
   };
 
@@ -224,55 +376,138 @@ export function WorkspaceCloneComposer({
 
   return (
     <div className="workspace-clone__composer">
-      <div className="workspace-clone__input-shell">
-        {activeSlashCommand ? (
-          <div className="workspace-clone__composer-command-chip">
-            <div className="workspace-clone__composer-command-copy">
-              <span className="workspace-clone__resource-tag">命令</span>
-              <strong>{activeSlashCommand.command}</strong>
-              <small>{activeSlashCommand.description || activeSlashCommand.name}</small>
-            </div>
-            <button
-              type="button"
-              className="workspace-clone__composer-command-clear"
-              onClick={onClearActiveSlashCommand}
-              aria-label="清除当前命令"
-            >
-              <WorkspaceCloneIcon name="x" size={14} strokeWidth={2} />
-            </button>
+      <div
+        ref={rootRef}
+        className={`workspace-clone__input-shell ${isDragActive ? "is-drag-active" : ""}`}
+        {...rootDragProps}
+      >
+        <input
+          ref={attachmentInputRef}
+          className="workspace-clone__composer-attachment-input"
+          type="file"
+          multiple
+          onChange={(event) => {
+            void handleAttachmentInputChange(event);
+          }}
+        />
+
+        {isDragActive ? (
+          <WorkspaceCloneComposerDropzone
+            attachmentCount={composerAttachments.length}
+          />
+        ) : null}
+
+        {showSlashSuggestions ? (
+          <WorkspaceCloneComposerSuggestionPopover highlightedSuggestionIndex={highlightedSuggestionIndex} flatSuggestions={flatSuggestions} suggestionSections={suggestionSections} onSelectSuggestion={handleSelectSuggestion} />
+        ) : null}
+
+        {hasAttachments ? (
+          <WorkspaceCloneComposerAttachmentList
+            attachments={composerAttachments}
+            onRemoveAttachment={handleRemoveAttachment}
+          />
+        ) : null}
+
+        {attachmentError ? (
+          <div className="workspace-clone__composer-attachment-error" role="status">
+            {attachmentError}
+          </div>
+        ) : null}
+
+        {activeSlashCommand || activeSkills.length > 0 ? (
+          <div className="workspace-clone__composer-selection-tags">
+            {activeSlashCommand ? (
+              <div className="workspace-clone__composer-selection-tag">
+                <button
+                  type="button"
+                  className="workspace-clone__composer-selection-tag-icon-button is-command"
+                  onClick={() => {
+                    onClearActiveSlashCommand();
+                    focusComposerTextarea(textareaRef);
+                  }}
+                  aria-label="清除当前命令"
+                >
+                  <span className="workspace-clone__composer-selection-tag-icon workspace-clone__composer-selection-tag-icon-face is-default">
+                    <WorkspaceCloneIcon name="terminal" size={10} strokeWidth={1.9} />
+                  </span>
+                  <span className="workspace-clone__composer-selection-tag-icon workspace-clone__composer-selection-tag-icon-face is-clear">
+                    <WorkspaceCloneIcon name="x" size={11} strokeWidth={2.1} />
+                  </span>
+                </button>
+                <span className="workspace-clone__composer-selection-tag-text">{activeSlashCommand.command}</span>
+              </div>
+            ) : null}
+
+            {activeSkills.map((skill) => (
+              <div key={skill.id} className="workspace-clone__composer-selection-tag">
+                <button
+                  type="button"
+                  className="workspace-clone__composer-selection-tag-icon-button is-skill"
+                  onClick={() => {
+                    onRemoveActiveSkill(skill.id);
+                    focusComposerTextarea(textareaRef);
+                  }}
+                  aria-label={`清除技能 ${skill.title}`}
+                >
+                  <span className="workspace-clone__composer-selection-tag-icon workspace-clone__composer-selection-tag-icon-face is-default">
+                    <WorkspaceCloneIcon name="sparkles" size={10} strokeWidth={1.9} />
+                  </span>
+                  <span className="workspace-clone__composer-selection-tag-icon workspace-clone__composer-selection-tag-icon-face is-clear">
+                    <WorkspaceCloneIcon name="x" size={11} strokeWidth={2.1} />
+                  </span>
+                </button>
+                <span className="workspace-clone__composer-selection-tag-text">{skill.title}</span>
+              </div>
+            ))}
           </div>
         ) : null}
 
         <textarea
+          ref={textareaRef}
           value={draftValue}
           onChange={(event) => onDraftValueChange(event.target.value)}
           onKeyDown={(event) => {
             if (showSlashSuggestions) {
               if (event.key === "ArrowDown") {
                 event.preventDefault();
-                setHighlightedCommandIndex((current) => (current + 1) % filteredSlashCommands.length);
+                if (flatSuggestions.length > 0) {
+                  setHighlightedSuggestionIndex((current) => (current + 1) % flatSuggestions.length);
+                }
                 return;
               }
               if (event.key === "ArrowUp") {
                 event.preventDefault();
-                setHighlightedCommandIndex((current) =>
-                  current <= 0 ? filteredSlashCommands.length - 1 : current - 1,
-                );
+                if (flatSuggestions.length > 0) {
+                  setHighlightedSuggestionIndex((current) =>
+                    current <= 0 ? flatSuggestions.length - 1 : current - 1,
+                  );
+                }
+                return;
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                handleDismissSlashSuggestions();
                 return;
               }
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
-                const selectedCommand = filteredSlashCommands[highlightedCommandIndex] || filteredSlashCommands[0];
-                if (selectedCommand) {
-                  handleSelectSlashCommand(selectedCommand.id);
-                  return;
+                const selectedSuggestion = flatSuggestions[highlightedSuggestionIndex] || flatSuggestions[0];
+                if (selectedSuggestion) {
+                  handleSelectSuggestion(selectedSuggestion);
                 }
+                return;
               }
             }
 
-            if ((event.key === "Backspace" || event.key === "Delete") && !draftValue.trim() && activeSlashCommand) {
-              onClearActiveSlashCommand();
-              return;
+            if ((event.key === "Backspace" || event.key === "Delete") && !draftValue.trim()) {
+              if (activeSkills.length > 0) {
+                onRemoveActiveSkill(activeSkills[activeSkills.length - 1].id);
+                return;
+              }
+              if (activeSlashCommand) {
+                onClearActiveSlashCommand();
+                return;
+              }
             }
 
             if (event.key === "Enter" && !event.shiftKey) {
@@ -284,50 +519,54 @@ export function WorkspaceCloneComposer({
           disabled={!chatEnabled || !running || connectionStatus !== "connected" || isGenerating}
         />
 
-        {showSlashSuggestions ? (
-          <div className="workspace-clone__suggestion-layer">
-            {filteredSlashCommands.map((command, index) => (
-              <button
-                key={command.id}
-                type="button"
-                className={index === highlightedCommandIndex ? "is-active" : ""}
-                onClick={() => handleSelectSlashCommand(command.id)}
-              >
-                <strong>{command.command}</strong>
-                <span>{command.description || command.name}</span>
-              </button>
-            ))}
-          </div>
-        ) : null}
-
         <div className="workspace-clone__composer-bottom">
           <div className="workspace-clone__composer-pills">
+            <button
+              type="button"
+              className={`workspace-clone__composer-pill workspace-clone__composer-pill--muted workspace-clone__composer-pill--icon-only ${hasAttachments ? "is-active" : ""}`}
+              onClick={handleOpenAttachmentPicker}
+              disabled={attachmentsDisabled}
+              aria-label={hasAttachments ? `已选 ${composerAttachments.length} 个附件` : "添加附件"}
+              title={hasAttachments ? `已选 ${composerAttachments.length} 个附件` : "添加附件"}
+            >
+              <WorkspaceCloneIcon name="paperclip" size={14} strokeWidth={1.9} />
+            </button>
             {showScenePresetToggle ? (
               <button
                 type="button"
-                className={`workspace-clone__composer-pill workspace-clone__composer-pill--muted ${scenePresetsOpen ? "is-active" : ""}`}
+                className={`workspace-clone__composer-pill workspace-clone__composer-pill--muted workspace-clone__composer-pill--icon-only ${scenePresetsOpen ? "is-active" : ""}`}
                 onClick={onToggleScenePresets}
                 disabled={!chatEnabled}
                 aria-pressed={scenePresetsOpen}
+                aria-label="场景"
+                title="场景"
               >
                 <WorkspaceCloneIcon name="sparkles" size={14} strokeWidth={1.9} />
                 场景
               </button>
             ) : null}
+            <WorkspaceCloneSessionWorkdirPicker variant="composer" selectedPath={selectedWorkspaceDir} disabled={!chatEnabled} onSelectDirectory={onSelectWorkspaceDir} onClearDirectory={onClearWorkspaceDir} />
             <button
               type="button"
-              className="workspace-clone__composer-pill workspace-clone__composer-pill--muted"
+              className="workspace-clone__composer-pill workspace-clone__composer-pill--muted workspace-clone__composer-pill--icon-only workspace-clone__composer-pill--email-binding"
               onClick={onOpenEmailBindingModal}
               disabled={!chatEnabled}
+              title={emailBindingBound ? (emailBindingBoundAccount || emailBindingBoundProviderLabel || "邮箱") : "邮箱"}
+              aria-label={emailBindingBound ? (emailBindingBoundAccount || emailBindingBoundProviderLabel || "邮箱") : "邮箱"}
             >
-              <WorkspaceCloneIcon name="mail" size={14} strokeWidth={1.9} />
+              {renderEmailBindingIcon(emailBindingBoundProvider, emailBindingBound)}
+              <span className="workspace-clone__composer-pill-label">
+                {emailBindingBound ? (emailBindingBoundAccount || emailBindingBoundProviderLabel || "已绑定") : "邮箱"}
+              </span>
               {emailBindingBound ? `邮箱 ${emailBindingBoundProviderLabel || "已绑定"}` : "邮箱"}
             </button>
             <button
               type="button"
-              className="workspace-clone__composer-pill workspace-clone__composer-pill--muted"
+              className="workspace-clone__composer-pill workspace-clone__composer-pill--muted workspace-clone__composer-pill--icon-only"
               onClick={onOpenCommandsModal}
               disabled={!chatEnabled}
+              aria-label="命令"
+              title="命令"
             >
               <WorkspaceCloneIcon name="terminal" size={14} strokeWidth={1.9} />
               命令
@@ -335,11 +574,13 @@ export function WorkspaceCloneComposer({
             <div className="workspace-clone__composer-model-menu" ref={modelMenuRef}>
               <button
                 type="button"
-                className={`workspace-clone__composer-pill workspace-clone__composer-pill--muted ${modelMenuOpen ? "is-active" : ""}`}
+                className={`workspace-clone__composer-pill workspace-clone__composer-pill--muted workspace-clone__composer-pill--model-label ${modelMenuOpen ? "is-active" : ""}`}
                 onClick={onToggleModelMenu}
                 disabled={!chatEnabled}
                 aria-expanded={modelMenuOpen}
                 aria-haspopup="menu"
+                data-model-label={formatModelLabel(currentModelName)}
+                title={currentModelName || "模型"}
               >
                 <WorkspaceCloneIcon name="bot" size={14} strokeWidth={1.9} />
                 模型 {formatModelLabel(currentModelName)}
@@ -357,7 +598,7 @@ export function WorkspaceCloneComposer({
                     {modelMenuLoading ? (
                       <div className="workspace-clone__composer-model-state">
                         <strong>正在加载模型列表…</strong>
-                        <span>稍候即可显示已保存模型。</span>
+                        <span>稍后即可显示已保存模型。</span>
                       </div>
                     ) : modelMenuError ? (
                       <div className="workspace-clone__composer-model-state is-error">
@@ -454,7 +695,7 @@ export function WorkspaceCloneComposer({
                 className="workspace-clone__composer-icon-round workspace-clone__composer-send"
                 title="发送"
                 onClick={() => void handleSubmit()}
-                disabled={!canSend || !draftValue.trim()}
+                disabled={!canSubmit}
               >
                 <WorkspaceCloneIcon name="send-horizontal" size={15} strokeWidth={2.1} />
               </button>

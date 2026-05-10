@@ -4,6 +4,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { open } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { motion, useReducedMotion } from "framer-motion";
 import { resolveWorkspaceAgentDisplayName } from "../../data/agencyRoster";
@@ -45,6 +46,7 @@ import {
 } from "./workspaceCloneChatFiles";
 import { WorkspaceCloneChatView } from "./WorkspaceCloneChatView";
 import { WorkspaceCloneComposer } from "./WorkspaceCloneComposer";
+import { toWorkspaceActiveSkill } from "./workspaceCloneSlashCommands";
 import {
   DEFAULT_VISIBLE_AGENT_RECENT_SESSIONS,
   WorkspaceCloneDirectory,
@@ -81,6 +83,7 @@ import {
   setTelemetryEnabled,
 } from "../../utils/telemetry";
 import type {
+  WorkspaceActiveSkillList,
   WorkspaceCronJob,
   WorkspaceChatFileItem,
   WorkspaceEntity,
@@ -340,6 +343,8 @@ export function WorkspaceClonePage({
   const [isDirectoryCollapsed, setIsDirectoryCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [composerDraft, setComposerDraft] = useState("");
+  const [activeSkillIds, setActiveSkillIds] = useState<string[]>([]);
+  const [sessionWorkspaceDirs, setSessionWorkspaceDirs] = useState<Record<string, string>>({});
   const [utilityPanel, setUtilityPanel] = useState<WorkspaceUtilityPanel>(null);
   const [activeSessionSection, setActiveSessionSection] = useState<WorkspaceSessionSectionKey>("model");
   const [adminOpen, setAdminOpen] = useState(false);
@@ -362,6 +367,9 @@ export function WorkspaceClonePage({
     () => loadWorkspaceScenePresetOpenState(),
   );
   const homepageChat = useWorkspaceGatewayChat({ running, servicePort, gatewayToken });
+  const currentSessionWorkspaceDir = homepageChat.currentSessionKey
+    ? sessionWorkspaceDirs[homepageChat.currentSessionKey] ?? ""
+    : "";
   const savedProvidersLoadSeqRef = useRef(0);
   const providerSyncEventSeqRef = useRef(0);
   const modelConfigOpenRef = useRef(false);
@@ -789,6 +797,19 @@ export function WorkspaceClonePage({
     gatewayConnected: homepageChat.connected,
     requestSkillStatus,
   });
+  const activeSkills = useMemo<WorkspaceActiveSkillList>(
+    () =>
+      activeSkillIds.reduce<WorkspaceActiveSkillList>((result, skillId) => {
+        const activeSkill = toWorkspaceActiveSkill(
+          skillsAdmin.selectedSkillOptions.find((item) => item.id === skillId) ?? null,
+        );
+        if (activeSkill) {
+          result.push(activeSkill);
+        }
+        return result;
+      }, []),
+    [activeSkillIds, skillsAdmin.selectedSkillOptions],
+  );
   const toolsAdmin = useWorkspaceToolsAdmin({ agentId: currentMemoryAgentId });
   const cronTasks = useWorkspaceCronTasks({
     agentId: currentMemoryAgentId,
@@ -862,6 +883,62 @@ export function WorkspaceClonePage({
     skillsAdmin.closeSkillsModal,
     toolsAdmin.closeToolsModal,
   ]);
+
+  useEffect(() => {
+    setActiveSkillIds([]);
+  }, [currentMemoryAgentId]);
+
+  useEffect(() => {
+    const availableSkillIds = new Set(skillsAdmin.selectedSkillOptions.map((item) => item.id));
+    setActiveSkillIds((current) => {
+      const next = current.filter((skillId) => availableSkillIds.has(skillId));
+      return next.length === current.length ? current : next;
+    });
+  }, [skillsAdmin.selectedSkillOptions]);
+
+  const handleAppendActiveSkill = useCallback((skillId: string) => {
+    setActiveSkillIds((current) => (current.includes(skillId) ? current : [...current, skillId]));
+  }, []);
+
+  const handleRemoveActiveSkill = useCallback((skillId: string) => {
+    setActiveSkillIds((current) => current.filter((item) => item !== skillId));
+  }, []);
+
+  const handleClearActiveSkills = useCallback(() => {
+    setActiveSkillIds([]);
+  }, []);
+
+  const handleSelectSessionWorkspaceDir = useCallback(async () => {
+    const sessionKey = homepageChat.currentSessionKey.trim();
+    if (!sessionKey) {
+      return;
+    }
+
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: "选择工作目录",
+    });
+
+    if (selected && typeof selected === "string") {
+      setSessionWorkspaceDirs((current) => ({
+        ...current,
+        [sessionKey]: selected,
+      }));
+    }
+  }, [homepageChat.currentSessionKey]);
+
+  const handleClearSessionWorkspaceDir = useCallback(() => {
+    const sessionKey = homepageChat.currentSessionKey.trim();
+    if (!sessionKey) {
+      return;
+    }
+
+    setSessionWorkspaceDirs((current) => ({
+      ...current,
+      [sessionKey]: "",
+    }));
+  }, [homepageChat.currentSessionKey]);
 
   const toggleScenePresets = useCallback(() => {
     if (!showScenePresetToggle) {
@@ -1394,6 +1471,7 @@ export function WorkspaceClonePage({
                 currentModelName={workspaceModelName}
                 currentProviderName={workspaceProviderName}
                 running={running}
+                selectedWorkspaceDir={currentSessionWorkspaceDir}
                 serviceStartup={serviceStartup}
                  showHomeSuggestions={activeType !== "agents"}
                  onCloseUtilityPanel={() => setUtilityPanel(null)}
@@ -1404,6 +1482,8 @@ export function WorkspaceClonePage({
                 onStart={handleStart}
                 onOpenModelConfig={openModelConfigModal}
                 onOpenLogs={() => toggleUtilityPanel("logs")}
+                onSelectWorkspaceDir={handleSelectSessionWorkspaceDir}
+                onClearWorkspaceDir={handleClearSessionWorkspaceDir}
                 onOpenChatFile={(item) => {
                   void handleOpenChatFile(item);
                 }}
@@ -1429,6 +1509,7 @@ export function WorkspaceClonePage({
               )}
 
               <WorkspaceCloneComposer
+                sessionKey={homepageChat.currentSessionKey}
                 running={running}
                 chatEnabled={chatEnabled}
                 connectionStatus={homepageChat.status}
@@ -1459,14 +1540,40 @@ export function WorkspaceClonePage({
                 onSelectModelMenuItem={composerModelMenu.selectModel}
                 onOpenModelConfig={openCustomModelConfigModal}
                 emailBindingBound={workspaceEmailBinding.isBound}
+                emailBindingBoundProvider={workspaceEmailBinding.boundProvider}
+                emailBindingBoundAccount={workspaceEmailBinding.boundAccount}
                 emailBindingBoundProviderLabel={workspaceEmailBinding.boundProviderLabel}
+                selectedWorkspaceDir={currentSessionWorkspaceDir}
                 slashCommands={commandsAdmin.slashCommands}
+                skillOptions={skillsAdmin.selectedSkillOptions}
                 activeSlashCommand={commandsAdmin.activeSlashCommand}
+                activeSkills={activeSkills}
                 onActivateSlashCommand={commandsAdmin.handleActivateSlashCommand}
                 onClearActiveSlashCommand={() => commandsAdmin.handleActivateSlashCommand("")}
-                onSend={(value) => homepageChat.sendMessage(value, { activeCommand: commandsAdmin.activeSlashCommand || undefined })}
+                onAppendSkill={handleAppendActiveSkill}
+                onRemoveActiveSkill={handleRemoveActiveSkill}
+                onClearActiveSkills={handleClearActiveSkills}
+                onSelectWorkspaceDir={handleSelectSessionWorkspaceDir}
+                onClearWorkspaceDir={handleClearSessionWorkspaceDir}
+                onSend={(value, attachments) =>
+                  homepageChat.sendMessage(value, {
+                    activeCommand: commandsAdmin.activeSlashCommand || undefined,
+                    activeSkills,
+                    attachments,
+                    workspaceDirectory: currentSessionWorkspaceDir || undefined,
+                  })
+                }
                 onAbort={homepageChat.abortMessage}
-                onResetSession={() => homepageChat.createNewSession().then((result) => Boolean(result))}
+                onResetSession={async () => {
+                  const nextSessionKey = await homepageChat.createNewSession();
+                  if (nextSessionKey) {
+                    setSessionWorkspaceDirs((current) => ({
+                      ...current,
+                      [nextSessionKey]: "",
+                    }));
+                  }
+                  return Boolean(nextSessionKey);
+                }}
               />
             </>
           ) : activeMenu === "employees" ? (

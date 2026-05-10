@@ -1,6 +1,7 @@
 import { memo } from "react";
 import type { WorkspaceMessage } from "./workspaceCloneTypes";
 import { sanitizeWorkspaceAssistantText, shouldHideWorkspaceMessage } from "./workspaceCloneMessageVisibility";
+import { WorkspaceCloneMessageAttachments } from "./WorkspaceCloneMessageAttachments";
 import { WorkspaceCloneMarkdownMessagePreview } from "./WorkspaceCloneMarkdownMessagePreview";
 
 type WorkspaceMessagePreviewKind = "plain" | "markdown" | "json";
@@ -75,13 +76,18 @@ export const WorkspaceCloneMessagePreview = memo(function WorkspaceCloneMessageP
   }
 
   const preview = resolvePreview(message);
+  const hasTextContent = preview.content.trim().length > 0;
+  const attachments = message.attachments ?? [];
 
   if (preview.kind === "json") {
     return (
       <div className="workspace-clone__message-rich workspace-clone__message-rich--json">
-        <pre className="workspace-clone__message-json">
-          <code>{preview.content}</code>
-        </pre>
+        {hasTextContent ? (
+          <pre className="workspace-clone__message-json">
+            <code>{preview.content}</code>
+          </pre>
+        ) : null}
+        <WorkspaceCloneMessageAttachments attachments={attachments} />
       </div>
     );
   }
@@ -89,14 +95,16 @@ export const WorkspaceCloneMessagePreview = memo(function WorkspaceCloneMessageP
   if (preview.kind === "markdown") {
     return (
       <div className="workspace-clone__message-rich workspace-clone__message-rich--markdown">
-        <WorkspaceCloneMarkdownMessagePreview content={preview.content} />
+        {hasTextContent ? <WorkspaceCloneMarkdownMessagePreview content={preview.content} /> : null}
+        <WorkspaceCloneMessageAttachments attachments={attachments} />
       </div>
     );
   }
 
   return (
     <div className="workspace-clone__message-rich workspace-clone__message-rich--plain">
-      <p>{preview.content}</p>
+      {hasTextContent ? <p>{preview.content}</p> : null}
+      <WorkspaceCloneMessageAttachments attachments={attachments} />
     </div>
   );
 });
