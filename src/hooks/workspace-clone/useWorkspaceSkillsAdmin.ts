@@ -15,6 +15,14 @@ import type {
   WorkspaceSkillOption,
 } from "../../components/workspace-clone/workspaceCloneTypes";
 
+const SKILL_OPTIONS_CACHE_TTL_MS = 60_000;
+
+interface SkillOptionsCacheEntry {
+  options: WorkspaceSkillOption[];
+  draftIds: string[];
+  loadedAt: number;
+}
+
 interface UseWorkspaceSkillsAdminOptions {
   agentId: string | null;
   gatewayConnected?: boolean;
@@ -37,6 +45,7 @@ export function useWorkspaceSkillsAdmin({
   const [skillError, setSkillError] = useState("");
   const currentAgentIdRef = useRef<string | null>(null);
   const skillLoadSeqRef = useRef(0);
+  const skillOptionsCacheRef = useRef(new Map<string, SkillOptionsCacheEntry>());
 
   useEffect(() => {
     currentAgentIdRef.current = agentId;
@@ -65,6 +74,18 @@ export function useWorkspaceSkillsAdmin({
     () => buildSkillSummaryItems(selectedSkillOptions),
     [selectedSkillOptions],
   );
+
+  const applySkillOptionsCache = useCallback((targetAgentId: string) => {
+    const cacheEntry = skillOptionsCacheRef.current.get(targetAgentId);
+    if (!cacheEntry) {
+      return false;
+    }
+
+    setSkillOptions(cacheEntry.options);
+    setSkillDraftIds(cacheEntry.draftIds);
+    setSkillLoading(false);
+    return true;
+  }, []);
 
   const refreshSkillOptions = useCallback(async (options?: { showLoading?: boolean }) => {
     const showLoading = options?.showLoading ?? false;
@@ -120,7 +141,13 @@ export function useWorkspaceSkillsAdmin({
       }
 
       setSkillOptions(nextOptions);
-      setSkillDraftIds(nextOptions.filter((item) => item.selected).map((item) => item.id));
+      const nextDraftIds = nextOptions.filter((item) => item.selected).map((item) => item.id);
+      setSkillDraftIds(nextDraftIds);
+      skillOptionsCacheRef.current.set(targetAgentId, {
+        options: nextOptions,
+        draftIds: nextDraftIds,
+        loadedAt: Date.now(),
+      });
       setSkillError("");
     } catch (skillLoadError) {
       if (skillLoadSeqRef.current !== requestId || currentAgentIdRef.current !== targetAgentId) {
@@ -152,8 +179,26 @@ export function useWorkspaceSkillsAdmin({
   const openSkillsModal = useCallback(() => {
     setShowSkillsModal(true);
     clearSkillStatus();
-    void refreshSkillOptions({ showLoading: true });
-  }, [clearSkillStatus, refreshSkillOptions]);
+    const targetAgentId = agentId?.trim() || "";
+    if (!targetAgentId) {
+      setSkillOptions([]);
+      setSkillDraftIds([]);
+      setSkillLoading(false);
+      return;
+    }
+
+    const usedCache = applySkillOptionsCache(targetAgentId);
+    if (!usedCache) {
+      void refreshSkillOptions({ showLoading: true });
+      return;
+    }
+
+    const cacheEntry = skillOptionsCacheRef.current.get(targetAgentId);
+    const cacheExpired = !cacheEntry || (Date.now() - cacheEntry.loadedAt) > SKILL_OPTIONS_CACHE_TTL_MS;
+    if (cacheExpired) {
+      void refreshSkillOptions();
+    }
+  }, [agentId, applySkillOptionsCache, clearSkillStatus, refreshSkillOptions]);
 
   const closeSkillsModal = useCallback(() => {
     skillLoadSeqRef.current += 1;
