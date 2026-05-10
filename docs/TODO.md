@@ -1,5 +1,8 @@
 ﻿# DragonClaw - 开发任务总表 (AI 开发规范版)
 
+## Phase 5.68: Workspace Composer Action Icon Refresh
+- [ ] 将 `workspace-clone` 聊天 composer 的 `新对话` 入口改为更明确的图标操作，并把发送按钮替换为更符合发送语义的标准图标，限定为前端渲染层与样式微调，不改任何 Tauri / Gateway / `invoke()` 契约。
+
 ## Phase 5.55.1: Gateway RPC Readiness Grace
 - [ ] Prevent false OpenClaw startup failure while gateway sidecars are warming up by separating true `gateway ready` log detection from HTTP listening, widening RPC probe timeouts, and preserving persistent-service reuse without changing Tauri command or `invoke()` contracts.
 
@@ -28,6 +31,8 @@
 
 ## Phase 5.58: Workspace 聊天文件侧栏
 - [ ] Add a `文件` entry to the `workspace-clone` chat more-menu, open a right-side file drawer for the current session, extract user and assistant file or link targets from chat messages, support `全部 / 网站 / 文档 / excel / ppt / 图片 / 视频 / 音频` filters, and open targets directly without changing existing Tauri commands, Gateway contracts, or `invoke()` signatures.
+- [ ] Phase 5.58.1: repair the `workspace-clone` chat file drawer so the right-side panel hands height correctly to the file list, keeps the filter row visible, and restores independent vertical scrolling without changing any Tauri / Gateway / `invoke()` contracts.
+- [ ] Phase 5.58.2: fix the `workspace-clone` session menu drawer so the right-side panel stretches to the full workspace height and the lower section is no longer clipped by the drawer shell.
 
 ## Phase 5.59: Workspace 侧边栏产品落地项开放
 - [ ] Open the `workspace-clone` sidebar `产品落地` item as a first-class menu entry, remove its muted placeholder styling, correct the touched sidebar copy, and replace the generic compact placeholder with a dedicated frontend-only product landing view without changing any Tauri / Gateway / `invoke()` contracts.
@@ -50,6 +55,15 @@
 
 ## Phase 5.64: Workspace 模型配置卡片回刷与显示名本地化
 - [ ] 修复 `workspace-clone` 模型配置弹窗中新建配置后顶部卡片不立即回刷的问题，并将 provider `displayName` 从 `openclaw.json` 迁出到 DragonClaw 本地状态持久化，保持现有 Tauri command / `invoke()` 契约与 OpenClaw provider JSON 支持字段不变。
+
+## Phase 5.65: Workspace 模型配置异步保存与卡片换行修复
+- [ ] 将 `workspace-clone` 模型配置弹窗的新建/编辑保存链路改为前端立即插卡、后端异步写入 `openclaw.json` / `agents/main/agent/models.json`，保持“保存配置不切换模型”的边界，并修复顶部卡片超过 3 条后的换行与 footer 挤出布局问题。
+
+## Phase 5.66: Workspace 聊天动画与渲染性能优化
+- [ ] 优化 `workspace-clone` 聊天区的滚动、live timeline、drawer / modal 首开体验与高频动效成本：流式更新默认使用非平滑自动跟底、精简运行态动画、取消 Markdown 首次懒加载闪烁、预取聊天侧 drawer / 模型弹窗、收口聊天相关 overlay blur，并补齐 `prefers-reduced-motion`，保持现有 Tauri / Gateway / `invoke()` 契约不变。
+
+## Phase 5.67: Workspace 技能库弹窗缓存
+- [ ] 为 `workspace-clone` 当前 Agent 的技能库弹窗增加前端快照缓存与静默回刷：首次打开仍走真实加载，重复打开优先复用最近一次技能列表与勾选快照，仅在缓存缺失或过期时再后台刷新，避免每次打开都进入等待态，且不改任何 Tauri / Gateway / `invoke()` 契约。
 
 ## Phase 5.55: Startup Flow Single Source and Persistent Service
 - [ ] Unify startup into the React guide/setup surface, remove the static Booting splash and duplicate OpenClaw startup overlay, keep homepage chat from replaying the normal startup checklist, and leave OpenClaw running across DragonClaw quits for fast reuse without changing Tauri command or `invoke()` contracts.
@@ -134,6 +148,7 @@
 
 ## Phase 5.15.11: `workspace-clone` 全域悬浮高亮统一
 - [ ] 为 `workspace-clone` 左侧菜单、第二栏、主区头部、drawer、composer、popover 与专属弹层统一可用态 hover / focus-visible 高亮反馈，并保持 `active > hover > default`、`muted/disabled` 语义不变
+- [ ] Phase 5.15.11a: remove the misleading persistent active highlight from the `workspace-clone` composer email pill so a bound mailbox still reads as available metadata, not as the currently selected composer mode.
 
 ## Phase 5.11: 旧 logo 切换为新 logo 引用
 - [ ] 前端所有旧 `logo.jpg` 展示位统一切换到新的 DragonClaw 龙形 logo，并移除默认 Vite favicon 引用
