@@ -3,7 +3,10 @@ import path from "node:path";
 import process from "node:process";
 
 const repoRoot = process.cwd();
-const selfScriptRepoPath = "scripts/check-mojibake.mjs";
+const ignoredRepoPaths = new Set([
+  "scripts/check-mojibake.mjs",
+  "src/utils/text-mojibake.ts",
+]);
 
 const ignoredDirs = new Set([
   ".git",
@@ -35,7 +38,11 @@ const textExtensions = new Set([
 const suspiciousChecks = [
   { label: "replacement character", regex: /\uFFFD/u },
   { label: "private-use character", regex: /[\uE000-\uF8FF]/u },
-  { label: "mojibake token", regex: /锛\?|銆\?|鏍硅妭鐐|閰嶇疆鏍煎紡|棰戦亾|宸插惎鍔ㄥ井淇＄粦瀹氭祦绋|浜岀淮鐮佸凡鐢熸垚|鍒涘缓鐩綍澶辫触|鍐欏叆涓存椂鏂囦欢澶辫触|鏇挎崲鏂囦欢澶辫触|璇诲彇寰俊鎻掍欢|瑙ｆ瀽寰俊鎻掍欢|寰俊鎻掍欢|鏈壘鍒颁簩缁寸爜浼氳瘽/u },
+  {
+    label: "mojibake token",
+    regex:
+      /锛\?|銆\?|鏍硅妭鐐|閰嶇疆鏍煎紡|棰戦亾|宸插惎鍔ㄥ井淇＄粦瀹氭祦绋|浜岀淮鐮佸凡鐢熸垚|鍒涘缓鐩綍澶辫触|鍐欏叆涓存椂鏂囦欢澶辫触|鏇挎崲鏂囦欢澶辫触|璇诲彇寰俊鎻掍欢|瑙ｆ瀽寰俊鎻掍欢|寰俊鎻掍欢|鏈壘鍒颁簩缁寸爜浼氳瘽|璁板繂|鎶€鑳藉簱|宸ュ叿鏉冮檺|鎺ㄨ崘鎶€鑳芥湭鍑虹幇鍦ㄤ富宸ヤ綔鍖烘妧鑳藉垪琛ㄤ腑|GitHub 鎶€鑳戒粨搴撲笌棰勬湡涓嶄竴鑷|SkillHub 鎶€鑳藉畨瑁呬换鍔¤皟搴﹀け璐|GitHub 鎶€鑳藉畨瑁呬换鍔¤皟搴﹀け璐|鏋勫缓 npm 鍛戒护澶辫触/u,
+  },
 ];
 
 async function walk(dir) {
@@ -93,7 +100,7 @@ const findings = [];
 
 for (const fullPath of files) {
   const repoPath = toRepoPath(fullPath);
-  if (repoPath === selfScriptRepoPath) {
+  if (ignoredRepoPaths.has(repoPath)) {
     continue;
   }
 
