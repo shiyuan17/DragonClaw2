@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{agents, onboarding, paths};
+use crate::{agents, paths, skillhub_runtime};
 
 const SKILL_MARKET_BASE_URL: &str = "https://lightmake.site/api";
 const SKILL_MARKET_SEARCH_BASE_URL: &str = "https://api.skillhub.cn/api";
@@ -353,7 +353,8 @@ pub fn install_skill_market_skill(
 
     for target in targets {
         let install_root = agent_skill_install_root(&target)?;
-        match onboarding::install_skillhub_skill_to_dir(&slug, &install_root) {
+        match skillhub_runtime::install_skillhub_skill_to_dir_with_bootstrap(&slug, &install_root)
+        {
             Ok(result) if result.success => installed_targets.push(target),
             Ok(result) => failed_targets.push((
                 target,

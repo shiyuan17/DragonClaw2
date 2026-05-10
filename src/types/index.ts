@@ -152,6 +152,9 @@ export interface OnboardingSkillInstallDiagnostics {
 export interface SkillHubInstallRuntimeInfo {
     bashAvailable: boolean;
     bashVersion?: string | null;
+    pythonAvailable: boolean;
+    pythonVersion?: string | null;
+    installMode: "bash-shell" | "windows-native" | "unavailable";
     isWslBash: boolean;
     homeDir: string;
     openclawConfigPath: string;

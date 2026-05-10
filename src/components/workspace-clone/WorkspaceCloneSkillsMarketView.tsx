@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Modal } from "../ui/Modal";
 import { MAIN_AGENT_DISPLAY_NAME, resolveWorkspaceAgentDisplayName } from "../../data/agencyRoster";
 import { useFeedback } from "../../hooks/useFeedback";
-import type { AgentInfo } from "../../types";
+import type { AgentInfo, SkillHubInstallRuntimeInfo } from "../../types";
 import { installSkillMarketSkill, loadInstalledSkillMarketSlugs } from "../../api/skillMarket";
 import {
   fetchSkillTop50,
@@ -33,10 +33,7 @@ type InstallTargetOption = {
 
 function buildKeyboardHandler(onOpen: () => void) {
   return (event: KeyboardEvent<HTMLElement>) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      onOpen();
-    }
+    if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(); }
   };
 }
 
@@ -51,9 +48,7 @@ const MARKET_CATEGORIES: MarketCategoryOption[] = [
   { id: "communication-collaboration", label: "沟通协同", hint: "协作、连接与集成" },
 ];
 
-function normalizeSlug(value: string | null | undefined) {
-  return (value ?? "").trim().toLowerCase();
-}
+function normalizeSlug(value: string | null | undefined) { return (value ?? "").trim().toLowerCase(); }
 
 function formatCount(value: number | null | undefined) {
   if (!value || !Number.isFinite(value) || value <= 0) {
@@ -67,10 +62,7 @@ function formatCount(value: number | null | undefined) {
   return String(Math.round(value));
 }
 
-function formatVersion(value: string | null | undefined) {
-  const trimmed = (value ?? "").trim();
-  return trimmed || "v1.0.0";
-}
+function formatVersion(value: string | null | undefined) { return (value ?? "").trim() || "v1.0.0"; }
 
 function getSkillDescription(skill: SkillMarketSkill) {
   return skill.descriptionZh.trim() || skill.description.trim() || "暂无技能描述。";
@@ -113,6 +105,29 @@ function buildInstallTargetOptions(agents: AgentInfo[], currentAgentId: string |
   };
 }
 
+function getSkillHubRuntimeSummary(runtimeInfo: SkillHubInstallRuntimeInfo | null) {
+  if (!runtimeInfo) {
+    return "";
+  }
+
+  switch (runtimeInfo.installMode) {
+    case "bash-shell":
+      return `将通过 bash 安装${runtimeInfo.isWslBash ? " (WSL)" : ""}`;
+    case "windows-native":
+      return `将通过 Windows 原生 Python 安装（${runtimeInfo.pythonVersion || "python"}）`;
+    default:
+      return "当前环境缺少 bash 和 Python，无法安装 SkillHub 技能";
+  }
+}
+
+function getSkillHubRuntimeBlockingMessage(runtimeInfo: SkillHubInstallRuntimeInfo | null) {
+  if (!runtimeInfo || runtimeInfo.installMode !== "unavailable") return "";
+
+  return runtimeInfo.pythonAvailable
+    ? "未检测到可用 bash。"
+    : "未检测到可用 bash，也未检测到 Python 3。请先安装 WSL/Git Bash 或 Python 3。";
+}
+
 interface WorkspaceCloneSkillsMarketViewProps {
   currentAgentId: string | null;
   onRefreshCurrentAgentSkills: () => Promise<void> | void;
@@ -140,6 +155,7 @@ export function WorkspaceCloneSkillsMarketView({
   const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>([]);
   const [installTargetsLoading, setInstallTargetsLoading] = useState(false);
   const [installError, setInstallError] = useState("");
+  const [installRuntimeInfo, setInstallRuntimeInfo] = useState<SkillHubInstallRuntimeInfo | null>(null);
   const [installedSlugs, setInstalledSlugs] = useState<string[]>([]);
   const requestSeqRef = useRef(0);
   const deferredSearchValue = useDeferredValue(searchValue);
@@ -300,12 +316,17 @@ export function WorkspaceCloneSkillsMarketView({
     setInstallModalOpen(true);
     setInstallTargetsLoading(true);
     setInstallError("");
+    setInstallRuntimeInfo(null);
 
     try {
-      const agents = await invoke<AgentInfo[]>("list_agents");
+      const [agents, runtimeInfo] = await Promise.all([
+        invoke<AgentInfo[]>("list_agents"),
+        invoke<SkillHubInstallRuntimeInfo>("get_skillhub_install_runtime_info"),
+      ]);
       const built = buildInstallTargetOptions(agents, currentAgentId);
       setInstallTargets(built.options);
       setSelectedTargetIds(built.selected);
+      setInstallRuntimeInfo(runtimeInfo);
     } catch (targetsError) {
       setInstallTargets([
         {
@@ -332,6 +353,11 @@ export function WorkspaceCloneSkillsMarketView({
 
   const handleConfirmInstall = async () => {
     if (!installSkill) {
+      return;
+    }
+
+    if (installRuntimeInfo?.installMode === "unavailable") {
+      setInstallError(getSkillHubRuntimeBlockingMessage(installRuntimeInfo) || "当前环境无法安装 SkillHub 技能。");
       return;
     }
 
@@ -368,6 +394,8 @@ export function WorkspaceCloneSkillsMarketView({
     [installTargets, selectedTargetIds],
   );
   const primarySelectedTarget = selectedInstallTargets[0] ?? null;
+  const installRuntimeSummary = getSkillHubRuntimeSummary(installRuntimeInfo);
+  const installRuntimeBlockingMessage = getSkillHubRuntimeBlockingMessage(installRuntimeInfo);
 
   const renderCard = (skill: SkillMarketSkill) => {
     const installed = installedSlugSet.has(normalizeSlug(skill.slug));
@@ -672,7 +700,7 @@ export function WorkspaceCloneSkillsMarketView({
                       type="button"
                       className="workspace-model-modal__primary"
                       onClick={() => void handleConfirmInstall()}
-                      disabled={installTargetsLoading || installing}
+                      disabled={installTargetsLoading || installing || installRuntimeInfo?.installMode === "unavailable"}
                     >
                       {installing ? "安装中..." : "确认安装"}
                     </button>
@@ -688,6 +716,14 @@ export function WorkspaceCloneSkillsMarketView({
                   <p className="workspace-skill-market__detail-desc">
                     {installSkill ? getSkillDescription(installSkill) : "请选择要安装的技能。"}
                   </p>
+
+                  {installRuntimeSummary ? (
+                    <p className="workspace-skill-market__detail-desc">{installRuntimeSummary}</p>
+                  ) : null}
+
+                  {installRuntimeBlockingMessage ? (
+                    <p className="workspace-skill-market__detail-desc">{installRuntimeBlockingMessage}</p>
+                  ) : null}
 
                   <div className="workspace-skill-market__install-selection-grid">
                     <div className="workspace-skill-market__install-selection-card">

@@ -171,6 +171,17 @@ async function getSkillHubRuntimeInfo() {
   return invoke<SkillHubInstallRuntimeInfo>("get_skillhub_install_runtime_info");
 }
 
+function formatSkillHubRuntimeLabel(runtimeInfo: SkillHubInstallRuntimeInfo) {
+  switch (runtimeInfo.installMode) {
+    case "bash-shell":
+      return `bash ${runtimeInfo.bashVersion || "available"}${runtimeInfo.isWslBash ? " (WSL)" : ""}`;
+    case "windows-native":
+      return `windows-native via ${runtimeInfo.pythonVersion || "python"}`;
+    default:
+      return runtimeInfo.pythonAvailable ? "unavailable (missing bash)" : "unavailable (missing bash and python)";
+  }
+}
+
 export async function markOnboardingSkillInstallRequired() {
   await saveOnboardingSkillInstallState(createPendingState());
 }
@@ -197,9 +208,7 @@ export async function runOnboardingSkillInstall({
   try {
     onProgress("正在检查 SkillHub 安装环境...", 98);
     const runtimeInfo = await getSkillHubRuntimeInfo();
-    const runtimeLabel = runtimeInfo.bashAvailable
-      ? `bash ${runtimeInfo.bashVersion || "available"}${runtimeInfo.isWslBash ? " (WSL)" : ""}`
-      : "bash unavailable";
+    const runtimeLabel = formatSkillHubRuntimeLabel(runtimeInfo);
     addLog("info", `SkillHub installer runtime: ${runtimeLabel}`);
 
     onProgress("正在安装 SkillHub...", 98);

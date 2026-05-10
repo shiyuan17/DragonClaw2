@@ -23,6 +23,7 @@ mod provider_mgr;
 mod providers;
 mod service;
 mod setup;
+mod skillhub_runtime;
 mod skill_market;
 mod slash_commands;
 
