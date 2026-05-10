@@ -8,6 +8,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::fs;
+use std::sync::{Mutex, OnceLock};
 
 use crate::config::{
     ensure_config_roots, ensure_default_workspace, ensure_gateway_config, get_user_openclaw_dir,
@@ -31,6 +32,84 @@ pub struct SavedProvider {
 pub struct SavedModel {
     pub id: String,
     pub name: Option<String>,
+}
+
+const WORKSPACE_PROVIDER_SAVE_SYNC_EVENT: &str = "workspace-provider-config-sync";
+
+#[derive(Debug, Clone)]
+struct ProviderSaveRequest {
+    provider_key: String,
+    display_name: Option<String>,
+    base_url: String,
+    api: String,
+    api_key: String,
+    model_id: String,
+    model_options: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone)]
+struct ProviderSaveOutcome {
+    provider_key: String,
+    model_id: String,
+    effective_api_key: String,
+    message: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceProviderSaveSyncEvent {
+    pub provider_key: String,
+    pub operation: String,
+    pub status: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+impl ProviderSaveRequest {
+    fn from_inputs(
+        provider_key: String,
+        display_name: Option<String>,
+        base_url: String,
+        api: String,
+        api_key: String,
+        model_id: String,
+        model_options: Option<Vec<String>>,
+    ) -> Result<Self, String> {
+        let provider_key = provider_key.trim().to_string();
+        let base_url = base_url.trim().to_string();
+        let api = api.trim().to_string();
+        let api_key = api_key.trim().to_string();
+        let model_id = model_id.trim().to_string();
+
+        if provider_key.is_empty() {
+            return Err("provider_key cannot be empty".to_string());
+        }
+        if base_url.is_empty() {
+            return Err("base_url cannot be empty".to_string());
+        }
+        if api.is_empty() {
+            return Err("api cannot be empty".to_string());
+        }
+        if model_id.is_empty() {
+            return Err("model_id cannot be empty".to_string());
+        }
+
+        Ok(Self {
+            provider_key,
+            display_name,
+            base_url,
+            api,
+            api_key,
+            model_id,
+            model_options,
+        })
+    }
+}
+
+fn workspace_provider_save_queue() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
 }
 
 fn read_config() -> Result<Value, String> {
@@ -193,6 +272,87 @@ fn remove_agent_models_provider(provider_key: &str) -> Result<(), String> {
     .map_err(|e| format!("Failed to write models.json: {}", e))
 }
 
+fn persist_saved_provider_config(
+    request: &ProviderSaveRequest,
+    update_default_model: bool,
+) -> Result<ProviderSaveOutcome, String> {
+    let mut config = read_config()?;
+    ensure_config_roots(&mut config);
+    ensure_gateway_config(&mut config);
+    ensure_default_workspace(&mut config);
+
+    let existing_provider_entry = config
+        .get("models")
+        .and_then(|models| models.get("providers"))
+        .and_then(|providers| providers.get(&request.provider_key))
+        .cloned();
+
+    let effective_api_key = if request.api_key.is_empty() {
+        existing_provider_entry
+            .as_ref()
+            .and_then(|value| value.get("apiKey"))
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .to_string()
+    } else {
+        request.api_key.clone()
+    };
+
+    let mut unique_models = vec![request.model_id.clone()];
+    if let Some(options) = request.model_options.as_ref() {
+        for option in options {
+            let normalized = option.trim().to_string();
+            if !normalized.is_empty() && !unique_models.iter().any(|item| item == &normalized) {
+                unique_models.push(normalized);
+            }
+        }
+    }
+
+    let models = unique_models
+        .iter()
+        .map(|item| build_model_entry(item))
+        .collect::<Vec<_>>();
+
+    let provider_entry = json!({
+        "baseUrl": request.base_url,
+        "apiKey": effective_api_key,
+        "api": request.api,
+        "models": models,
+    });
+
+    config["models"]["providers"][&request.provider_key] = provider_entry.clone();
+
+    if update_default_model {
+        config["agents"]["defaults"]["model"] = json!({
+            "primary": format!("{}/{}", request.provider_key, request.model_id)
+        });
+
+        for model in &unique_models {
+            let model_ref = format!("{}/{}", request.provider_key, model);
+            config["agents"]["defaults"]["models"][&model_ref] = json!({});
+        }
+    }
+
+    write_config(&config)?;
+    sync_agent_models_provider(&request.provider_key, &provider_entry)?;
+
+    let next_display_name = normalize_display_name(request.display_name.as_deref());
+    launcher_state::update_provider_display_names(|stored| {
+        if let Some(display_name_value) = next_display_name.as_ref() {
+            stored.insert(request.provider_key.clone(), display_name_value.clone());
+        } else {
+            stored.remove(&request.provider_key);
+        }
+    })?;
+
+    Ok(ProviderSaveOutcome {
+        provider_key: request.provider_key.clone(),
+        model_id: request.model_id.clone(),
+        effective_api_key,
+        message: "Workspace model config saved".to_string(),
+    })
+}
+
 #[tauri::command]
 pub fn list_saved_providers() -> Result<Vec<SavedProvider>, String> {
     let mut config = read_config()?;
@@ -295,100 +455,84 @@ pub fn upsert_saved_provider_config(
     model_id: String,
     model_options: Option<Vec<String>>,
 ) -> Result<String, String> {
-    let provider_key = provider_key.trim().to_string();
-    let base_url = base_url.trim().to_string();
-    let api = api.trim().to_string();
-    let api_key = api_key.trim().to_string();
-    let model_id = model_id.trim().to_string();
-
-    if provider_key.is_empty() {
-        return Err("provider_key cannot be empty".to_string());
-    }
-    if base_url.is_empty() {
-        return Err("base_url cannot be empty".to_string());
-    }
-    if api.is_empty() {
-        return Err("api cannot be empty".to_string());
-    }
-    if model_id.is_empty() {
-        return Err("model_id cannot be empty".to_string());
-    }
-
-    let mut config = read_config()?;
-    ensure_config_roots(&mut config);
-    ensure_gateway_config(&mut config);
-    ensure_default_workspace(&mut config);
-
-    let existing_provider_entry = config
-        .get("models")
-        .and_then(|models| models.get("providers"))
-        .and_then(|providers| providers.get(&provider_key))
-        .cloned();
-
-    let effective_api_key = if api_key.is_empty() {
-        existing_provider_entry
-            .as_ref()
-            .and_then(|value| value.get("apiKey"))
-            .and_then(|value| value.as_str())
-            .unwrap_or("")
-            .to_string()
-    } else {
-        api_key.clone()
-    };
-
-    let mut unique_models = vec![model_id.clone()];
-    if let Some(options) = model_options {
-        for option in options {
-            let normalized = option.trim().to_string();
-            if !normalized.is_empty() && !unique_models.iter().any(|item| item == &normalized) {
-                unique_models.push(normalized);
-            }
-        }
-    }
-
-    let models = unique_models
-        .iter()
-        .map(|item| build_model_entry(item))
-        .collect::<Vec<_>>();
-
-    let provider_entry = json!({
-        "baseUrl": base_url,
-        "apiKey": effective_api_key,
-        "api": api,
-        "models": models,
-    });
-
-    config["models"]["providers"][&provider_key] = provider_entry.clone();
-    config["agents"]["defaults"]["model"] = json!({
-        "primary": format!("{}/{}", provider_key, model_id)
-    });
-
-    for model in &unique_models {
-        let model_ref = format!("{}/{}", provider_key, model);
-        config["agents"]["defaults"]["models"][&model_ref] = json!({});
-    }
-
-    write_config(&config)?;
-    sync_agent_models_provider(&provider_key, &provider_entry)?;
-    let next_display_name = normalize_display_name(display_name.as_deref());
-    launcher_state::update_provider_display_names(|stored| {
-        if let Some(display_name_value) = next_display_name.as_ref() {
-            stored.insert(provider_key.clone(), display_name_value.clone());
-        } else {
-            stored.remove(&provider_key);
-        }
-    })?;
+    let request = ProviderSaveRequest::from_inputs(
+        provider_key,
+        display_name,
+        base_url,
+        api,
+        api_key,
+        model_id,
+        model_options,
+    )?;
+    let outcome = persist_saved_provider_config(&request, true)?;
+    let provider_key = outcome.provider_key.clone();
+    let model_id = outcome.model_id.clone();
+    let has_key = !outcome.effective_api_key.is_empty();
 
     let _ = app.emit(
         "config-updated",
         json!({
-            "provider": provider_key,
-            "hasKey": !effective_api_key.is_empty(),
+            "provider": provider_key.clone(),
+            "hasKey": has_key,
             "model": format!("{}/{}", provider_key, model_id),
         }),
     );
 
-    Ok("Workspace model config saved".to_string())
+    Ok(outcome.message)
+}
+
+#[tauri::command]
+pub fn enqueue_workspace_saved_provider_config(
+    app: tauri::AppHandle,
+    provider_key: String,
+    display_name: Option<String>,
+    base_url: String,
+    api: String,
+    api_key: String,
+    model_id: String,
+    model_options: Option<Vec<String>>,
+) -> Result<String, String> {
+    let request = ProviderSaveRequest::from_inputs(
+        provider_key,
+        display_name,
+        base_url,
+        api,
+        api_key,
+        model_id,
+        model_options,
+    )?;
+
+    tauri::async_runtime::spawn({
+        let app = app.clone();
+        async move {
+            let sync_event = {
+                let _guard = workspace_provider_save_queue()
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+                match persist_saved_provider_config(&request, false) {
+                    Ok(outcome) => WorkspaceProviderSaveSyncEvent {
+                        provider_key: outcome.provider_key,
+                        operation: "upsert".to_string(),
+                        status: "success".to_string(),
+                        message: outcome.message,
+                        error: None,
+                    },
+                    Err(error) => WorkspaceProviderSaveSyncEvent {
+                        provider_key: request.provider_key.clone(),
+                        operation: "upsert".to_string(),
+                        status: "error".to_string(),
+                        message: "Workspace model config sync failed".to_string(),
+                        error: Some(error),
+                    },
+                }
+            };
+
+            let _ = app.emit(WORKSPACE_PROVIDER_SAVE_SYNC_EVENT, sync_event);
+        }
+    });
+
+    Ok("Workspace model config syncing".to_string())
 }
 
 #[tauri::command]

@@ -1,18 +1,13 @@
-import { lazy, Suspense } from "react";
+import { memo } from "react";
 import type { WorkspaceMessage } from "./workspaceCloneTypes";
 import { sanitizeWorkspaceAssistantText, shouldHideWorkspaceMessage } from "./workspaceCloneMessageVisibility";
+import { WorkspaceCloneMarkdownMessagePreview } from "./WorkspaceCloneMarkdownMessagePreview";
 
 type WorkspaceMessagePreviewKind = "plain" | "markdown" | "json";
 
 interface WorkspaceCloneMessagePreviewProps {
   message: WorkspaceMessage;
 }
-
-const WorkspaceCloneMarkdownMessagePreview = lazy(() =>
-  import("./WorkspaceCloneMarkdownMessagePreview").then((module) => ({
-    default: module.WorkspaceCloneMarkdownMessagePreview,
-  })),
-);
 
 function tryFormatJsonPreview(text: string) {
   const trimmed = text.trim();
@@ -72,7 +67,9 @@ function resolvePreview(message: WorkspaceMessage): {
   return { kind: "plain", content };
 }
 
-export function WorkspaceCloneMessagePreview({ message }: WorkspaceCloneMessagePreviewProps) {
+export const WorkspaceCloneMessagePreview = memo(function WorkspaceCloneMessagePreview({
+  message,
+}: WorkspaceCloneMessagePreviewProps) {
   if (shouldHideWorkspaceMessage(message)) {
     return null;
   }
@@ -92,9 +89,7 @@ export function WorkspaceCloneMessagePreview({ message }: WorkspaceCloneMessageP
   if (preview.kind === "markdown") {
     return (
       <div className="workspace-clone__message-rich workspace-clone__message-rich--markdown">
-        <Suspense fallback={<p>{preview.content}</p>}>
-          <WorkspaceCloneMarkdownMessagePreview content={preview.content} />
-        </Suspense>
+        <WorkspaceCloneMarkdownMessagePreview content={preview.content} />
       </div>
     );
   }
@@ -104,4 +99,4 @@ export function WorkspaceCloneMessagePreview({ message }: WorkspaceCloneMessageP
       <p>{preview.content}</p>
     </div>
   );
-}
+});

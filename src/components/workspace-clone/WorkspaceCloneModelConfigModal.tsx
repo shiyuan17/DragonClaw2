@@ -1,18 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Modal } from "../ui/Modal";
-import type { CurrentConfig, ProviderInfo, SavedProvider } from "../../types";
+import type { CurrentConfig, ProviderInfo, SavedProvider, WorkspaceSavedProviderSyncEvent } from "../../types";
 import { useFeedback } from "../../hooks/useFeedback";
-import type {
-  WorkspaceModelConfigDraft,
-  WorkspaceModelProviderApi,
-  WorkspaceSavedProviderCard,
-} from "./workspaceCloneTypes";
+import type { WorkspaceModelConfigDraft, WorkspaceModelProviderApi, WorkspaceSavedProviderCard } from "./workspaceCloneTypes";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
-import {
-  WORKSPACE_MODEL_VENDOR_PRESETS,
-  getWorkspaceModelVendorPreset,
-} from "./workspaceModelVendorPresets";
+import { WORKSPACE_MODEL_VENDOR_PRESETS, getWorkspaceModelVendorPreset } from "./workspaceModelVendorPresets";
 
 interface WorkspaceCloneModelConfigModalProps {
   show: boolean;
@@ -23,8 +16,7 @@ interface WorkspaceCloneModelConfigModalProps {
   onClose: () => void;
   onRefreshSavedProviders: () => Promise<void>;
   onRefreshCurrentConfig: () => Promise<CurrentConfig>;
-  onSetModel: (modelId: string) => Promise<void>;
-  onUpsertSavedProviderConfig: (payload: {
+  onEnqueueSavedProviderConfig: (payload: {
     providerKey: string;
     displayName?: string | null;
     baseUrl: string;
@@ -34,6 +26,13 @@ interface WorkspaceCloneModelConfigModalProps {
     modelOptions?: string[];
   }) => Promise<string>;
   onDeleteSavedProviderConfig: (providerKey: string) => Promise<string>;
+  providerSyncEvent?: { seq: number; payload: WorkspaceSavedProviderSyncEvent } | null;
+}
+
+interface PendingWorkspaceProviderSave {
+  mode: "create" | "update";
+  submittedDraft: WorkspaceModelConfigDraft;
+  optimisticCard: WorkspaceSavedProviderCard;
 }
 
 function normalizeBaseUrl(value: string) {
@@ -46,7 +45,6 @@ function slugifyProviderKey(value: string) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-
   return normalized || "custom-provider";
 }
 
@@ -54,7 +52,6 @@ function buildUniqueProviderKey(baseKey: string, existingKeys: string[]) {
   if (!existingKeys.includes(baseKey)) {
     return baseKey;
   }
-
   let index = 2;
   while (existingKeys.includes(`${baseKey}-${index}`)) {
     index += 1;
@@ -75,7 +72,6 @@ function getPrimaryModelId(currentConfig: CurrentConfig | null) {
 function resolvePresetId(savedProvider: SavedProvider) {
   const byName = WORKSPACE_MODEL_VENDOR_PRESETS.find((item) => item.id === savedProvider.name);
   if (byName) return byName.id;
-
   const providerBaseUrl = normalizeBaseUrl(savedProvider.base_url);
   const byBaseUrl = WORKSPACE_MODEL_VENDOR_PRESETS.find((item) => normalizeBaseUrl(item.baseUrl) === providerBaseUrl);
   return byBaseUrl?.id || "custom";
@@ -83,7 +79,6 @@ function resolvePresetId(savedProvider: SavedProvider) {
 
 function createDraftFromPreset(presetId: string): WorkspaceModelConfigDraft {
   const preset = getWorkspaceModelVendorPreset(presetId);
-
   return {
     providerKey: preset.id === "custom" ? "" : preset.id,
     vendorPresetId: preset.id,
@@ -108,7 +103,6 @@ function createDraftFromSavedProvider(
       ? getPrimaryModelId(currentConfig)
       : "";
   const firstModelId = currentModelId || savedProvider.models[0]?.id || preset.defaultModel;
-
   return {
     providerKey: savedProvider.name,
     vendorPresetId: presetId,
@@ -173,6 +167,19 @@ function buildSavedProviderCards(
   });
 }
 
+function mergeSavedProviderCards(
+  savedCards: WorkspaceSavedProviderCard[],
+  pendingSaves: Record<string, PendingWorkspaceProviderSave>,
+) {
+  const pendingCards = Object.values(pendingSaves).map((item) => item.optimisticCard);
+  const pendingCardMap = new Map(pendingCards.map((card) => [card.providerKey, card]));
+  const mergedSavedCards = savedCards.map((card) => pendingCardMap.get(card.providerKey) ?? card);
+  const appendedPendingCards = pendingCards.filter(
+    (card) => !savedCards.some((savedCard) => savedCard.providerKey === card.providerKey),
+  );
+  return [...mergedSavedCards, ...appendedPendingCards];
+}
+
 function resolveDraftForProvider(
   providerKey: string,
   savedProviders: SavedProvider[],
@@ -182,7 +189,6 @@ function resolveDraftForProvider(
   if (!savedProvider) {
     return null;
   }
-
   return createDraftFromSavedProvider(savedProvider, currentConfig);
 }
 
@@ -195,9 +201,9 @@ export function WorkspaceCloneModelConfigModal({
   onClose,
   onRefreshSavedProviders,
   onRefreshCurrentConfig,
-  onSetModel,
-  onUpsertSavedProviderConfig,
+  onEnqueueSavedProviderConfig,
   onDeleteSavedProviderConfig,
+  providerSyncEvent,
 }: WorkspaceCloneModelConfigModalProps) {
   const { pushFeedback } = useFeedback();
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
@@ -208,24 +214,34 @@ export function WorkspaceCloneModelConfigModal({
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [switchingProviderId, setSwitchingProviderId] = useState<string | null>(null);
+  const [pendingProviderSaves, setPendingProviderSaves] = useState<Record<string, PendingWorkspaceProviderSave>>({});
 
-  const cards = useMemo(
-    () => buildSavedProviderCards(savedProviders, currentConfig, providers),
-    [currentConfig, providers, savedProviders],
-  );
-
-  const selectedPreset = useMemo(
-    () => getWorkspaceModelVendorPreset(selectedVendorPresetId),
-    [selectedVendorPresetId],
-  );
+  const savedCards = useMemo(() => buildSavedProviderCards(savedProviders, currentConfig, providers), [currentConfig, providers, savedProviders]);
+  const cards = useMemo(() => mergeSavedProviderCards(savedCards, pendingProviderSaves), [pendingProviderSaves, savedCards]);
+  const selectedPreset = useMemo(() => getWorkspaceModelVendorPreset(selectedVendorPresetId), [selectedVendorPresetId]);
   const isCustomPreset = selectedVendorPresetId === "custom";
+  const hasPendingEditingSave = editingProviderId ? Boolean(pendingProviderSaves[editingProviderId]) : false;
 
   useEffect(() => {
     if (!show) {
       return;
     }
+    if (editingProviderId && pendingProviderSaves[editingProviderId]) {
+      return;
+    }
+    if (editingProviderId) {
+      const editingSavedProvider = savedProviders.find((item) => item.name === editingProviderId);
+      if (editingSavedProvider) {
+        const nextDraft = createDraftFromSavedProvider(editingSavedProvider, currentConfig);
+        setSelectedVendorPresetId(nextDraft.vendorPresetId);
+        setDraft(nextDraft);
+        return;
+      }
 
+      if (draft.providerKey === editingProviderId || draft.providerDisplayName.trim()) {
+        return;
+      }
+    }
     const nextCard = cards.find((item) => item.isActive) ?? cards[0];
     if (nextCard) {
       const savedProvider = savedProviders.find((item) => item.name === nextCard.providerKey);
@@ -242,14 +258,42 @@ export function WorkspaceCloneModelConfigModal({
     setEditingProviderId(null);
     setSelectedVendorPresetId("custom");
     setDraft(customDraft);
-  }, [cards, currentConfig, savedProviders, show]);
+  }, [cards, currentConfig, draft.providerDisplayName, draft.providerKey, editingProviderId, pendingProviderSaves, savedProviders, show]);
+
+  useEffect(() => {
+    if (!providerSyncEvent) {
+      return;
+    }
+    const { providerKey, operation, status, message, error: syncError } = providerSyncEvent.payload;
+    const pendingSave = pendingProviderSaves[providerKey];
+    if (operation !== "upsert" || !pendingSave) {
+      return;
+    }
+    setPendingProviderSaves((current) => {
+      const nextState = { ...current };
+      delete nextState[providerKey];
+      return nextState;
+    });
+
+    if (status === "success") {
+      setNotice(message);
+      if (editingProviderId === providerKey || draft.providerKey === providerKey) {
+        applyDraftForProvider(providerKey, savedProviders, currentConfig);
+      }
+      return;
+    }
+
+    setEditingProviderId(providerKey);
+    setSelectedVendorPresetId(pendingSave.submittedDraft.vendorPresetId);
+    setDraft(pendingSave.submittedDraft);
+    setError(syncError?.trim() || message);
+  }, [currentConfig, draft.providerKey, editingProviderId, pendingProviderSaves, providerSyncEvent, savedProviders]);
 
   useEffect(() => {
     const message = notice.trim();
     if (!message) {
       return;
     }
-
     pushFeedback({
       tone: deletePendingProviderId ? "warning" : "success",
       message,
@@ -264,7 +308,6 @@ export function WorkspaceCloneModelConfigModal({
     if (!message) {
       return;
     }
-
     pushFeedback({
       tone: "error",
       title: "模型配置",
@@ -301,9 +344,17 @@ export function WorkspaceCloneModelConfigModal({
     return invoke<SavedProvider[]>("list_saved_providers");
   };
 
-  const handleSelectCard = async (providerKey: string) => {
+  const handleSelectCard = (providerKey: string) => {
     clearStatus();
     setDeletePendingProviderId(null);
+
+    const pendingSave = pendingProviderSaves[providerKey];
+    if (pendingSave) {
+      setEditingProviderId(providerKey);
+      setSelectedVendorPresetId(pendingSave.submittedDraft.vendorPresetId);
+      setDraft(pendingSave.submittedDraft);
+      return;
+    }
 
     const savedProvider = savedProviders.find((item) => item.name === providerKey);
     if (!savedProvider) {
@@ -314,29 +365,19 @@ export function WorkspaceCloneModelConfigModal({
     setEditingProviderId(providerKey);
     setSelectedVendorPresetId(nextDraft.vendorPresetId);
     setDraft(nextDraft);
-
-    if (currentConfig?.provider === providerKey) {
-      return;
-    }
-
-    setSwitchingProviderId(providerKey);
-    try {
-      const nextModelId = nextDraft.modelId || savedProvider.models[0]?.id;
-      if (!nextModelId) {
-        throw new Error("No model found for this provider");
-      }
-      await onSetModel(`${providerKey}/${nextModelId}`);
-      setNotice(`已切换到 ${nextDraft.providerDisplayName} / ${nextModelId}`);
-    } catch (switchError) {
-      setError(switchError instanceof Error ? switchError.message : "切换模型失败");
-    } finally {
-      setSwitchingProviderId(null);
-    }
   };
 
   const handleEditCard = (providerKey: string) => {
     clearStatus();
     setDeletePendingProviderId(null);
+
+    const pendingSave = pendingProviderSaves[providerKey];
+    if (pendingSave) {
+      setEditingProviderId(providerKey);
+      setSelectedVendorPresetId(pendingSave.submittedDraft.vendorPresetId);
+      setDraft(pendingSave.submittedDraft);
+      return;
+    }
 
     const savedProvider = savedProviders.find((item) => item.name === providerKey);
     if (!savedProvider) {
@@ -395,6 +436,12 @@ export function WorkspaceCloneModelConfigModal({
   };
 
   const handleDelete = async (providerKey: string) => {
+    if (pendingProviderSaves[providerKey]) {
+      clearStatus();
+      setError("请等待当前配置同步完成后再删除");
+      return;
+    }
+
     if (deletePendingProviderId !== providerKey) {
       clearStatus();
       setDeletePendingProviderId(providerKey);
@@ -448,7 +495,10 @@ export function WorkspaceCloneModelConfigModal({
       return;
     }
 
-    const existingKeys = savedProviders.map((item) => item.name);
+    const existingKeys = [
+      ...savedProviders.map((item) => item.name),
+      ...Object.keys(pendingProviderSaves),
+    ];
     const generatedKey =
       selectedVendorPresetId !== "custom"
         ? selectedPreset.id
@@ -460,9 +510,48 @@ export function WorkspaceCloneModelConfigModal({
         ? [modelId]
         : [modelId, ...selectedPreset.modelOptions.filter((item) => item !== modelId)];
 
+    if (pendingProviderSaves[providerKey]) {
+      setError("当前配置仍在同步中，请稍后再保存");
+      return;
+    }
+
+    const existingCard = cards.find((item) => item.providerKey === providerKey);
+    const submittedDraft: WorkspaceModelConfigDraft = {
+      ...draft,
+      providerKey,
+      providerDisplayName,
+      providerBaseUrl,
+      modelId,
+      modelOptions,
+      apiKey: "",
+      apiKeyConfigured: draft.apiKeyConfigured || draft.apiKey.trim().length > 0,
+    };
+
     setSaving(true);
     try {
-      const result = await onUpsertSavedProviderConfig({
+      setPendingProviderSaves((current) => ({
+        ...current,
+        [providerKey]: {
+          mode: editingProviderId ? "update" : "create",
+          submittedDraft,
+          optimisticCard: {
+            providerKey,
+            displayName: providerDisplayName,
+            baseUrl: providerBaseUrl,
+            apiType: draft.providerApi,
+            modelId: existingCard?.isActive ? existingCard.modelId : modelId,
+            modelOptions,
+            hasApiKey: submittedDraft.apiKeyConfigured,
+            isActive: existingCard?.isActive ?? false,
+            syncState: "pending",
+          },
+        },
+      }));
+      setEditingProviderId(providerKey);
+      setSelectedVendorPresetId(submittedDraft.vendorPresetId);
+      setDraft(submittedDraft);
+
+      const result = await onEnqueueSavedProviderConfig({
         providerKey,
         displayName: providerDisplayName,
         baseUrl: providerBaseUrl,
@@ -471,21 +560,14 @@ export function WorkspaceCloneModelConfigModal({
         modelId,
         modelOptions,
       });
-      const [nextSavedProviders, nextCurrentConfig] = await Promise.all([
-        refreshSavedProvidersSnapshot(),
-        onRefreshCurrentConfig(),
-      ]);
-      if (!applyDraftForProvider(providerKey, nextSavedProviders, nextCurrentConfig)) {
-        setEditingProviderId(providerKey);
-        setDraft((current) => ({
-          ...current,
-          providerKey,
-          apiKey: "",
-          apiKeyConfigured: current.apiKeyConfigured || draft.apiKey.trim().length > 0,
-        }));
-      }
       setNotice(result);
+      return;
     } catch (saveError) {
+      setPendingProviderSaves((current) => {
+        const nextState = { ...current };
+        delete nextState[providerKey];
+        return nextState;
+      });
       setError(saveError instanceof Error ? saveError.message : "保存模型配置失败");
     } finally {
       setSaving(false);
@@ -550,6 +632,7 @@ export function WorkspaceCloneModelConfigModal({
                   className={[
                     "workspace-model-card",
                     card.isActive ? "is-active" : "",
+                    card.syncState === "pending" ? "is-pending" : "",
                     editingProviderId === card.providerKey ? "is-editing" : "",
                     deletePendingProviderId === card.providerKey ? "is-delete-pending" : "",
                   ].join(" ").trim()}
@@ -557,8 +640,8 @@ export function WorkspaceCloneModelConfigModal({
                   <button
                     type="button"
                     className="workspace-model-card__main"
-                    onClick={() => void handleSelectCard(card.providerKey)}
-                    disabled={switchingProviderId === card.providerKey || saving}
+                    onClick={() => handleSelectCard(card.providerKey)}
+                    disabled={saving || Boolean(pendingProviderSaves[card.providerKey])}
                   >
                     <div className="workspace-model-card__title-row">
                       <strong>{card.modelId || "未选择模型"}</strong>
@@ -568,11 +651,17 @@ export function WorkspaceCloneModelConfigModal({
                           当前
                         </span>
                       )}
+                      {card.syncState === "pending" && <span className="workspace-model-card__state is-pending">同步中</span>}
                     </div>
                   </button>
 
                   <div className="workspace-model-card__actions">
-                    <button type="button" onClick={() => handleEditCard(card.providerKey)} aria-label="编辑模型配置">
+                    <button
+                      type="button"
+                      onClick={() => handleEditCard(card.providerKey)}
+                      aria-label="编辑模型配置"
+                      disabled={saving || Boolean(pendingProviderSaves[card.providerKey])}
+                    >
                       <WorkspaceCloneIcon name="edit" size={14} strokeWidth={1.9} />
                     </button>
                     <button
@@ -580,6 +669,7 @@ export function WorkspaceCloneModelConfigModal({
                       className={deletePendingProviderId === card.providerKey ? "is-danger" : ""}
                       onClick={() => void handleDelete(card.providerKey)}
                       aria-label="删除模型配置"
+                      disabled={saving || Boolean(pendingProviderSaves[card.providerKey])}
                     >
                       <WorkspaceCloneIcon name="trash" size={14} strokeWidth={1.9} />
                     </button>
@@ -691,7 +781,7 @@ export function WorkspaceCloneModelConfigModal({
               <button type="button" className="workspace-model-modal__ghost" onClick={handleAddConfig}>
                 重置表单
               </button>
-              <button type="button" className="workspace-model-modal__primary" onClick={() => void handleSave()} disabled={saving}>
+              <button type="button" className="workspace-model-modal__primary" onClick={() => void handleSave()} disabled={saving || hasPendingEditingSave}>
                 {saving ? "保存中..." : editingProviderId ? "更新配置" : "保存配置"}
               </button>
             </div>

@@ -182,6 +182,31 @@ export function useConfig({ addLog, running, setRunning }: UseConfigOptions) {
         return result;
     }, [addLog, refreshCurrentConfig, running, setRunning]);
 
+    const handleEnqueueWorkspaceSavedProviderConfig = useCallback(async (payload: {
+        providerKey: string;
+        displayName?: string | null;
+        baseUrl: string;
+        api: string;
+        apiKey: string;
+        modelId: string;
+        modelOptions?: string[];
+    }) => {
+        const result = await invoke<string>("enqueue_workspace_saved_provider_config", {
+            providerKey: payload.providerKey,
+            displayName: payload.displayName ?? null,
+            baseUrl: payload.baseUrl,
+            api: payload.api,
+            apiKey: payload.apiKey,
+            modelId: payload.modelId,
+            modelOptions: payload.modelOptions ?? [],
+        });
+
+        captureTelemetryEvent("launcher_saved_provider_upserted");
+        setConfigStatus(result);
+        addLog("info", result);
+        return result;
+    }, [addLog]);
+
     const handleDeleteSavedProviderConfig = useCallback(async (providerKey: string) => {
         const result = await invoke<string>("delete_saved_provider_config", { providerKey });
 
@@ -261,6 +286,10 @@ export function useConfig({ addLog, running, setRunning }: UseConfigOptions) {
         setConfigStatus("");
     }, []);
 
+    const bumpConfigVersion = useCallback(() => {
+        setConfigVersion((value) => value + 1);
+    }, []);
+
     return {
         providers,
         selectedCategory, setSelectedCategory,
@@ -281,12 +310,14 @@ export function useConfig({ addLog, running, setRunning }: UseConfigOptions) {
         handleSaveConfig,
         handleSetModel,
         handleUpsertSavedProviderConfig,
+        handleEnqueueWorkspaceSavedProviderConfig,
         handleDeleteSavedProviderConfig,
         handleOpenRegister,
         handleReset,
         confirmReset,
         handleReinstall,
         configVersion,
+        bumpConfigVersion,
         resetModalState,
     };
 }

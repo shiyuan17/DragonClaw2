@@ -1,6 +1,6 @@
 .modal-overlay.workspace-employees-modal__overlay {
   background: color-mix(in srgb, var(--dc-component-backdrop) 72%, transparent);
-  backdrop-filter: blur(18px);
+  backdrop-filter: blur(var(--dc-workspace-backdrop-blur-chat));
 }
 
 .modal-box.workspace-employees-modal__surface {

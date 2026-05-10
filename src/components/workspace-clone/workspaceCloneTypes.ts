@@ -314,6 +314,7 @@ export interface WorkspaceSavedProviderCard {
   modelOptions: string[];
   hasApiKey: boolean;
   isActive: boolean;
+  syncState?: "pending";
 }
 
 export type DirectoryContextMenuState = {

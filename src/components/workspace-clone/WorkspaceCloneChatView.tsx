@@ -1,4 +1,15 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  lazy,
+  memo,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
+import { useReducedMotion } from "framer-motion";
 import { WORKSPACE_HOME_SUGGESTIONS } from "./workspaceCloneData";
 import { shouldHideWorkspaceMessage } from "./workspaceCloneMessageVisibility";
 import type {
@@ -30,9 +41,9 @@ import {
 
 const MESSAGE_BOTTOM_THRESHOLD_PX = 72;
 const MESSAGE_RENDER_LIMIT = 100;
-const WorkspaceCloneUtilityDrawer = lazy(() =>
-  import("./WorkspaceCloneUtilityDrawer").then((module) => ({ default: module.WorkspaceCloneUtilityDrawer })),
-);
+const loadWorkspaceCloneUtilityDrawer = () =>
+  import("./WorkspaceCloneUtilityDrawer").then((module) => ({ default: module.WorkspaceCloneUtilityDrawer }));
+const WorkspaceCloneUtilityDrawer = lazy(loadWorkspaceCloneUtilityDrawer);
 
 function WorkspaceCloneDrawerFallback() {
   return (
@@ -58,6 +69,8 @@ function WorkspaceCloneDrawerFallback() {
   );
 }
 
+void WorkspaceCloneDrawerFallback;
+
 function renderAvatarMarker(entity: WorkspaceEntity | null, fallbackLabel: string) {
   if (entity?.avatarUrl) {
     return <img src={entity.avatarUrl} alt="" className="workspace-clone__message-marker-image" />;
@@ -65,6 +78,62 @@ function renderAvatarMarker(entity: WorkspaceEntity | null, fallbackLabel: strin
 
   return fallbackLabel;
 }
+
+interface WorkspaceCloneChatMessageRowProps {
+  message: WorkspaceMessage;
+  selectedEntity: WorkspaceEntity | null;
+  liveSteps: WorkspaceLiveStep[];
+  onBlankAreaClick: (event: ReactMouseEvent<HTMLElement>) => void;
+}
+
+const WorkspaceCloneChatMessageRow = memo(function WorkspaceCloneChatMessageRow({
+  message,
+  selectedEntity,
+  liveSteps,
+  onBlankAreaClick,
+}: WorkspaceCloneChatMessageRowProps) {
+  const isStreaming = message.status === "streaming";
+  const hasStreamText = message.text.trim().length > 0;
+  const showPreview = !isStreaming || hasStreamText;
+  const showMeta = !isStreaming && Boolean(message.time);
+
+  return (
+    <article
+      className={[
+        "workspace-clone__message",
+        "workspace-clone__message--chat",
+        `is-${message.role}`,
+        message.status ? `is-${message.status}` : "",
+      ].join(" ").trim()}
+      onClick={onBlankAreaClick}
+    >
+      <div className="workspace-clone__message-marker">
+        {message.role === "assistant"
+          ? renderAvatarMarker(selectedEntity, message.author)
+          : message.author}
+      </div>
+      <div className="workspace-clone__message-content">
+        {isStreaming ? <WorkspaceCloneLiveTimeline steps={liveSteps} /> : null}
+        {showPreview ? <WorkspaceCloneMessagePreview message={message} /> : null}
+        {showMeta ? <span className="workspace-clone__message-meta">{message.time}</span> : null}
+      </div>
+    </article>
+  );
+}, (previousProps, nextProps) => {
+  if (previousProps.message !== nextProps.message) {
+    return false;
+  }
+  if (previousProps.onBlankAreaClick !== nextProps.onBlankAreaClick) {
+    return false;
+  }
+  if ((previousProps.selectedEntity?.avatarUrl ?? "") !== (nextProps.selectedEntity?.avatarUrl ?? "")) {
+    return false;
+  }
+  if (previousProps.message.status === "streaming" || nextProps.message.status === "streaming") {
+    return previousProps.liveSteps === nextProps.liveSteps;
+  }
+  return true;
+});
 
 interface WorkspaceCloneChatViewProps {
   selectedEntity: WorkspaceEntity | null;
@@ -183,9 +252,12 @@ export function WorkspaceCloneChatView({
   onRunTask,
   onDeleteTask,
 }: WorkspaceCloneChatViewProps) {
+  const prefersReducedMotion = useReducedMotion();
   const messageScrollRef = useRef<HTMLDivElement | null>(null);
+  const scrollVisibilityFrameRef = useRef<number | null>(null);
   const wasNearBottomRef = useRef(true);
   const lastMessageSignatureRef = useRef("");
+  const lastSmoothScrollMessageIdRef = useRef("");
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [historyFilter, setHistoryFilter] = useState<WorkspaceHistoryFilter>("all");
 
@@ -227,7 +299,8 @@ export function WorkspaceCloneChatView({
   const updateScrollToBottomVisibility = useCallback(() => {
     const nearBottom = isMessageScrollNearBottom();
     wasNearBottomRef.current = nearBottom;
-    setShowScrollToBottom(!nearBottom);
+    const nextVisible = !nearBottom;
+    setShowScrollToBottom((current) => (current === nextVisible ? current : nextVisible));
   }, [isMessageScrollNearBottom]);
 
   const scrollMessagesToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
@@ -236,13 +309,25 @@ export function WorkspaceCloneChatView({
       return;
     }
 
+    const nextBehavior = prefersReducedMotion && behavior === "smooth" ? "auto" : behavior;
     element.scrollTo({
       top: element.scrollHeight,
-      behavior,
+      behavior: nextBehavior,
     });
     wasNearBottomRef.current = true;
     setShowScrollToBottom(false);
-  }, []);
+  }, [prefersReducedMotion]);
+
+  const scheduleScrollToBottomVisibilityUpdate = useCallback(() => {
+    if (scrollVisibilityFrameRef.current !== null) {
+      return;
+    }
+
+    scrollVisibilityFrameRef.current = window.requestAnimationFrame(() => {
+      scrollVisibilityFrameRef.current = null;
+      updateScrollToBottomVisibility();
+    });
+  }, [updateScrollToBottomVisibility]);
 
   const dismissUtilityDrawerFromBlankArea = useCallback(() => {
     if (!utilityPanel) {
@@ -266,6 +351,7 @@ export function WorkspaceCloneChatView({
   useEffect(() => {
     if (!hasMessages) {
       lastMessageSignatureRef.current = "";
+      lastSmoothScrollMessageIdRef.current = "";
       wasNearBottomRef.current = true;
       setShowScrollToBottom(false);
       return;
@@ -280,20 +366,48 @@ export function WorkspaceCloneChatView({
     lastMessageSignatureRef.current = messageSignature;
 
     if (!shouldStickToBottom) {
-      window.requestAnimationFrame(updateScrollToBottomVisibility);
+      scheduleScrollToBottomVisibilityUpdate();
       return;
     }
 
+    const shouldUseSmoothScroll =
+      lastMessage?.role === "user" &&
+      Boolean(lastMessage?.id) &&
+      lastSmoothScrollMessageIdRef.current !== lastMessage.id &&
+      liveSteps.length === 0;
+
+    if (shouldUseSmoothScroll && lastMessage?.id) {
+      lastSmoothScrollMessageIdRef.current = lastMessage.id;
+    }
+
     window.requestAnimationFrame(() => {
-      scrollMessagesToBottom(lastMessage?.role === "user" ? "smooth" : "auto");
+      scrollMessagesToBottom(shouldUseSmoothScroll ? "smooth" : "auto");
     });
   }, [
     hasMessages,
+    liveSteps.length,
+    lastMessage?.id,
     lastMessage?.role,
     messageSignature,
+    scheduleScrollToBottomVisibilityUpdate,
     scrollMessagesToBottom,
-    updateScrollToBottomVisibility,
   ]);
+
+  useEffect(() => {
+    const prefetchTimer = window.setTimeout(() => {
+      void loadWorkspaceCloneUtilityDrawer();
+    }, 180);
+
+    return () => {
+      window.clearTimeout(prefetchTimer);
+    };
+  }, []);
+
+  useEffect(() => () => {
+    if (scrollVisibilityFrameRef.current !== null) {
+      window.cancelAnimationFrame(scrollVisibilityFrameRef.current);
+    }
+  }, []);
 
   return (
     <div className={`workspace-clone__chat-layout ${utilityPanel ? "drawer-open" : ""}`}>
@@ -358,38 +472,19 @@ export function WorkspaceCloneChatView({
               <div
                 ref={messageScrollRef}
                 className="workspace-clone__message-scroll"
-                onScroll={updateScrollToBottomVisibility}
+                onScroll={scheduleScrollToBottomVisibilityUpdate}
                 onClick={handleBlankAreaClick}
               >
                 <div className="workspace-clone__message-list" onClick={handleBlankAreaClick}>
                   {renderedMessages.map((message) => {
-                    const isStreaming = message.status === "streaming";
-                    const hasStreamText = message.text.trim().length > 0;
-                    const showPreview = !isStreaming || hasStreamText;
-                    const showMeta = !isStreaming && Boolean(message.time);
-
                     return (
-                      <article
+                      <WorkspaceCloneChatMessageRow
                         key={message.id}
-                        className={[
-                          "workspace-clone__message",
-                          "workspace-clone__message--chat",
-                          `is-${message.role}`,
-                          message.status ? `is-${message.status}` : "",
-                        ].join(" ").trim()}
-                        onClick={handleBlankAreaClick}
-                      >
-                        <div className="workspace-clone__message-marker">
-                          {message.role === "assistant"
-                            ? renderAvatarMarker(selectedEntity, message.author)
-                            : message.author}
-                        </div>
-                        <div className="workspace-clone__message-content">
-                          {isStreaming ? <WorkspaceCloneLiveTimeline steps={liveSteps} /> : null}
-                          {showPreview ? <WorkspaceCloneMessagePreview message={message} /> : null}
-                          {showMeta ? <span className="workspace-clone__message-meta">{message.time}</span> : null}
-                        </div>
-                      </article>
+                        message={message}
+                        selectedEntity={selectedEntity}
+                        liveSteps={liveSteps}
+                        onBlankAreaClick={handleBlankAreaClick}
+                      />
                     );
                   })}
                   {liveSteps.length > 0 && !hasStreamingMessage ? (
@@ -467,51 +562,53 @@ export function WorkspaceCloneChatView({
         </div>
       </div>
 
-      {utilityPanel ? (
-        <Suspense fallback={<WorkspaceCloneDrawerFallback />}>
-          <WorkspaceCloneUtilityDrawer
-            panel={utilityPanel}
-            selectedEntity={selectedEntity}
-            activeSessionSection={activeSessionSection}
-            historyItems={historyItems}
-            logs={logs}
-            selectedRuntimeLogId={selectedRuntimeLogId}
-            tasks={tasks}
-            selectedTaskId={selectedTaskId}
-            selectedTaskRuns={selectedTaskRuns}
-            taskLoading={taskLoading}
-            taskRunsLoading={taskRunsLoading}
-            taskRunsLoadingId={taskRunsLoadingId}
-            taskActionJobId={taskActionJobId}
-            optimisticRunningTaskIds={optimisticRunningTaskIds}
-            gatewayConnected={gatewayConnected}
-            workbenchItems={workbenchItems}
-            fileItems={fileItems}
-            memoryItems={memoryItems}
-            skillItems={skillItems}
-            commandItems={commandItems}
-            channelItems={channelItems}
-            toolItems={toolItems}
-            currentModelName={currentModelName}
-            currentProviderName={currentProviderName}
-            onClose={onCloseUtilityPanel}
-            onSelectSessionSection={onSelectSessionSection}
-            historyFilter={historyFilter}
-            onSelectHistoryFilter={setHistoryFilter}
-            onSelectHistorySession={onSelectHistorySession}
-            onOpenRelatedResource={onOpenRelatedResource}
-            onOpenModelConfig={onOpenModelConfig}
-            onOpenRuntimeLogDetail={onOpenRuntimeLogDetail}
-            onOpenChatFile={onOpenChatFile}
-            onRefreshTasks={onRefreshTasks}
-            onSelectTask={onSelectTask}
-            onToggleTaskEnabled={onToggleTaskEnabled}
-            onEditTask={onEditTask}
-            onRunTask={onRunTask}
-            onDeleteTask={onDeleteTask}
-          />
-        </Suspense>
-      ) : null}
+      <div className={`workspace-clone__drawer-rail ${utilityPanel ? "is-open" : ""}`} aria-hidden={!utilityPanel}>
+        {utilityPanel ? (
+          <Suspense fallback={null}>
+            <WorkspaceCloneUtilityDrawer
+              panel={utilityPanel}
+              selectedEntity={selectedEntity}
+              activeSessionSection={activeSessionSection}
+              historyItems={historyItems}
+              logs={logs}
+              selectedRuntimeLogId={selectedRuntimeLogId}
+              tasks={tasks}
+              selectedTaskId={selectedTaskId}
+              selectedTaskRuns={selectedTaskRuns}
+              taskLoading={taskLoading}
+              taskRunsLoading={taskRunsLoading}
+              taskRunsLoadingId={taskRunsLoadingId}
+              taskActionJobId={taskActionJobId}
+              optimisticRunningTaskIds={optimisticRunningTaskIds}
+              gatewayConnected={gatewayConnected}
+              workbenchItems={workbenchItems}
+              fileItems={fileItems}
+              memoryItems={memoryItems}
+              skillItems={skillItems}
+              commandItems={commandItems}
+              channelItems={channelItems}
+              toolItems={toolItems}
+              currentModelName={currentModelName}
+              currentProviderName={currentProviderName}
+              onClose={onCloseUtilityPanel}
+              onSelectSessionSection={onSelectSessionSection}
+              historyFilter={historyFilter}
+              onSelectHistoryFilter={setHistoryFilter}
+              onSelectHistorySession={onSelectHistorySession}
+              onOpenRelatedResource={onOpenRelatedResource}
+              onOpenModelConfig={onOpenModelConfig}
+              onOpenRuntimeLogDetail={onOpenRuntimeLogDetail}
+              onOpenChatFile={onOpenChatFile}
+              onRefreshTasks={onRefreshTasks}
+              onSelectTask={onSelectTask}
+              onToggleTaskEnabled={onToggleTaskEnabled}
+              onEditTask={onEditTask}
+              onRunTask={onRunTask}
+              onDeleteTask={onDeleteTask}
+            />
+          </Suspense>
+        ) : null}
+      </div>
     </div>
   );
 }

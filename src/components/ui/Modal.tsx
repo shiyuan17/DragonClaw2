@@ -11,7 +11,7 @@
  *   </Modal>
  */
 
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import type { ReactNode } from "react";
 
 interface ModalProps {
@@ -40,6 +40,10 @@ export function Modal({
     contentClassName = "",
     children,
 }: ModalProps) {
+    const prefersReducedMotion = useReducedMotion();
+    const overlayTransition = { duration: prefersReducedMotion ? 0 : 0.14, ease: [0.4, 0, 0.2, 1] as const };
+    const contentTransition = { duration: prefersReducedMotion ? 0 : 0.16, ease: [0.2, 0, 0, 1] as const };
+
     return (
         <AnimatePresence>
             {show && (
@@ -48,15 +52,17 @@ export function Modal({
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
+                    transition={overlayTransition}
                     onClick={onClose}
                 >
                     <motion.div
                         className={["modal-box", contentClassName].join(" ").trim()}
                         style={{ maxWidth }}
                         onClick={(e) => e.stopPropagation()}
-                        initial={{ scale: 0.95, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        exit={{ scale: 0.95, opacity: 0 }}
+                        initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: prefersReducedMotion ? 0 : 6 }}
+                        transition={contentTransition}
                     >
                         {title && <div className="modal-title">{title}</div>}
                         {children}

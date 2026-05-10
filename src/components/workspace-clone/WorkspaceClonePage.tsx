@@ -3,14 +3,16 @@
 // This file is part of DragonClaw. See LICENSE for details.
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { openPath } from "@tauri-apps/plugin-opener";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { resolveWorkspaceAgentDisplayName } from "../../data/agencyRoster";
 import type {
   CurrentConfig,
   LogEntry,
   ProviderInfo,
   SavedProvider,
+  WorkspaceSavedProviderSyncEvent,
   WorkspaceChannelId,
   WorkspaceEntityType,
   WorkspaceMenuKey,
@@ -57,6 +59,7 @@ import { WorkspaceCloneScenePresetSwitcher } from "./WorkspaceCloneScenePresetSw
 import { WorkspaceCloneSettingsModal } from "./WorkspaceCloneSettingsModal";
 import { WorkspaceCloneSidebar } from "./WorkspaceCloneSidebar";
 import { WorkspaceCloneTaskEditorModal } from "./WorkspaceCloneTaskEditorModal";
+import { Modal } from "../ui/Modal";
 import { buildWorkspaceManualTaskExecutionContent } from "./workspaceCloneManualTaskExecution";
 import { resolveWorkspaceTaskDisplayTitle } from "./workspaceCloneTaskTitle";
 import {
@@ -104,8 +107,9 @@ const WorkspaceCloneSkillsMarketView = lazy(() =>
 const WorkspaceCloneOverlayStack = lazy(() =>
   import("./WorkspaceCloneOverlayStack").then((module) => ({ default: module.WorkspaceCloneOverlayStack })),
 );
+const loadWorkspaceCloneModelConfigModal = () => import("./WorkspaceCloneModelConfigModal");
 const WorkspaceCloneModelConfigModal = lazy(() =>
-  import("./WorkspaceCloneModelConfigModal").then((module) => ({ default: module.WorkspaceCloneModelConfigModal })),
+  loadWorkspaceCloneModelConfigModal().then((module) => ({ default: module.WorkspaceCloneModelConfigModal })),
 );
 
 export interface WorkspaceClonePageProps {
@@ -125,7 +129,7 @@ export interface WorkspaceClonePageProps {
   handleStop: () => void;
   refreshCurrentConfig: () => Promise<CurrentConfig>;
   handleSetModel: (modelId: string) => Promise<void>;
-  handleUpsertSavedProviderConfig: (payload: {
+  handleEnqueueWorkspaceSavedProviderConfig: (payload: {
     providerKey: string;
     displayName?: string | null;
     baseUrl: string;
@@ -135,6 +139,7 @@ export interface WorkspaceClonePageProps {
     modelOptions?: string[];
   }) => Promise<string>;
   handleDeleteSavedProviderConfig: (providerKey: string) => Promise<string>;
+  bumpConfigVersion: () => void;
 }
 function resolveWorkspaceModelName(currentConfig: CurrentConfig | null, fallbackModelName: string) {
   const primaryModel = currentConfig?.model || fallbackModelName;
@@ -205,13 +210,32 @@ function WorkspaceCloneLazyFallback({ label }: { label: string }) {
   }
 
   return (
-    <div className="workspace-clone__compact-panel">
-      <div className="workspace-clone__compact-hero">
-        <div className="workspace-clone__compact-badge">{label}</div>
-        <h1>\u6b63\u5728\u52a0\u8f7d</h1>
-        <p>\u9875\u9762\u8d44\u6e90\u51c6\u5907\u4e2d\uff0c\u8bf7\u7a0d\u5019\u3002</p>
+    <Modal show maxWidth={840} overlayClassName="workspace-model-modal__overlay" contentClassName="workspace-model-modal__surface">
+      <div className="workspace-model-modal">
+        <div className="workspace-model-modal__header">
+          <div>
+            <h3>模型配置</h3>
+            <p>弹窗资源准备中，请稍候。</p>
+          </div>
+        </div>
+        <div className="workspace-model-modal__body">
+          <section className="workspace-model-modal__cards">
+            <div className="workspace-model-modal__cards-grid">
+              {["one", "two", "three"].map((item) => (
+                <article key={item} className="workspace-model-card">
+                  <button type="button" className="workspace-model-card__main" disabled>
+                    <div className="workspace-model-card__title-row">
+                      <strong>正在加载...</strong>
+                    </div>
+                    <p>模型配置准备中</p>
+                  </button>
+                </article>
+              ))}
+            </div>
+          </section>
+        </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -304,8 +328,9 @@ export function WorkspaceClonePage({
   handleStart,
   refreshCurrentConfig,
   handleSetModel,
-  handleUpsertSavedProviderConfig,
+  handleEnqueueWorkspaceSavedProviderConfig,
   handleDeleteSavedProviderConfig,
+  bumpConfigVersion,
 }: WorkspaceClonePageProps) {
   const { pushFeedback } = useFeedback();
   const [activeMenu, setActiveMenu] = useState<WorkspaceMenuKey>("chat");
@@ -328,13 +353,19 @@ export function WorkspaceClonePage({
   const [isModelConfigOpen, setIsModelConfigOpen] = useState(false);
   const [savedProviders, setSavedProviders] = useState<SavedProvider[]>([]);
   const [savedProvidersLoading, setSavedProvidersLoading] = useState(false);
+  const [providerSyncEvent, setProviderSyncEvent] = useState<{
+    seq: number;
+    payload: WorkspaceSavedProviderSyncEvent;
+  } | null>(null);
   const [localAgentsResult, setLocalAgentsResult] = useState<WorkspaceGatewayAgentsListResult | null>(null);
   const [scenePresetOpenStateByKey, setScenePresetOpenStateByKey] = useState<Record<string, boolean>>(
     () => loadWorkspaceScenePresetOpenState(),
   );
   const homepageChat = useWorkspaceGatewayChat({ running, servicePort, gatewayToken });
   const savedProvidersLoadSeqRef = useRef(0);
+  const providerSyncEventSeqRef = useRef(0);
   const modelConfigOpenRef = useRef(false);
+  const prefersReducedMotion = useReducedMotion();
   const telemetryConfigured = isTelemetryConfigured();
   const telemetryHost = getTelemetryHost();
   const showDirectory = activeMenu === "chat";
@@ -385,10 +416,52 @@ export function WorkspaceClonePage({
     const requestId = savedProvidersLoadSeqRef.current + 1;
     savedProvidersLoadSeqRef.current = requestId;
     const nextProviders = await invoke<SavedProvider[]>("list_saved_providers");
-    if (savedProvidersLoadSeqRef.current === requestId && modelConfigOpenRef.current) {
+    if (savedProvidersLoadSeqRef.current === requestId) {
       setSavedProviders(nextProviders);
     }
   }, []);
+
+  useEffect(() => {
+    let disposed = false;
+
+    const unlistenPromise = listen<WorkspaceSavedProviderSyncEvent>("workspace-provider-config-sync", async (event) => {
+      if (disposed) {
+        return;
+      }
+
+      const payload = event.payload;
+      if (!payload?.providerKey || payload.operation !== "upsert") {
+        return;
+      }
+
+      if (payload.status === "success") {
+        await refreshSavedProviders().catch(() => undefined);
+        bumpConfigVersion();
+      } else if (!modelConfigOpenRef.current) {
+        pushFeedback({
+          tone: "error",
+          title: "模型配置",
+          message: payload.error?.trim() || payload.message,
+          dedupeKey: `workspace-provider-sync-${payload.providerKey}`,
+          persistent: false,
+          autoCloseMs: 3600,
+        });
+      }
+
+      providerSyncEventSeqRef.current += 1;
+      if (!disposed) {
+        setProviderSyncEvent({
+          seq: providerSyncEventSeqRef.current,
+          payload,
+        });
+      }
+    });
+
+    return () => {
+      disposed = true;
+      void unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, [bumpConfigVersion, pushFeedback, refreshSavedProviders]);
 
   useEffect(() => {
     persistWorkspaceScenePresetOpenState(scenePresetOpenStateByKey);
@@ -408,6 +481,26 @@ export function WorkspaceClonePage({
     currentModelId: workspaceCurrentModelId,
     handleSetModel,
   });
+
+  useEffect(() => {
+    if (composerModelMenu.isOpen) {
+      void loadWorkspaceCloneModelConfigModal();
+    }
+  }, [composerModelMenu.isOpen]);
+
+  useEffect(() => {
+    if (activeMenu !== "chat") {
+      return undefined;
+    }
+
+    const prefetchTimer = window.setTimeout(() => {
+      void loadWorkspaceCloneModelConfigModal();
+    }, 220);
+
+    return () => {
+      window.clearTimeout(prefetchTimer);
+    };
+  }, [activeMenu]);
 
   const workspaceProviderName = useMemo(() => {
     const primaryProviderKey = currentConfig?.provider;
@@ -906,7 +999,10 @@ export function WorkspaceClonePage({
 
   const openCustomModelConfigModal = useCallback(() => {
     composerModelMenu.closeMenu();
-    openModelConfigModal();
+    void loadWorkspaceCloneModelConfigModal();
+    window.requestAnimationFrame(() => {
+      openModelConfigModal();
+    });
   }, [composerModelMenu.closeMenu, openModelConfigModal]);
 
   const toggleUtilityPanel = (panel: Exclude<WorkspaceUtilityPanel, null>) => {
@@ -1085,10 +1181,10 @@ export function WorkspaceClonePage({
     <motion.section
       key="workspace-clone-home"
       className="workspace-clone-shell"
-      initial={{ opacity: 0, y: 8 }}
+      initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 8 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -8 }}
-      transition={{ duration: 0.2 }}
+      exit={{ opacity: 0, y: prefersReducedMotion ? 0 : -6 }}
+      transition={{ duration: prefersReducedMotion ? 0 : 0.16, ease: [0.2, 0, 0, 1] }}
     >
       <main
         className={[
@@ -1562,9 +1658,9 @@ export function WorkspaceClonePage({
               onClose={closeModelConfigModal}
               onRefreshSavedProviders={refreshSavedProviders}
               onRefreshCurrentConfig={refreshCurrentConfig}
-              onSetModel={handleSetModel}
-              onUpsertSavedProviderConfig={handleUpsertSavedProviderConfig}
+              onEnqueueSavedProviderConfig={handleEnqueueWorkspaceSavedProviderConfig}
               onDeleteSavedProviderConfig={handleDeleteSavedProviderConfig}
+              providerSyncEvent={providerSyncEvent}
             />
           </Suspense>
         ) : null}

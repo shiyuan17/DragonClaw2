@@ -97,11 +97,12 @@ function AppShell() {
     checkApiKey,
     handleSaveConfig,
     handleSetModel,
-    handleUpsertSavedProviderConfig,
+    handleEnqueueWorkspaceSavedProviderConfig,
     handleDeleteSavedProviderConfig,
     handleOpenRegister,
     confirmReset,
     configVersion,
+    bumpConfigVersion,
   } = useConfig({ addLog, running, setRunning });
 
   useEffect(() => {
@@ -317,8 +318,9 @@ function AppShell() {
                 handleStop={handleStop}
                 refreshCurrentConfig={refreshCurrentConfig}
                 handleSetModel={handleSetModel}
-                handleUpsertSavedProviderConfig={handleUpsertSavedProviderConfig}
+                handleEnqueueWorkspaceSavedProviderConfig={handleEnqueueWorkspaceSavedProviderConfig}
                 handleDeleteSavedProviderConfig={handleDeleteSavedProviderConfig}
+                bumpConfigVersion={bumpConfigVersion}
               />
             </Suspense>
           )}

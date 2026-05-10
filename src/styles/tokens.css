@@ -77,6 +77,10 @@
   --dc-motion-duration-slow: 320ms;
   --dc-motion-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
   --dc-motion-ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --dc-workspace-chat-enter-duration: 160ms;
+  --dc-workspace-chat-overlay-duration: 140ms;
+  --dc-workspace-live-pulse-duration: 1.1s;
+  --dc-workspace-backdrop-blur-chat: 6px;
 
   /* Component tokens */
   --dc-window-titlebar-height: 45px;

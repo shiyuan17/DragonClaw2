@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 import { WorkspaceCloneIcon, type WorkspaceCloneIconName } from "./workspaceCloneIcons";
 import type { WorkspaceLiveStep, WorkspaceLiveStepKind, WorkspaceLiveStepStatus } from "./workspaceCloneTypes";
 
@@ -37,7 +39,9 @@ const STATUS_LABEL_BY_STATUS: Record<WorkspaceLiveStepStatus, string> = {
   aborted: "已中止",
 };
 
-export function WorkspaceCloneLiveTimeline({ steps }: WorkspaceCloneLiveTimelineProps) {
+export const WorkspaceCloneLiveTimeline = memo(function WorkspaceCloneLiveTimeline({
+  steps,
+}: WorkspaceCloneLiveTimelineProps) {
   if (steps.length === 0) {
     return null;
   }
@@ -83,4 +87,4 @@ export function WorkspaceCloneLiveTimeline({ steps }: WorkspaceCloneLiveTimeline
       })}
     </section>
   );
-}
+});

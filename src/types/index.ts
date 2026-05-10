@@ -83,6 +83,14 @@ export interface SavedModel {
     name: string | null;
 }
 
+export interface WorkspaceSavedProviderSyncEvent {
+    providerKey: string;
+    operation: "upsert";
+    status: "success" | "error";
+    message: string;
+    error?: string | null;
+}
+
 export interface ProviderInfo {
     id: string;
     name: string;
