@@ -49,13 +49,47 @@ export function WorkspaceCloneScheduleDrawerPanel({
   onDeleteTask,
 }: WorkspaceCloneScheduleDrawerPanelProps) {
   const enabledTaskCount = tasks.filter((task) => task.enabled).length;
-  const [taskFilter, setTaskFilter] = useState<TaskFilterKey>(enabledTaskCount > 0 ? "enabled" : "disabled");
+  const [taskFilter, setTaskFilter] = useState<TaskFilterKey>("enabled");
   const [openTaskMenuId, setOpenTaskMenuId] = useState<string | null>(null);
   const taskMenuRef = useRef<HTMLDivElement | null>(null);
+  const filterEntityIdRef = useRef<string | null>(null);
+  const filterInitializedRef = useRef(false);
+  const filterTouchedRef = useRef(false);
+  const filterAwaitingSyncRef = useRef(true);
+  const filterSawLoadingRef = useRef(false);
 
   useEffect(() => {
+    const entityId = selectedEntity?.id ?? null;
+    if (filterEntityIdRef.current === entityId) {
+      return;
+    }
+
+    filterEntityIdRef.current = entityId;
+    filterInitializedRef.current = false;
+    filterTouchedRef.current = false;
+    filterAwaitingSyncRef.current = true;
+    filterSawLoadingRef.current = false;
+  }, [selectedEntity?.id]);
+
+  useEffect(() => {
+    if (taskLoading && filterAwaitingSyncRef.current) {
+      filterSawLoadingRef.current = true;
+    }
+  }, [taskLoading]);
+
+  useEffect(() => {
+    if (taskLoading || filterInitializedRef.current || filterTouchedRef.current) {
+      return;
+    }
+
+    if (filterAwaitingSyncRef.current && !filterSawLoadingRef.current) {
+      return;
+    }
+
     setTaskFilter(enabledTaskCount > 0 ? "enabled" : "disabled");
-  }, [enabledTaskCount, selectedEntity?.id]);
+    filterInitializedRef.current = true;
+    filterAwaitingSyncRef.current = false;
+  }, [enabledTaskCount, selectedEntity?.id, taskLoading]);
 
   useEffect(() => {
     if (!openTaskMenuId) {
@@ -99,7 +133,10 @@ export function WorkspaceCloneScheduleDrawerPanel({
             type="button"
             className={`workspace-clone__drawer-filter workspace-clone__drawer-filter--task ${taskFilter === filter.key ? "is-active" : ""}`}
             aria-selected={taskFilter === filter.key}
-            onClick={() => setTaskFilter(filter.key)}
+            onClick={() => {
+              filterTouchedRef.current = true;
+              setTaskFilter(filter.key);
+            }}
           >
             {filter.label}
           </button>

@@ -52,6 +52,7 @@ import { WorkspaceCloneEmailBindingModal } from "./WorkspaceCloneEmailBindingMod
 import { WorkspaceCloneHeader } from "./WorkspaceCloneHeader";
 import { WorkspaceCloneCompactView } from "./WorkspaceCloneCompactView";
 import { WorkspaceCloneProductLandingView } from "./WorkspaceCloneProductLandingView";
+import { WorkspaceCloneSchedulePage } from "./WorkspaceCloneSchedulePage";
 import { WorkspaceCloneScenePresetSwitcher } from "./WorkspaceCloneScenePresetSwitcher";
 import { WorkspaceCloneSettingsModal } from "./WorkspaceCloneSettingsModal";
 import { WorkspaceCloneSidebar } from "./WorkspaceCloneSidebar";
@@ -700,19 +701,19 @@ export function WorkspaceClonePage({
     agentId: currentMemoryAgentId,
     gatewayConnected: homepageChat.connected,
     request: homepageChat.request,
-    enabled: activeMenu === "chat",
+    enabled: activeMenu === "chat" || activeMenu === "schedule",
   });
 
   useWorkspaceCloneFeedback({
     memoryNotice: memoryAdmin.memoryNotice,
     memoryError: memoryAdmin.memoryError,
-    memoryErrorTitle: "璁板繂",
+    memoryErrorTitle: "记忆",
     skillNotice: skillsAdmin.skillNotice,
     skillError: skillsAdmin.skillError,
-    skillErrorTitle: "鎶€鑳藉簱",
+    skillErrorTitle: "技能库",
     toolNotice: toolsAdmin.toolNotice,
     toolError: toolsAdmin.toolError,
-    toolErrorTitle: "宸ュ叿鏉冮檺",
+    toolErrorTitle: "工具权限",
     commandNotice: commandsAdmin.commandNotice,
     commandError: commandsAdmin.commandError,
     channelNotice: workspaceChannels.modalNotice,
@@ -1383,12 +1384,27 @@ export function WorkspaceClonePage({
                 onRefreshCurrentAgentSkills={() => skillsAdmin.refreshSkillOptions({ showLoading: true })}
               />
             </Suspense>
-          ) : activeMenu === "tasks" ? (
-            <WorkspaceCloneProductLandingView
-              workspaceModelName={workspaceModelName}
-              running={running}
-              uptimeLabel={uptimeLabel}
+          ) : activeMenu === "schedule" ? (
+            <WorkspaceCloneSchedulePage
+              selectedEntity={selectedEntity}
+              tasks={cronTasks.tasks}
+              selectedTaskId={cronTasks.selectedTaskId}
+              taskLoading={cronTasks.taskLoading}
+              taskActionJobId={cronTasks.taskActionJobId}
+              optimisticRunningTaskIds={cronTasks.optimisticRunningTaskIds}
+              gatewayConnected={homepageChat.connected}
+              onSelectTask={handleSelectTask}
+              onToggleTaskEnabled={(task) => {
+                void cronTasks.toggleTaskEnabled(task);
+              }}
+              onEditTask={handleEditTask}
+              onRunTask={(task) => {
+                void handleRunTask(task);
+              }}
+              onDeleteTask={handleDeleteTask}
             />
+          ) : activeMenu === "tasks" ? (
+            <WorkspaceCloneProductLandingView />
           ) : (
             <WorkspaceCloneCompactView
               activeMenu={activeMenu}
