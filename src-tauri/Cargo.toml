@@ -1,6 +1,6 @@
 [package]
 name = "dragonclaw"
-version = "0.1.6"
+version = "0.1.7"
 description = "One-click installer & launcher for OpenClaw AI coding assistant"
 authors = ["shiyuan <1213423761@qq.com>"]
 edition = "2021"
