@@ -4,7 +4,7 @@
 
 use std::process::Stdio;
 use std::sync::atomic::Ordering;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tauri::Manager;
 
@@ -14,17 +14,18 @@ use super::support::{
     ExistingProcessValidation, LauncherProcessInfo, ServiceRuntimeState, TrackedServiceProcess,
 };
 use super::{
-    emit_service_port, lifecycle_snapshot, launcher_state, now_unix_timestamp,
+    emit_service_port, gateway_ws_url, lifecycle_snapshot, launcher_state, now_unix_timestamp,
     openclaw_cli, set_service_lifecycle, set_tracked_process, spawn_heartbeat_monitor,
-    terminate_process_by_pid, gateway_ws_url, summarize_gateway_probe_failure,
-    ServiceLifecycleStatus, ServiceState, EXISTING_PROCESS_RPC_CHECK_TIMEOUT_MS, MAX_PORT,
-    DEFAULT_PORT,
+    summarize_gateway_probe_failure, terminate_process_by_pid, ServiceLifecycleStatus,
+    ServiceState, DEFAULT_PORT, EXISTING_PROCESS_RPC_CHECK_TIMEOUT_MS, MAX_PORT,
+    SERVICE_READY_TIMEOUT_MS, STARTUP_RPC_CHECK_TIMEOUT_MS,
 };
 
-pub(super) fn verify_gateway_rpc_ready_with_timeout(
+fn verify_gateway_rpc_ready_with_timeout_limits(
     port: u16,
     token: &str,
     timeout_ms: u64,
+    command_timeout_ms: u64,
 ) -> Result<(), String> {
     let url = gateway_ws_url(port);
     let mut command = openclaw_cli::create_openclaw_cli_command()
@@ -47,7 +48,7 @@ pub(super) fn verify_gateway_rpc_ready_with_timeout(
 
     let output = openclaw_cli::run_command_with_timeout(
         &mut command,
-        Duration::from_millis(timeout_ms + 3_000),
+        Duration::from_millis(command_timeout_ms.max(timeout_ms).max(1)),
         "OpenClaw gateway RPC readiness check",
     )?;
 
@@ -60,6 +61,75 @@ pub(super) fn verify_gateway_rpc_ready_with_timeout(
             summarize_gateway_probe_failure(output)
         ))
     }
+}
+
+pub(super) fn verify_gateway_rpc_ready_with_timeout(
+    port: u16,
+    token: &str,
+    timeout_ms: u64,
+) -> Result<(), String> {
+    verify_gateway_rpc_ready_with_timeout_limits(
+        port,
+        token,
+        timeout_ms,
+        timeout_ms.saturating_add(3_000),
+    )
+}
+
+pub(super) fn verify_gateway_rpc_ready_with_command_timeout(
+    port: u16,
+    token: &str,
+    timeout_ms: u64,
+    command_timeout_ms: u64,
+) -> Result<(), String> {
+    verify_gateway_rpc_ready_with_timeout_limits(port, token, timeout_ms, command_timeout_ms)
+}
+
+pub(super) fn late_ready_during_rpc_probe(
+    ready_before_probe: bool,
+    ready_after_probe: bool,
+    port_accepting_after_probe: bool,
+) -> bool {
+    !ready_before_probe && ready_after_probe && port_accepting_after_probe
+}
+
+pub(super) fn remaining_startup_budget_ms(started_at: Instant) -> u64 {
+    let elapsed_ms = started_at.elapsed().as_millis();
+    let elapsed_ms = elapsed_ms.min(u128::from(u64::MAX)) as u64;
+    SERVICE_READY_TIMEOUT_MS.saturating_sub(elapsed_ms)
+}
+
+pub(super) fn startup_rpc_probe_timeout_ms(remaining_budget_ms: u64) -> Option<u64> {
+    let timeout_ms = remaining_budget_ms.min(STARTUP_RPC_CHECK_TIMEOUT_MS);
+    (timeout_ms > 0).then_some(timeout_ms)
+}
+
+pub(super) fn build_service_start_timeout_error(
+    port: u16,
+    port_accepting: bool,
+    last_rpc_error: Option<&str>,
+) -> String {
+    if port_accepting {
+        if let Some(error) = last_rpc_error {
+            return format!(
+                "OpenClaw service startup timed out and RPC validation is still failing: {error} ({}s)",
+                SERVICE_READY_TIMEOUT_MS / 1000
+            );
+        }
+    }
+
+    let detail = if port_accepting {
+        format!(
+            "Gateway port {port} is listening but the OpenClaw gateway ready signal was never observed"
+        )
+    } else {
+        format!("Gateway port {port} is not listening")
+    };
+
+    format!(
+        "OpenClaw service startup timed out: {detail} ({}s)",
+        SERVICE_READY_TIMEOUT_MS / 1000
+    )
 }
 
 fn tracked_process_from_launcher_process(

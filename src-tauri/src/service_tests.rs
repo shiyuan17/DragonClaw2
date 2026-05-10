@@ -79,6 +79,37 @@ fn test_gateway_ready_signal_excludes_listening_and_starting() {
 }
 
 #[test]
+fn late_ready_during_rpc_probe_is_accepted() {
+    assert!(late_ready_during_rpc_probe(false, true, true));
+    assert!(!late_ready_during_rpc_probe(true, true, true));
+    assert!(!late_ready_during_rpc_probe(false, true, false));
+    assert!(!late_ready_during_rpc_probe(false, false, true));
+}
+
+#[test]
+fn startup_rpc_probe_timeout_is_capped_by_remaining_budget() {
+    assert_eq!(startup_rpc_probe_timeout_ms(3_500), Some(3_500));
+    assert_eq!(
+        startup_rpc_probe_timeout_ms(STARTUP_RPC_CHECK_TIMEOUT_MS + 5_000),
+        Some(STARTUP_RPC_CHECK_TIMEOUT_MS)
+    );
+    assert_eq!(startup_rpc_probe_timeout_ms(0), None);
+}
+
+#[test]
+fn startup_timeout_keeps_rpc_failure_detail_when_ready_never_arrives() {
+    let detail = build_service_start_timeout_error(
+        18789,
+        true,
+        Some("OpenClaw gateway RPC validation failed (ws://127.0.0.1:18789): probe failed"),
+    );
+
+    assert!(detail.contains("startup timed out and RPC validation is still failing"));
+    assert!(detail.contains("probe failed"));
+    assert!(detail.contains("120s"));
+}
+
+#[test]
 fn runtime_state_round_trip() {
     let path = unique_temp_path("round-trip.json");
     let runtime = ServiceRuntimeState {

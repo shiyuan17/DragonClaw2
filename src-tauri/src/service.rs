@@ -23,8 +23,10 @@ mod recovery;
 #[path = "service_support.rs"]
 mod support;
 use recovery::{
-    preferred_known_port, reconcile_launcher_gateway_processes, spawn_existing_process_validation,
-    verify_gateway_rpc_ready_with_timeout,
+    build_service_start_timeout_error, late_ready_during_rpc_probe, preferred_known_port,
+    reconcile_launcher_gateway_processes, remaining_startup_budget_ms,
+    spawn_existing_process_validation, startup_rpc_probe_timeout_ms,
+    verify_gateway_rpc_ready_with_command_timeout, verify_gateway_rpc_ready_with_timeout,
 };
 use support::{
     clear_known_process_tracking, clear_runtime_issue, current_runtime_issue,
@@ -464,8 +466,8 @@ fn cleanup_failed_service_start(state: &ServiceState) {
     clear_known_process_tracking(state);
 }
 
-
 async fn wait_for_service_ready(
+    app: &tauri::AppHandle,
     state: &ServiceState,
     port: u16,
     token: &str,
@@ -505,33 +507,59 @@ async fn wait_for_service_ready(
         if port_accepting
             && last_rpc_check_at.elapsed() >= Duration::from_millis(GATEWAY_RPC_CHECK_INTERVAL_MS)
         {
-            last_rpc_check_at = Instant::now();
-            match verify_gateway_rpc_ready_with_timeout(port, token, STARTUP_RPC_CHECK_TIMEOUT_MS) {
-                Ok(()) => return Ok(()),
-                Err(error) => {
-                    last_rpc_error = Some(error);
+            let remaining_budget_ms = remaining_startup_budget_ms(started_at);
+            if let Some(rpc_timeout_ms) = startup_rpc_probe_timeout_ms(remaining_budget_ms) {
+                last_rpc_check_at = Instant::now();
+                match verify_gateway_rpc_ready_with_command_timeout(
+                    port,
+                    token,
+                    rpc_timeout_ms,
+                    remaining_budget_ms,
+                ) {
+                    Ok(()) => return Ok(()),
+                    Err(error) => {
+                        last_rpc_error = Some(error);
+                        let ready_after_probe = ready_signal.load(Ordering::SeqCst);
+                        let port_accepting_after_probe = connect_to_port(port);
+                        if late_ready_during_rpc_probe(
+                            ready_from_log,
+                            ready_after_probe,
+                            port_accepting_after_probe,
+                        ) {
+                            emit_service_log(
+                                app,
+                                "info",
+                                format!(
+                                    "Gateway ready signal arrived during RPC probe on port {port}; continuing startup without waiting for another probe."
+                                ),
+                            );
+                            return Ok(());
+                        }
+                        if ready_after_probe && port_accepting_after_probe {
+                            return Ok(());
+                        }
+                    }
                 }
             }
         }
         if started_at.elapsed() >= Duration::from_millis(SERVICE_READY_TIMEOUT_MS) {
-            if port_accepting {
-                if let Some(error) = last_rpc_error {
-                    return Err(format!(
-                        "OpenClaw service startup timed out and RPC validation is still failing: {error} ({}s)",
-                        SERVICE_READY_TIMEOUT_MS / 1000
-                    ));
+            let port_accepting_at_timeout = connect_to_port(port);
+            if ready_signal.load(Ordering::SeqCst) && port_accepting_at_timeout {
+                if !ready_from_log || !port_accepting {
+                    emit_service_log(
+                        app,
+                        "info",
+                        format!(
+                            "Gateway ready signal was confirmed at the startup timeout boundary on port {port}; treating startup as successful."
+                        ),
+                    );
                 }
+                return Ok(());
             }
-            let detail = if port_accepting {
-                format!(
-                    "Gateway port {port} is listening but the OpenClaw gateway ready signal was never observed"
-                )
-            } else {
-                format!("Gateway port {port} is not listening")
-            };
-            return Err(format!(
-                "OpenClaw service startup timed out: {detail} ({}s)",
-                SERVICE_READY_TIMEOUT_MS / 1000
+            return Err(build_service_start_timeout_error(
+                port,
+                port_accepting_at_timeout,
+                last_rpc_error.as_deref(),
             ));
         }
         tokio::time::sleep(Duration::from_millis(150)).await;
@@ -997,7 +1025,7 @@ async fn start_service_impl(
         });
     }
     if let Err(error) =
-        wait_for_service_ready(state.inner(), chosen_port, &token, ready_signal).await
+        wait_for_service_ready(&app, state.inner(), chosen_port, &token, ready_signal).await
     {
         set_runtime_issue(state.inner(), error.clone());
         cleanup_failed_service_start(state.inner());
