@@ -83,13 +83,14 @@ function resolveComposerStatusText(params: {
 }
 
 function resolveModelMenuOption(model: SavedModel) {
-  const [providerLabel, ...modelParts] = model.id.split("/");
+  const [providerKey, ...modelParts] = model.id.split("/");
   const modelLabel = modelParts.length > 0 ? modelParts.join("/") : model.id;
+  const providerLabelFromName = model.name?.match(/\(([^()]+)\)\s*$/)?.[1]?.trim();
 
   return {
     id: model.id,
     modelLabel,
-    providerLabel,
+    providerLabel: providerLabelFromName || providerKey,
     displayLabel: model.name?.trim() || modelLabel,
   };
 }

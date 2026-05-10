@@ -13,6 +13,7 @@ use crate::config::{
     ensure_config_roots, ensure_default_workspace, ensure_gateway_config, get_user_openclaw_dir,
     read_openclaw_config, write_openclaw_config,
 };
+use crate::launcher_state;
 use tauri::Emitter;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -50,6 +51,75 @@ fn build_model_entry(model_id: &str) -> Value {
         "contextWindow": 128000,
         "maxTokens": 8192
     })
+}
+
+fn normalize_display_name(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+}
+
+fn extract_legacy_display_name(value: &Value) -> Option<String> {
+    normalize_display_name(
+        value.get("displayName")
+            .or_else(|| value.get("display_name"))
+            .and_then(Value::as_str),
+    )
+}
+
+fn remove_legacy_display_name_fields(value: &mut Value) -> bool {
+    let Some(object) = value.as_object_mut() else {
+        return false;
+    };
+
+    let removed_camel = object.remove("displayName").is_some();
+    let removed_snake = object.remove("display_name").is_some();
+    removed_camel || removed_snake
+}
+
+fn load_provider_display_names_with_self_heal(
+    config: &mut Value,
+) -> Result<Map<String, Value>, String> {
+    let mut display_names = launcher_state::read_provider_display_names()?;
+    let mut display_names_changed = false;
+    let mut config_changed = false;
+
+    if let Some(providers) = config
+        .get_mut("models")
+        .and_then(|models| models.get_mut("providers"))
+        .and_then(Value::as_object_mut)
+    {
+        for (provider_key, provider_value) in providers.iter_mut() {
+            let legacy_display_name = extract_legacy_display_name(provider_value);
+            if !display_names.contains_key(provider_key) {
+                if let Some(legacy_value) = legacy_display_name {
+                    display_names.insert(provider_key.clone(), legacy_value);
+                    display_names_changed = true;
+                }
+            }
+
+            if remove_legacy_display_name_fields(provider_value) {
+                config_changed = true;
+            }
+        }
+    }
+
+    if display_names_changed {
+        launcher_state::update_provider_display_names(|stored| {
+            *stored = display_names.clone();
+        })?;
+    }
+
+    if config_changed {
+        write_config(config)?;
+    }
+
+    let display_name_values = display_names
+        .into_iter()
+        .map(|(key, value)| (key, Value::String(value)))
+        .collect::<Map<String, Value>>();
+    Ok(display_name_values)
 }
 
 fn first_provider_model(providers: &Map<String, Value>) -> Option<(String, String)> {
@@ -125,8 +195,9 @@ fn remove_agent_models_provider(provider_key: &str) -> Result<(), String> {
 
 #[tauri::command]
 pub fn list_saved_providers() -> Result<Vec<SavedProvider>, String> {
-    let config = read_config()?;
+    let mut config = read_config()?;
     let mut providers = Vec::new();
+    let display_name_map = load_provider_display_names_with_self_heal(&mut config)?;
 
     let providers_obj = config
         .get("models")
@@ -146,11 +217,10 @@ pub fn list_saved_providers() -> Result<Vec<SavedProvider>, String> {
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
 
-            let display_name = value
-                .get("displayName")
-                .or_else(|| value.get("display_name"))
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
+            let display_name = display_name_map
+                .get(name)
+                .and_then(Value::as_str)
+                .map(|value| value.to_string());
 
             let has_api_key = value
                 .get("apiKey")
@@ -170,7 +240,10 @@ pub fn list_saved_providers() -> Result<Vec<SavedProvider>, String> {
                                 .get("name")
                                 .and_then(|n| n.as_str())
                                 .map(|s| s.to_string());
-                            Some(SavedModel { id, name })
+                            Some(SavedModel {
+                                id,
+                                name,
+                            })
                         })
                         .collect()
                 })
@@ -203,7 +276,7 @@ pub fn list_all_models() -> Result<Vec<SavedModel>, String> {
                 name: Some(format!(
                     "{} ({})",
                     m.name.clone().unwrap_or(m.id.clone()),
-                    p.name
+                    p.display_name.clone().unwrap_or_else(|| p.name.clone())
                 )),
             });
         }
@@ -278,20 +351,12 @@ pub fn upsert_saved_provider_config(
         .map(|item| build_model_entry(item))
         .collect::<Vec<_>>();
 
-    let mut provider_entry = json!({
+    let provider_entry = json!({
         "baseUrl": base_url,
         "apiKey": effective_api_key,
         "api": api,
         "models": models,
     });
-
-    if let Some(display_name_value) = display_name
-        .as_ref()
-        .map(|value| value.trim())
-        .filter(|value| !value.is_empty())
-    {
-        provider_entry["displayName"] = json!(display_name_value);
-    }
 
     config["models"]["providers"][&provider_key] = provider_entry.clone();
     config["agents"]["defaults"]["model"] = json!({
@@ -305,6 +370,14 @@ pub fn upsert_saved_provider_config(
 
     write_config(&config)?;
     sync_agent_models_provider(&provider_key, &provider_entry)?;
+    let next_display_name = normalize_display_name(display_name.as_deref());
+    launcher_state::update_provider_display_names(|stored| {
+        if let Some(display_name_value) = next_display_name.as_ref() {
+            stored.insert(provider_key.clone(), display_name_value.clone());
+        } else {
+            stored.remove(&provider_key);
+        }
+    })?;
 
     let _ = app.emit(
         "config-updated",
@@ -374,6 +447,9 @@ pub fn delete_saved_provider_config(
 
     write_config(&config)?;
     remove_agent_models_provider(&provider_key)?;
+    launcher_state::update_provider_display_names(|stored| {
+        stored.remove(&provider_key);
+    })?;
 
     let _ = app.emit(
         "config-updated",
@@ -402,6 +478,9 @@ pub fn delete_provider(name: String) -> Result<(), String> {
     }
 
     write_config(&config)?;
+    launcher_state::update_provider_display_names(|stored| {
+        stored.remove(&name);
+    })?;
     Ok(())
 }
 

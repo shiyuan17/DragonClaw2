@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Modal } from "../ui/Modal";
 import type { CurrentConfig, ProviderInfo, SavedProvider } from "../../types";
 import { useFeedback } from "../../hooks/useFeedback";
@@ -172,6 +173,19 @@ function buildSavedProviderCards(
   });
 }
 
+function resolveDraftForProvider(
+  providerKey: string,
+  savedProviders: SavedProvider[],
+  currentConfig: CurrentConfig | null,
+) {
+  const savedProvider = savedProviders.find((item) => item.name === providerKey);
+  if (!savedProvider) {
+    return null;
+  }
+
+  return createDraftFromSavedProvider(savedProvider, currentConfig);
+}
+
 export function WorkspaceCloneModelConfigModal({
   show,
   savedProviders,
@@ -264,6 +278,27 @@ export function WorkspaceCloneModelConfigModal({
   const clearStatus = () => {
     setNotice("");
     setError("");
+  };
+
+  const applyDraftForProvider = (
+    providerKey: string,
+    nextSavedProviders: SavedProvider[],
+    nextCurrentConfig: CurrentConfig | null,
+  ) => {
+    const nextDraft = resolveDraftForProvider(providerKey, nextSavedProviders, nextCurrentConfig);
+    if (!nextDraft) {
+      return false;
+    }
+
+    setEditingProviderId(providerKey);
+    setSelectedVendorPresetId(nextDraft.vendorPresetId);
+    setDraft(nextDraft);
+    return true;
+  };
+
+  const refreshSavedProvidersSnapshot = async () => {
+    await onRefreshSavedProviders();
+    return invoke<SavedProvider[]>("list_saved_providers");
   };
 
   const handleSelectCard = async (providerKey: string) => {
@@ -371,10 +406,19 @@ export function WorkspaceCloneModelConfigModal({
     setSaving(true);
     try {
       const result = await onDeleteSavedProviderConfig(providerKey);
+      const [nextSavedProviders, nextCurrentConfig] = await Promise.all([
+        refreshSavedProvidersSnapshot(),
+        onRefreshCurrentConfig(),
+      ]);
       setNotice(result);
       setDeletePendingProviderId(null);
 
-      if (editingProviderId === providerKey) {
+      if (!editingProviderId || editingProviderId === providerKey) {
+        const nextCards = buildSavedProviderCards(nextSavedProviders, nextCurrentConfig, providers);
+        const nextCard = nextCards.find((item) => item.isActive) ?? nextCards[0];
+        if (nextCard && applyDraftForProvider(nextCard.providerKey, nextSavedProviders, nextCurrentConfig)) {
+          return;
+        }
         handleAddConfig();
       }
     } catch (deleteError) {
@@ -427,13 +471,19 @@ export function WorkspaceCloneModelConfigModal({
         modelId,
         modelOptions,
       });
-      setEditingProviderId(providerKey);
-      setDraft((current) => ({
-        ...current,
-        providerKey,
-        apiKey: "",
-        apiKeyConfigured: current.apiKeyConfigured || draft.apiKey.trim().length > 0,
-      }));
+      const [nextSavedProviders, nextCurrentConfig] = await Promise.all([
+        refreshSavedProvidersSnapshot(),
+        onRefreshCurrentConfig(),
+      ]);
+      if (!applyDraftForProvider(providerKey, nextSavedProviders, nextCurrentConfig)) {
+        setEditingProviderId(providerKey);
+        setDraft((current) => ({
+          ...current,
+          providerKey,
+          apiKey: "",
+          apiKeyConfigured: current.apiKeyConfigured || draft.apiKey.trim().length > 0,
+        }));
+      }
       setNotice(result);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "保存模型配置失败");
