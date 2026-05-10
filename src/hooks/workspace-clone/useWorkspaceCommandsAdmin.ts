@@ -16,6 +16,7 @@ import type {
 } from "../../components/workspace-clone/workspaceCloneTypes";
 
 const EMPTY_WORKSPACE_SLASH_COMMAND_DRAFT: WorkspaceSlashCommandDraftInput = {
+  command: "/command",
   name: "",
   description: "",
   instruction: "",
@@ -147,8 +148,9 @@ export function useWorkspaceCommandsAdmin() {
     clearCommandStatus();
     setEditingCommandId(commandId);
     setCommandDraft({
+      command: target.command,
       name: target.name,
-      description: target.description,
+      description: target.instruction || target.description,
       instruction: target.instruction,
     });
     setCommandEditorOpen(true);
@@ -186,30 +188,35 @@ export function useWorkspaceCommandsAdmin() {
   }, [activeSlashCommandId, customSlashCommands, editingCommandId, persistSlashCommands]);
 
   const handleSaveSlashCommandDraft = useCallback(async () => {
+    const command = commandDraft.command.trim();
     const name = commandDraft.name.trim();
     const description = commandDraft.description.trim();
-    const instruction = commandDraft.instruction.trim();
 
     if (!name) {
       setCommandError("请填写命令名称");
       return;
     }
 
-    if (!instruction) {
-      setCommandError("请填写命令指令内容");
+    if (!command) {
+      setCommandError("请填写命令值");
+      return;
+    }
+
+    if (!description) {
+      setCommandError("请填写命令说明");
       return;
     }
 
     const record = mapWorkspaceSlashCommandRecord({
       id: editingCommandId || createWorkspaceSlashCommandId(),
       command: createUniqueWorkspaceSlashCommandValue({
-        name,
+        value: command,
         existingCommands: slashCommands,
         excludeId: editingCommandId,
       }),
       name,
       description,
-      instruction,
+      instruction: description,
     });
     const nextCommands = editingCommandId
       ? customSlashCommands.map((item) => (item.id === editingCommandId ? record : item))

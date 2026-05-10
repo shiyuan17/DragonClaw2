@@ -1,7 +1,7 @@
 ﻿# DragonClaw - 开发任务总表 (AI 开发规范版)
 
 ## Phase 5.68.1: Workspace Composer Pills 文案收敛
-- [ ] 将 `workspace-clone` composer 的场景 / 邮箱 / 命令 / 工作目录入口收敛为紧凑图标按钮，修复工作目录菜单遮挡；邮箱已绑定态与邮箱绑定弹窗均改为对应 provider 图标语义，模型 pill 去掉“模型”前缀但保留当前模型名称，仅改前端渲染层与样式，不修改任何 Tauri / Gateway / `invoke()` 契约。
+- [x] 将 `workspace-clone` composer 的场景 / 邮箱 / 命令 / 工作目录入口收敛为紧凑图标按钮，修复工作目录菜单遮挡；邮箱已绑定态与邮箱绑定弹窗均改为对应 provider 图标语义，模型 pill 去掉“模型”前缀但保留当前模型名称，仅改前端渲染层与样式，不修改任何 Tauri / Gateway / `invoke()` 契约。
 
 ## Phase 5.15.11b: Workspace Composer 邮箱入口已绑定文案收敛
 - [x] 将 `workspace-clone` composer 邮箱入口的已绑定态文案从“邮箱 + 服务商名”收敛为直接显示绑定邮箱账号，仅改前端渲染层，不改任何 Tauri / Gateway / `invoke()` 契约。
@@ -123,9 +123,9 @@
 
 ## Phase 5.42: Workspace Command Modal Simplification and Editor Refresh
 - [ ] 简化 `workspace-clone` 命令弹窗为单列表结构，并将新增/编辑命令改为参考图样式的独立居中表单弹窗，保持现有 slash command 行为与 `invoke()` 契约不变。
-- [ ] 收敛命令编辑弹窗字段：将“命令值”改为可编辑输入，移除底部独立“说明 / 命令指令”区块，并补足 footer 按钮与分割线之间的留白，不改任何 `invoke()` 或后端命令契约。
-- [ ] 删除新建命令弹窗里“命令值”输入框下方的冗余预览条，仅保留单个可编辑输入，不改任何 slash command 保存契约。
-- [ ] 将 `workspace-clone` 命令弹窗标题改为全中文文案，并优化命令列表中“系统 / 自定义”类型 tag 的位置、层级与胶囊样式，限定为前端渲染层与样式层调整，不改任何 `invoke()`、事件处理或后端契约。
+- [x] 收敛命令编辑弹窗字段：将“命令值”改为可编辑输入，移除底部独立“说明 / 命令指令”区块，并补足 footer 按钮与分割线之间的留白，不改任何 `invoke()` 或后端命令契约。
+- [x] 删除新建命令弹窗里“命令值”输入框下方的冗余预览条，仅保留单个可编辑输入，不改任何 slash command 保存契约。
+- [x] 将 `workspace-clone` 命令弹窗标题改为全中文文案，并优化命令列表中“系统 / 自定义”类型 tag 的位置、层级与胶囊样式，限定为前端渲染层与样式层调整，不改任何 `invoke()`、事件处理或后端契约。
 
 ## Phase 5.40: Large Module Split
 - [ ] Split homepage chat, workspace ready-page controllers, and channel backend into smaller internal modules without changing Tauri command signatures or frontend invoke contracts.

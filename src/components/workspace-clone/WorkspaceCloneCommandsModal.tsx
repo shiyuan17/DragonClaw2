@@ -3,7 +3,6 @@ import { Modal } from "../ui/Modal";
 import { MAIN_AGENT_DISPLAY_NAME } from "../../data/agencyRoster";
 import { WORKSPACE_COMMAND_ITEMS } from "./workspaceCloneData";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
-import { createUniqueWorkspaceSlashCommandValue } from "./workspaceCloneSlashCommands";
 import type {
   WorkspaceSlashCommandDefinition,
   WorkspaceSlashCommandDraftInput,
@@ -86,16 +85,6 @@ export function WorkspaceCloneCommandsModal({
     );
   }, [mergedItems, normalizedQuery]);
 
-  const commandPreview = useMemo(
-    () =>
-      createUniqueWorkspaceSlashCommandValue({
-        name: draft.name || "command",
-        existingCommands: items,
-        excludeId: editingCommandId,
-      }),
-    [draft.name, editingCommandId, items],
-  );
-
   const showSearchEmpty = !loading && normalizedQuery.length > 0 && filteredItems.length === 0;
   const showGlobalEmpty = !loading && normalizedQuery.length === 0 && mergedItems.length === 0;
 
@@ -111,8 +100,8 @@ export function WorkspaceCloneCommandsModal({
         <div className="workspace-resource-modal workspace-command-modal">
           <div className="workspace-resource-modal__header">
             <div>
-              <h3>{agentName || MAIN_AGENT_DISPLAY_NAME} / Slash Commands</h3>
-              <p>全局共享命令会作用于所有聊天。列表统一展示系统命令与自定义命令，新增和编辑在独立表单中完成。</p>
+              <h3>{agentName || MAIN_AGENT_DISPLAY_NAME} / 命令管理</h3>
+              <p>全局共享命令会作用于所有聊天。这里统一展示系统命令与自定义命令，新增和编辑都在独立表单中完成。</p>
             </div>
             <div className="workspace-resource-modal__header-actions">
               <button
@@ -193,6 +182,10 @@ export function WorkspaceCloneCommandsModal({
                   const isBuiltin = item.source === "builtin";
                   const summary = getCommandSummary(item);
                   const showName = item.name.trim() && item.name.trim() !== summary;
+                  const sourceToneClass =
+                    item.source === "builtin"
+                      ? "workspace-command-modal__tag--builtin"
+                      : "workspace-command-modal__tag--custom";
 
                   return (
                     <div
@@ -209,17 +202,21 @@ export function WorkspaceCloneCommandsModal({
                         <div className="workspace-command-modal__row-main is-static">
                           <div className="workspace-command-modal__row-copy">
                             <div className="workspace-command-modal__row-head">
-                              <strong>{item.command}</strong>
-                              <div className="workspace-command-modal__meta">
-                                <span className="workspace-command-modal__tag">{getCommandSourceLabel(item.source)}</span>
-                                {isActive ? (
-                                  <span className="workspace-command-modal__tag workspace-command-modal__tag--active">
-                                    已启用
+                              <div className="workspace-command-modal__command-line">
+                                <strong>{item.command}</strong>
+                                <div className="workspace-command-modal__meta">
+                                  <span className={`workspace-command-modal__tag ${sourceToneClass}`}>
+                                    {getCommandSourceLabel(item.source)}
                                   </span>
-                                ) : null}
+                                  {isActive ? (
+                                    <span className="workspace-command-modal__tag workspace-command-modal__tag--active">
+                                      已启用
+                                    </span>
+                                  ) : null}
+                                </div>
                               </div>
+                              {showName ? <span className="workspace-command-modal__row-name">{item.name}</span> : null}
                             </div>
-                            {showName ? <span className="workspace-command-modal__row-name">{item.name}</span> : null}
                             <p>{summary}</p>
                           </div>
                         </div>
@@ -233,17 +230,23 @@ export function WorkspaceCloneCommandsModal({
                           >
                             <div className="workspace-command-modal__row-copy">
                               <div className="workspace-command-modal__row-head">
-                                <strong>{item.command}</strong>
-                                <div className="workspace-command-modal__meta">
-                                  <span className="workspace-command-modal__tag">{getCommandSourceLabel(item.source)}</span>
-                                  {isActive ? (
-                                    <span className="workspace-command-modal__tag workspace-command-modal__tag--active">
-                                      已启用
+                                <div className="workspace-command-modal__command-line">
+                                  <strong>{item.command}</strong>
+                                  <div className="workspace-command-modal__meta">
+                                    <span className={`workspace-command-modal__tag ${sourceToneClass}`}>
+                                      {getCommandSourceLabel(item.source)}
                                     </span>
-                                  ) : null}
+                                    {isActive ? (
+                                      <span className="workspace-command-modal__tag workspace-command-modal__tag--active">
+                                        已启用
+                                      </span>
+                                    ) : null}
+                                  </div>
                                 </div>
+                                {showName ? (
+                                  <span className="workspace-command-modal__row-name">{item.name}</span>
+                                ) : null}
                               </div>
-                              {showName ? <span className="workspace-command-modal__row-name">{item.name}</span> : null}
                               <p>{summary}</p>
                             </div>
                           </button>
@@ -287,7 +290,7 @@ export function WorkspaceCloneCommandsModal({
           <div className="workspace-command-editor-modal__header">
             <div>
               <h3>{editingCommandId ? "编辑命令" : "新建命令"}</h3>
-              <p>将常用的提示词和工作流整理成可复用的 Slash Command，后续在聊天输入框中可以快速调用。</p>
+              <p>把常用提示词和固定流程整理成可复用的 Slash Command，后续在聊天输入框里就能快速调用。</p>
             </div>
             <button
               type="button"
@@ -306,35 +309,37 @@ export function WorkspaceCloneCommandsModal({
                 className="workspace-command-modal__input"
                 type="text"
                 value={draft.name}
-                placeholder="例如：提取"
+                placeholder="例如：提示词优化"
                 onChange={(event) => onDraftChange({ ...draft, name: event.target.value })}
                 disabled={saving}
               />
             </label>
 
             <label className="workspace-command-modal__field">
-              <span>描述</span>
+              <span>描述 / 命令指令</span>
               <textarea
                 className="workspace-command-modal__textarea workspace-command-modal__textarea--compact"
                 value={draft.description}
-                placeholder="简短说明这个命令会做什么，方便在列表和联想中快速识别。"
-                onChange={(event) => onDraftChange({ ...draft, description: event.target.value })}
+                placeholder="输入这条命令要执行的提示词或说明内容，保存后会沿用现有 Slash Command 行为。"
+                onChange={(event) =>
+                  onDraftChange({
+                    ...draft,
+                    description: event.target.value,
+                    instruction: event.target.value,
+                  })
+                }
                 disabled={saving}
               />
             </label>
 
             <label className="workspace-command-modal__field">
               <span>命令值</span>
-              <div className="workspace-command-modal__preview">{commandPreview}</div>
-            </label>
-
-            <label className="workspace-command-modal__field">
-              <span>说明 / 命令指令</span>
-              <textarea
-                className="workspace-command-modal__textarea workspace-command-modal__textarea--editor"
-                value={draft.instruction}
-                placeholder="输入发送前注入给模型的隐藏指令，例如处理目标、输出格式、边界条件或固定步骤。"
-                onChange={(event) => onDraftChange({ ...draft, instruction: event.target.value })}
+              <input
+                className="workspace-command-modal__input"
+                type="text"
+                value={draft.command}
+                placeholder="例如：/prompt-optimize"
+                onChange={(event) => onDraftChange({ ...draft, command: event.target.value })}
                 disabled={saving}
               />
             </label>

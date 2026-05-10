@@ -1,5 +1,9 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+
 import { Modal } from "../ui/Modal";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
+import { resolveWorkspaceMailProviderIcon } from "./workspaceCloneMailProviderIcons";
 
 interface WorkspaceCloneEmailBindingModalProps {
   show: boolean;
@@ -62,6 +66,116 @@ export function WorkspaceCloneEmailBindingModal({
   onCustomImapTlsChange,
   onCustomSmtpSecureChange,
 }: WorkspaceCloneEmailBindingModalProps) {
+  const [providerMenuOpen, setProviderMenuOpen] = useState(false);
+  const [providerMenuRect, setProviderMenuRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const providerTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const providerMenuRef = useRef<HTMLDivElement | null>(null);
+  const providerLabel = useMemo(
+    () => providerOptions.find((option) => option.value === provider)?.label || "请选择邮箱类型",
+    [provider, providerOptions],
+  );
+
+  useEffect(() => {
+    if (!providerMenuOpen) {
+      return undefined;
+    }
+
+    const updateProviderMenuRect = () => {
+      const rect = providerTriggerRef.current?.getBoundingClientRect();
+      if (!rect) {
+        return;
+      }
+      setProviderMenuRect({
+        top: rect.bottom + 8,
+        left: rect.left,
+        width: Math.max(rect.width, 260),
+      });
+    };
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (providerTriggerRef.current?.contains(target) || providerMenuRef.current?.contains(target)) {
+        return;
+      }
+      setProviderMenuOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setProviderMenuOpen(false);
+      }
+    };
+
+    updateProviderMenuRect();
+    window.addEventListener("resize", updateProviderMenuRect);
+    window.addEventListener("scroll", updateProviderMenuRect, true);
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("resize", updateProviderMenuRect);
+      window.removeEventListener("scroll", updateProviderMenuRect, true);
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [providerMenuOpen]);
+
+  useEffect(() => {
+    if (!show || loading || saving) {
+      setProviderMenuOpen(false);
+    }
+  }, [loading, saving, show]);
+
+  const providerMenu = providerMenuOpen && providerMenuRect
+    ? createPortal(
+        <div
+          ref={providerMenuRef}
+          className="workspace-email-modal__provider-menu"
+          style={{
+            top: `${providerMenuRect.top}px`,
+            left: `${providerMenuRect.left}px`,
+            width: `${providerMenuRect.width}px`,
+          }}
+          role="listbox"
+          aria-label="邮箱类型"
+        >
+          <button
+            type="button"
+            className={`workspace-email-modal__provider-option ${provider === "" ? "is-active" : ""}`}
+            role="option"
+            aria-selected={provider === ""}
+            onClick={() => {
+              onProviderChange("");
+              setProviderMenuOpen(false);
+            }}
+          >
+            <span className="workspace-email-modal__provider-option-icon-shell">
+              <img className="workspace-email-modal__provider-option-icon" src={resolveWorkspaceMailProviderIcon("")} alt="" aria-hidden="true" />
+            </span>
+            <span>请选择邮箱类型</span>
+          </button>
+          {providerOptions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={`workspace-email-modal__provider-option ${provider === option.value ? "is-active" : ""}`}
+              role="option"
+              aria-selected={provider === option.value}
+              onClick={() => {
+                onProviderChange(option.value);
+                setProviderMenuOpen(false);
+              }}
+            >
+              <span className="workspace-email-modal__provider-option-icon-shell">
+                <img className="workspace-email-modal__provider-option-icon" src={resolveWorkspaceMailProviderIcon(option.value)} alt="" aria-hidden="true" />
+              </span>
+              <span>{option.label}</span>
+            </button>
+          ))}
+        </div>,
+        document.body,
+      )
+    : null;
+
   return (
     <Modal
       show={show}
@@ -102,18 +216,29 @@ export function WorkspaceCloneEmailBindingModal({
           >
             <label className="workspace-email-modal__field">
               <span>邮箱类型 <em>*</em></span>
-              <select
-                value={provider}
-                onChange={(event) => onProviderChange(event.target.value)}
+              <button
+                ref={providerTriggerRef}
+                type="button"
+                className={`workspace-email-modal__provider-trigger ${providerMenuOpen ? "is-open" : ""}`}
+                onClick={() => setProviderMenuOpen((current) => !current)}
                 disabled={loading || saving}
+                aria-expanded={providerMenuOpen}
+                aria-haspopup="listbox"
               >
-                <option value="">请选择邮箱类型</option>
-                {providerOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+                <span className="workspace-email-modal__provider-trigger-copy">
+                  <span className="workspace-email-modal__provider-trigger-icon-shell">
+                    <img className="workspace-email-modal__provider-trigger-icon" src={resolveWorkspaceMailProviderIcon(provider)} alt="" aria-hidden="true" />
+                  </span>
+                  <span>{providerLabel}</span>
+                </span>
+                <WorkspaceCloneIcon
+                  name="chevron"
+                  size={12}
+                  strokeWidth={2}
+                  className={`workspace-email-modal__provider-trigger-caret ${providerMenuOpen ? "is-open" : ""}`}
+                />
+              </button>
+              {providerMenu}
             </label>
 
             <label className="workspace-email-modal__field">
@@ -143,7 +268,7 @@ export function WorkspaceCloneEmailBindingModal({
               <section className="workspace-email-modal__custom">
                 <div className="workspace-email-modal__custom-head">
                   <strong>自定义 IMAP / SMTP 参数</strong>
-                  <p>仅在“其他邮箱”下展示，用于兼容非预设邮箱服务商。</p>
+                  <p>仅在“其他邮箱”下显示，用于兼容非预设邮箱服务商。</p>
                 </div>
 
                 <div className="workspace-email-modal__custom-grid">
