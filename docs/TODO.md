@@ -6,6 +6,9 @@
 ## Phase 5.55.2: Startup 单实例自愈与卡死修复
 - [ ] 修复启动偶发卡在 `正在检查环境 / launching` 的问题，将生命周期快照改为非阻塞读取，在启动前收敛 launcher-owned OpenClaw 残留进程，补齐 `service-starting` 轮询/超时兜底，并保持现有 Tauri command / `invoke()` 契约与后台常驻策略不变。
 
+## Phase 5.55.3: 启动 RPC 探测超时竞态热修
+- [ ] 修复 `wait_for_service_ready()` 在总启动超时边界内被最后一次阻塞 RPC probe 误导为失败的问题：单次 probe timeout 不得超过剩余启动预算，probe 返回后和最终 timeout 分支前都要再次确认 authoritative `gateway ready` 日志 + 端口监听真相，并在“probe 期间晚到 ready”时保留诊断日志且不改任何 Tauri command / `invoke()` 契约。
+
 ## Phase 5.56: Workspace Task Card and Editor Refresh
 - [ ] Rebuild the `workspace-clone` task drawer cards and task editor modal into the new compact layout, remove the inline recent-runs block, keep task titles human-readable via one shared display-title resolver, preserve manual `enabled / disabled` filter selection, correct the task dropdown menu styling, show concrete trigger timing for task loops, add a running-only animated indicator in the list without affecting the title line, bridge manual `Run now` with an optimistic running state until real run signals arrive, pass accepted `cron.run` `runId` values into the existing live timeline state, and make manual `Run now` open an independent frontend task-run conversation that first shows a system `正在执行中` reply, then attaches to the real OpenClaw result session or a terminal no-session fallback without changing real cron / Gateway / `invoke()` contracts.
 
@@ -21,13 +24,14 @@
 - [ ] Phase 5.57.1: fix the `workspace-clone` runtime log drawer so log cards render visible title/summary text again, the log filter row stays readable at drawer width, and the right drawer no longer feels visually clipped, without changing any Tauri / `invoke()` contracts.
 
 ## Phase 5.58: Workspace 历史会话标题恢复
-- [ ] Restore missing `workspace-clone` history session titles so each history card shows a human-readable conversation title instead of only time, repair empty SQLite cache titles from cached messages, keep history-drawer title display in sync with the agent secondary list, and preserve existing Tauri / Gateway / `invoke()` contracts.
+- [ ] Restore missing `workspace-clone` history session titles so each history card shows a human-readable conversation title instead of only time, repair empty SQLite cache titles from cached messages, immediately sync a new real session title from the first visible user message before `chat.final`, keep history-drawer title display in sync with the agent secondary list, and preserve existing Tauri / Gateway / `invoke()` contracts.
 
 ## Phase 5.58: Workspace 聊天文件侧栏
 - [ ] Add a `文件` entry to the `workspace-clone` chat more-menu, open a right-side file drawer for the current session, extract user and assistant file or link targets from chat messages, support `全部 / 网站 / 文档 / excel / ppt / 图片 / 视频 / 音频` filters, and open targets directly without changing existing Tauri commands, Gateway contracts, or `invoke()` signatures.
 
 ## Phase 5.59: Workspace 侧边栏产品落地项开放
 - [ ] Open the `workspace-clone` sidebar `产品落地` item as a first-class menu entry, remove its muted placeholder styling, correct the touched sidebar copy, and replace the generic compact placeholder with a dedicated frontend-only product landing view without changing any Tauri / Gateway / `invoke()` contracts.
+- [ ] Phase 5.59.1: polish the `workspace-clone` `产品落地` page by syncing the remaining DragonClaw product delivery items, upgrading it into a hero + card-matrix + guidance layout, and keeping all Tauri / Gateway / `invoke()` contracts unchanged.
 
 ## Phase 5.58y: Windows 运行态 Logo 修复
 - [ ] 修复 Windows 运行态窗口/任务栏/托盘/安装产物图标一致性，统一主窗口与托盘共享 `src-tauri/icons/icon.ico` 对应的默认图标来源，并保持现有 Tauri command / `invoke()` 契约不变。
@@ -37,6 +41,15 @@
 
 ## Phase 5.61: PostHog 基础产品监控接入
 - [ ] Integrate baseline PostHog product analytics into the real `workspace-clone` frontend flow with manual events only, default-enabled local opt-out, a lightweight workspace settings toggle, and no Tauri / Gateway / `invoke()` contract changes.
+
+## Phase 5.62: Windows 无 bash 的 SkillHub 技能安装兜底
+- [ ] 修复 Windows 无 `bash` 时 SkillHub 技能安装失败的问题，为 onboarding 推荐技能和 `workspace-clone` 技能市场统一增加基于 Python 的原生 fallback，保持现有 Tauri command / `invoke()` 契约不变，并在运行时不可用时返回明确前置条件提示。
+
+## Phase 5.63: 全仓乱码文案排查与编码门禁补强
+- [ ] 修复 `workspace-clone` 与 onboarding 已确认的高曝光乱码文案，并补强 `check:encoding` 门禁以拦截同类 mojibake 字符串继续进入仓库，不改任何 Tauri command / `invoke()` 契约。
+
+## Phase 5.64: Workspace 模型配置卡片回刷与显示名本地化
+- [ ] 修复 `workspace-clone` 模型配置弹窗中新建配置后顶部卡片不立即回刷的问题，并将 provider `displayName` 从 `openclaw.json` 迁出到 DragonClaw 本地状态持久化，保持现有 Tauri command / `invoke()` 契约与 OpenClaw provider JSON 支持字段不变。
 
 ## Phase 5.55: Startup Flow Single Source and Persistent Service
 - [ ] Unify startup into the React guide/setup surface, remove the static Booting splash and duplicate OpenClaw startup overlay, keep homepage chat from replaying the normal startup checklist, and leave OpenClaw running across DragonClaw quits for fast reuse without changing Tauri command or `invoke()` contracts.
@@ -49,6 +62,7 @@
 
 ## Phase 5.52: Workspace 真实任务管理接入
 - [ ] 将 `workspace-clone` 右侧任务抽屉切换到真实 OpenClaw `cron` 数据，支持真实列表、编辑、启停、删除、立即运行和最近运行结果展示，不新增任务创建入口，也不改动现有 Tauri command / `invoke()` 契约。
+- [ ] Phase 5.52 扩展：将左侧栏 `任务`（`schedule`）从占位页切到真实定时任务管理页，复用现有 cron 列表与操作，保留 chat 里的右侧任务抽屉，不新增创建流程，也不改动 Tauri / Gateway / `invoke()` 契约。
 ## Phase 5.42a: Security Hotfix
 - [ ] 修复邮箱绑定 `.env` 注入、gateway token 暴露边界、敏感凭据落盘与安装/插件完整性校验问题，不改现有 Tauri command 签名或 `invoke()` 契约。
 
