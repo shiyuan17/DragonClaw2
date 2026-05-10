@@ -1,7 +1,22 @@
 ﻿# DragonClaw - 开发任务总表 (AI 开发规范版)
 
+## Phase 5.68.1: Workspace Composer Pills 文案收敛
+- [ ] 将 `workspace-clone` composer 的场景 / 邮箱 / 命令 / 工作目录入口收敛为紧凑图标按钮，修复工作目录菜单遮挡；邮箱已绑定态与邮箱绑定弹窗均改为对应 provider 图标语义，模型 pill 去掉“模型”前缀但保留当前模型名称，仅改前端渲染层与样式，不修改任何 Tauri / Gateway / `invoke()` 契约。
+
+## Phase 5.15.11b: Workspace Composer 邮箱入口已绑定文案收敛
+- [ ] 将 `workspace-clone` composer 邮箱入口的已绑定态文案从“邮箱 + 服务商名”收敛为直接显示绑定邮箱账号，仅改前端渲染层，不改任何 Tauri / Gateway / `invoke()` 契约。
+
+## Phase 5.70: Workspace 聊天附件上传对齐 OpenClaw
+- [ ] 为 `workspace-clone` 聊天输入框补齐真实附件能力，对齐 OpenClaw `chat.send + attachments[]` 契约，支持拖拽/点选多文件上传、紧凑附件卡片展示、纯附件发送，以及用户消息中的图片/文档/代码附件预览，不修改任何 Tauri / Gateway / `invoke()` 契约。
+- [ ] Phase 5.70.1: 将 `workspace-clone` composer 的附件入口前移到 pills 首位，并收敛为纯图标按钮，不显示“附件”文字，保持现有附件选择/发送链路不变。
+
+## Phase 5.69: Workspace 欢迎态与会话级工作目录选择
+- [ ] 将 `workspace-clone` 新建聊天空态改为 logo + `DragonClaw,让Ai更简单` hero，并为欢迎态与 composer 共用一套会话级“选择工作目录”入口，通过前端隐藏上下文注入工作目录而不改任何 Tauri / Gateway / `invoke()` 契约。
+- [ ] Phase 5.69.1: 去掉 `workspace-clone` 欢迎态 hero 外层容器框，并让 logo / 文案 / 工作目录入口在聊天内容区域内垂直居中，限定为前端布局与样式微调，不改任何 Tauri / Gateway / `invoke()` 契约。
+
 ## Phase 5.68: Workspace Composer Action Icon Refresh
 - [ ] 将 `workspace-clone` 聊天 composer 的 `新对话` 入口改为更明确的图标操作，并把发送按钮替换为更符合发送语义的标准图标，限定为前端渲染层与样式微调，不改任何 Tauri / Gateway / `invoke()` 契约。
+- [ ] 收敛 composer 已选命令/技能 tag 的移除交互：默认不显示单独关闭图标，鼠标 hover 时将前置图标切换为关闭图标，并保持现有清除行为不变。
 
 ## Phase 5.55.1: Gateway RPC Readiness Grace
 - [ ] Prevent false OpenClaw startup failure while gateway sidecars are warming up by separating true `gateway ready` log detection from HTTP listening, widening RPC probe timeouts, and preserving persistent-service reuse without changing Tauri command or `invoke()` contracts.
@@ -108,6 +123,9 @@
 
 ## Phase 5.42: Workspace Command Modal Simplification and Editor Refresh
 - [ ] 简化 `workspace-clone` 命令弹窗为单列表结构，并将新增/编辑命令改为参考图样式的独立居中表单弹窗，保持现有 slash command 行为与 `invoke()` 契约不变。
+- [ ] 收敛命令编辑弹窗字段：将“命令值”改为可编辑输入，移除底部独立“说明 / 命令指令”区块，并补足 footer 按钮与分割线之间的留白，不改任何 `invoke()` 或后端命令契约。
+- [ ] 删除新建命令弹窗里“命令值”输入框下方的冗余预览条，仅保留单个可编辑输入，不改任何 slash command 保存契约。
+- [ ] 将 `workspace-clone` 命令弹窗标题改为全中文文案，并优化命令列表中“系统 / 自定义”类型 tag 的位置、层级与胶囊样式，限定为前端渲染层与样式层调整，不改任何 `invoke()`、事件处理或后端契约。
 
 ## Phase 5.40: Large Module Split
 - [ ] Split homepage chat, workspace ready-page controllers, and channel backend into smaller internal modules without changing Tauri command signatures or frontend invoke contracts.

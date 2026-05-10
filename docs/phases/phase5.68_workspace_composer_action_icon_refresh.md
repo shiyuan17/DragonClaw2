@@ -1,12 +1,14 @@
 # Phase 5.68: Workspace Composer Action Icon Refresh
 
 ## Summary
+- Add a composer tag interaction polish: selected command/skill tags should no longer show a separate trailing close icon by default, and instead swap the leading icon to a close affordance on hover/focus.
 - 调整 `workspace-clone` 聊天 composer 右侧操作区的图标语义。
 - 将原本的文字型 `新对话` 入口收敛为更明确的图标按钮。
 - 将发送按钮从偏导航语义的右箭头替换为标准发送图标。
 - 本轮仅修改前端渲染层与必要样式，不改任何会话重置、消息发送、Tauri command、Gateway 或 `invoke()` 契约。
 
 ## Implementation Changes
+- Update the selected command/skill tag rendering in `WorkspaceCloneComposer.tsx` so the leading icon becomes the only remove affordance and visually swaps to `x` on hover/focus.
 - 文档先行：
   - 在 `docs/TODO.md` 记录本次 UI 微调任务。
   - 新增本 Phase 文档，说明范围与约束。

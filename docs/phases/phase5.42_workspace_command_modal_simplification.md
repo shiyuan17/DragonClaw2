@@ -11,7 +11,11 @@ The current `workspace-clone` slash command modal still uses a split layout with
 
 - Simplify the command management popup into a single list.
 - Use small inline tags to distinguish command source instead of separate list sections.
+- Replace the modal title's English `Slash Commands` copy with Chinese UI text that matches the rest of the workspace.
 - Move create/edit into a dedicated centered editor modal that follows the provided visual reference.
+- Let the command value stay editable and remove the extra helper preview row under that input.
+- Remove the extra bottom `说明 / 命令指令` block by folding that content into the remaining form copy.
+- Add spacing between the footer divider and the cancel/create actions.
 - Keep all command loading, saving, activation, and message transport behavior unchanged.
 - Limit the work to frontend render and styling only.
 
@@ -23,22 +27,28 @@ The current `workspace-clone` slash command modal still uses a split layout with
 - Show source tags for each command row: `系统` or `自定义`.
 - Keep builtin rows read-only.
 - Keep custom rows editable/deletable and still clickable for activation.
+- Keep the title and helper copy fully localized in Chinese.
 - Replace the inline editor panel with a dedicated nested modal.
 
 2. Refresh the add/edit command UI
 - Reuse the existing draft state and save/cancel handlers.
 - Present the form in a compact single-column dialog.
-- Keep the existing fields and generated command preview semantics unchanged.
+- Replace the read-only command preview with an editable command-value input that still saves through the existing slash-command schema.
+- Remove the redundant normalized preview row below the command-value input.
+- Fold the former instruction content into the remaining description field so the modal no longer needs a second large textarea.
+- Relax the footer spacing so the action buttons no longer sit directly against the separator line.
 
 3. Update `workspace-clone.css`
 - Remove command-modal styles that only exist for the old split grid layout.
 - Add unified list row, tag, and editor dialog styles using existing `--dc-*` and `--dc-workspace-*` tokens.
+- Reposition the source tags so they stay visually attached to the command identity instead of floating near the row action buttons.
 - Keep mobile behavior single-column and usable at narrow widths.
 
 ## Acceptance
 
 - The command popup shows one list rather than separate builtin/custom sections.
 - Every command row displays a source tag.
+- The popup title no longer shows the English `Slash Commands` text.
 - The active command still highlights correctly.
 - Builtin rows remain read-only and do not show edit/delete actions.
 - Clicking `新建命令` or `编辑` opens a dedicated centered form modal.
