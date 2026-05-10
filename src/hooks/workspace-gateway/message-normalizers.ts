@@ -242,8 +242,26 @@ export function getSessionGenericTitle(sessionKey: string) {
   return sessionKey.endsWith(":main") ? "\u4e3b\u4f1a\u8bdd" : "\u5386\u53f2\u4f1a\u8bdd";
 }
 
-function isSessionGenericTitle(title: string, sessionKey: string) {
+export function isSessionGenericTitle(title: string, sessionKey: string) {
   return title === getSessionGenericTitle(sessionKey);
+}
+
+export function hasStableMeaningfulSessionTitle(sessionKey: string, value?: string | null) {
+  const normalized = sanitizeMeaningfulSessionTitle(value);
+  return Boolean(normalized && !isSessionGenericTitle(normalized, sessionKey));
+}
+
+export function shouldReplaceSessionHistoryTitle(
+  sessionKey: string,
+  currentTitle?: string | null,
+  nextTitle?: string | null,
+) {
+  const normalizedNextTitle = sanitizeMeaningfulSessionTitle(nextTitle);
+  if (!normalizedNextTitle) {
+    return false;
+  }
+
+  return !hasStableMeaningfulSessionTitle(sessionKey, currentTitle);
 }
 
 export function resolveSessionFallbackTitle(session: WorkspaceSessionTitleSource) {
@@ -301,6 +319,23 @@ export function resolveSessionHistoryTitleDetails(
     title: resolveSessionFallbackTitle(session),
     source: "fallback",
   };
+}
+
+export function resolveStableSessionHistoryTitleDetails(
+  session: WorkspaceSessionTitleSource,
+  params?: {
+    currentTitle?: string | null;
+    cachedTitle?: string | null;
+    memoryMessages?: unknown[];
+    persistedMessages?: unknown[];
+  },
+): { title: string; source: WorkspaceSessionHistoryTitleSource } {
+  const currentTitle = sanitizeMeaningfulSessionTitle(params?.currentTitle);
+  if (currentTitle && !isSessionGenericTitle(currentTitle, session.key)) {
+    return { title: currentTitle, source: "cache" };
+  }
+
+  return resolveSessionHistoryTitleDetails(session, params);
 }
 
 export function buildSessionHistorySubtitle(session: WorkspaceGatewaySessionRow) {

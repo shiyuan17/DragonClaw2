@@ -8,15 +8,18 @@ import type {
 } from "../../components/workspace-clone/workspaceCloneTypes";
 import { filterAgentSessions } from "./client";
 import {
-  resolveSessionHistoryTitleDetails,
+  resolveStableSessionHistoryTitleDetails,
   sanitizeMeaningfulSessionTitle,
+  shouldReplaceSessionHistoryTitle,
 } from "./message-normalizers";
+import { applyHistoryTitleCacheUpdate } from "./history-title-state";
 import { parseCachedMessagesJson, sortSessionsByUpdatedAt } from "./session-cache";
 
 export async function loadWorkspaceHistoryTitles(params: {
   agentId: string;
   connected: boolean;
   sessionsResult: WorkspaceGatewaySessionsListResult | null;
+  historyTitleCache: Record<string, string>;
   sessionKeys?: string[];
   historyTitleFetches: Set<string>;
   setHistoryTitleCache: Dispatch<SetStateAction<Record<string, string>>>;
@@ -53,7 +56,10 @@ export async function loadWorkspaceHistoryTitles(params: {
       }
 
       cachedTitleKeys.add(row.sessionKey);
-      if (next[row.sessionKey] === cachedTitle) {
+      if (
+        next[row.sessionKey] === cachedTitle
+        || !shouldReplaceSessionHistoryTitle(row.sessionKey, next[row.sessionKey], cachedTitle)
+      ) {
         return;
       }
 
@@ -83,16 +89,17 @@ export async function loadWorkspaceHistoryTitles(params: {
       params.updateSessionHistoryCache(session.key, persistedMessages);
     }
 
-    const persistedTitle = resolveSessionHistoryTitleDetails(session, {
+    const persistedTitle = resolveStableSessionHistoryTitleDetails(session, {
+      currentTitle: params.historyTitleCache[session.key],
       cachedTitle: persistedRow.title,
       persistedMessages,
     });
 
-    params.setHistoryTitleCache((current) => (
-      current[session.key] === persistedTitle.title
-        ? current
-        : { ...current, [session.key]: persistedTitle.title }
-    ));
+    applyHistoryTitleCacheUpdate({
+      sessionKey: session.key,
+      nextTitle: persistedTitle.title,
+      setHistoryTitleCache: params.setHistoryTitleCache,
+    });
 
     if (persistedTitle.source === "fallback") {
       return;
@@ -129,16 +136,17 @@ export async function loadWorkspaceHistoryTitles(params: {
     params.historyTitleFetches.add(session.key);
     void params.loadSessionHistoryMessages(session.key, 40)
       .then((messages) => {
-        const nextTitle = resolveSessionHistoryTitleDetails(session, {
+        const nextTitle = resolveStableSessionHistoryTitleDetails(session, {
+          currentTitle: params.historyTitleCache[session.key],
           cachedTitle: cachedRowsBySessionKey.get(session.key)?.title,
           memoryMessages: messages,
         }).title;
 
-        params.setHistoryTitleCache((current) => (
-          current[session.key] === nextTitle
-            ? current
-            : { ...current, [session.key]: nextTitle }
-        ));
+        applyHistoryTitleCacheUpdate({
+          sessionKey: session.key,
+          nextTitle,
+          setHistoryTitleCache: params.setHistoryTitleCache,
+        });
 
         params.updateSessionHistoryCache(session.key, messages);
         return params.saveSessionHistoryCache(

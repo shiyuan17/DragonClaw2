@@ -17,8 +17,9 @@ import { isWorkspaceRawProcessEcho, sanitizeWorkspaceAssistantContent } from "..
 import type { CurrentConfig } from "../types";
 import { buildAgentRecentSessionsById } from "./workspace-gateway/agent-recent-sessions";
 import { buildCachedAgentsResult, parseCachedMessagesJson, sanitizeAgentsResult, serializeCachedMessages, sortSessionsByUpdatedAt, toAgentCachePayload } from "./workspace-gateway/session-cache";
-import { buildSessionHistoryItem, extractAgentIdFromSessionKey, extractLastMeaningfulMessageSummary, normalizeGatewayMessage, resolveAgentSessionKey, resolveSessionHistoryTitle, resolveSessionHistoryTitleDetails } from "./workspace-gateway/message-normalizers";
+import { buildSessionHistoryItem, extractAgentIdFromSessionKey, extractLastMeaningfulMessageSummary, normalizeGatewayMessage, resolveAgentSessionKey, resolveSessionHistoryTitleDetails, resolveStableSessionHistoryTitleDetails } from "./workspace-gateway/message-normalizers";
 import { loadWorkspaceHistoryTitles } from "./workspace-gateway/history-titles";
+import { applyHistoryTitleCacheUpdate, writeOptimisticSessionHistoryTitle } from "./workspace-gateway/history-title-state";
 import { buildTaskRunHistoryItem } from "./workspace-gateway/task-run-sessions";
 import { adoptWorkspaceActiveRunSession, bindWorkspaceTaskRunConversationToResult, clearWorkspaceActiveRunRefs, endWorkspaceActiveRun, ensureWorkspaceTaskRunConversationBound, initializeWorkspaceActiveRun } from "./workspace-gateway/task-run-bridge";
 import { useWorkspaceLocalSessionMessages } from "./workspace-gateway/useWorkspaceLocalSessionMessages";
@@ -29,7 +30,6 @@ import { shouldSkipMirroredWorkspaceLiveStep } from "./workspace-gateway/live-st
 import { captureWorkspaceChatMessageSent, type WorkspaceChatTelemetrySessionType } from "./workspace-gateway/chat-telemetry";
 import { buildLiveStepFromAgentEvent, buildPostToolThinkingStep, getPostToolThinkingStepId, isRecord, isTerminalLiveStepStatus, toFiniteTimestamp, toStringValue, type WorkspaceGatewayAgentEventPayload, type WorkspaceLiveStepDedupeEntry, type WorkspaceLiveStepEventSource, updateLiveStepList } from "./workspace-gateway/live-steps";
 import { formatClockTime } from "./workspace-gateway/time-formatters";
-
 interface UseWorkspaceGatewayChatOptions {
   running: boolean;
   servicePort: number;
@@ -86,6 +86,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
   const { localSessionMessagesByKey, appendLocalSessionSystemMessage, clearLocalSessionMessages } = useWorkspaceLocalSessionMessages();
   const configuredGatewayToken = gatewayToken?.trim() || "";
   const normalizedGatewayToken = configuredGatewayToken || fallbackGatewayToken.trim();
+  const historyTitleCacheRef = useRef<Record<string, string>>({});
   const sessionHistoryCacheRef = useRef<Record<string, unknown[]>>({});
   const clearPendingDisconnectError = useCallback(() => {
     if (disconnectErrorTimerRef.current) {
@@ -195,8 +196,9 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     }
   }, [agents, effectiveAgentsResult?.defaultId, selectedAgentId, selectedSessionKey]);
   useEffect(() => {
+    historyTitleCacheRef.current = historyTitleCache;
     sessionHistoryCacheRef.current = sessionHistoryCache;
-  }, [sessionHistoryCache]);
+  }, [historyTitleCache, sessionHistoryCache]);
   useEffect(() => {
     if (!running) {
       setFallbackGatewayToken("");
@@ -333,7 +335,6 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     return invoke<WorkspaceChatSessionCacheRow | null>("load_workspace_chat_session_cache", { sessionKey, agentId });
   }, []);
   const cachedAgentLastMessageById = useWorkspaceCachedAgentLastMessages(agents, loadPersistedSessionHistoryCache);
-
   const pruneSessionHistoryCache = useCallback(
     async (
       nextSessionsResult: WorkspaceGatewaySessionsListResult | null,
@@ -439,7 +440,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       const requestId = ++historyLoadSeqRef.current;
       const memoryCachedMessages = gatewaySessionKey ? sessionHistoryCacheRef.current[gatewaySessionKey] : undefined;
       let hasAnyCache = Array.isArray(memoryCachedMessages);
-      let existingCachedTitle: string | null = null;
+      let existingCachedTitle: string | null = gatewaySessionKey ? historyTitleCacheRef.current[gatewaySessionKey] ?? null : null;
 
       setHistoryLoading(false);
 
@@ -459,10 +460,14 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
             updateSessionHistoryCache(gatewaySessionKey, cachedMessages);
             hasAnyCache = true;
 
-            const restoredTitle = resolveSessionHistoryTitleDetails(sessionRow ?? { key: gatewaySessionKey, displayName: undefined, label: undefined }, { cachedTitle: cachedRow.title, persistedMessages: cachedMessages });
-            existingCachedTitle = restoredTitle.source === "fallback" ? null : restoredTitle.title;
+            const restoredTitle = resolveStableSessionHistoryTitleDetails(sessionRow ?? { key: gatewaySessionKey, displayName: undefined, label: undefined }, {
+              currentTitle: historyTitleCacheRef.current[gatewaySessionKey],
+              cachedTitle: cachedRow.title,
+              persistedMessages: cachedMessages,
+            });
+            existingCachedTitle = restoredTitle.title;
             if (restoredTitle.title) {
-              setHistoryTitleCache((current) => (current[gatewaySessionKey] === restoredTitle.title ? current : { ...current, [gatewaySessionKey]: restoredTitle.title }));
+              applyHistoryTitleCacheUpdate({ sessionKey: gatewaySessionKey, nextTitle: restoredTitle.title, setHistoryTitleCache });
             }
 
             if (restoredTitle.source !== "fallback" && cachedRow.title?.trim() !== restoredTitle.title) {
@@ -496,16 +501,13 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
 
         updateSessionHistoryCache(gatewaySessionKey, messages);
 
-        const nextTitle = resolveSessionHistoryTitle(
-          sessionRow ?? { key: gatewaySessionKey, displayName: undefined, label: undefined },
-          { cachedTitle: existingCachedTitle, memoryMessages: messages },
-        );
+        const nextTitle = resolveStableSessionHistoryTitleDetails(sessionRow ?? { key: gatewaySessionKey, displayName: undefined, label: undefined }, {
+          currentTitle: historyTitleCacheRef.current[gatewaySessionKey],
+          cachedTitle: existingCachedTitle,
+          memoryMessages: messages,
+        }).title;
         if (nextTitle) {
-          setHistoryTitleCache((current) => (
-            current[gatewaySessionKey] === nextTitle
-              ? current
-              : { ...current, [gatewaySessionKey]: nextTitle }
-          ));
+          applyHistoryTitleCacheUpdate({ sessionKey: gatewaySessionKey, nextTitle, setHistoryTitleCache });
         }
 
         await saveSessionHistoryCache(
@@ -966,10 +968,10 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     const agentIds = options?.agentIds?.length ? options.agentIds : selectedAgentId ? [selectedAgentId] : [];
     if (agentIds.length === 0) return;
     void Promise.all(agentIds.map((agentId) => loadWorkspaceHistoryTitles({
-      agentId, connected, sessionsResult, sessionKeys: options?.sessionKeysByAgentId?.[agentId], historyTitleFetches: historyTitleFetchesRef.current, setHistoryTitleCache,
+      agentId, connected, sessionsResult, historyTitleCache, sessionKeys: options?.sessionKeysByAgentId?.[agentId], historyTitleFetches: historyTitleFetchesRef.current, setHistoryTitleCache,
       loadSessionHistoryMessages, loadPersistedSessionHistoryCache, updateSessionHistoryCache, saveSessionHistoryCache,
     }))).catch(() => undefined);
-  }, [connected, loadPersistedSessionHistoryCache, loadSessionHistoryMessages, saveSessionHistoryCache, selectedAgentId, sessionsResult, updateSessionHistoryCache]);
+  }, [connected, historyTitleCache, loadPersistedSessionHistoryCache, loadSessionHistoryMessages, saveSessionHistoryCache, selectedAgentId, sessionsResult, updateSessionHistoryCache]);
 
   useEffect(() => { if (selectedAgentId && sessionsResult?.sessions.length) loadHistoryTitles({ agentIds: [selectedAgentId] }); }, [loadHistoryTitles, selectedAgentId, sessionsResult]);
 
@@ -1013,6 +1015,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
         preserveActiveRunSessionSwitch(gatewaySessionKey);
       }
       setSelectedAgentId(targetAgentId);
+      writeOptimisticSessionHistoryTitle({ sessionKey: gatewaySessionKey, agentId: targetAgentId, displayText: message, sessionsResult, historyTitleCacheRef, sessionHistoryCacheRef, setHistoryTitleCache, saveSessionHistoryCache });
       initializeActiveRun({
         runId,
         sessionKey: gatewaySessionKey,
@@ -1046,7 +1049,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       } finally {
         setSending(false);
       }
-    }, [clearActiveRunRefs, currentGatewaySessionKey, currentSessionKey, ensureTaskRunConversationBound, initializeActiveRun, preserveActiveRunSessionSwitch, selectedAgentId]);
+    }, [clearActiveRunRefs, currentGatewaySessionKey, currentSessionKey, ensureTaskRunConversationBound, initializeActiveRun, preserveActiveRunSessionSwitch, saveSessionHistoryCache, selectedAgentId, sessionsResult]);
 
   const { createNewSession, runTaskInNewChat } = useWorkspaceManualSessionExecution({
     clientRef,
