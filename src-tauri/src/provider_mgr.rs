@@ -52,7 +52,7 @@ struct ProviderSaveRequest {
 struct ProviderSaveOutcome {
     provider_key: String,
     model_id: String,
-    effective_api_key: String,
+    has_api_key: bool,
     message: String,
 }
 
@@ -142,7 +142,8 @@ fn normalize_display_name(value: Option<&str>) -> Option<String> {
 
 fn extract_legacy_display_name(value: &Value) -> Option<String> {
     normalize_display_name(
-        value.get("displayName")
+        value
+            .get("displayName")
             .or_else(|| value.get("display_name"))
             .and_then(Value::as_str),
     )
@@ -288,16 +289,27 @@ fn persist_saved_provider_config(
         .and_then(|providers| providers.get(&request.provider_key))
         .cloned();
 
-    let effective_api_key = if request.api_key.is_empty() {
+    let effective_api_key_value = if request.api_key.is_empty() {
         existing_provider_entry
             .as_ref()
             .and_then(|value| value.get("apiKey"))
-            .and_then(|value| value.as_str())
-            .unwrap_or("")
-            .to_string()
+            .cloned()
     } else {
-        request.api_key.clone()
+        Some(Value::String(request.api_key.clone()))
     };
+    let has_api_key = effective_api_key_value
+        .as_ref()
+        .map(|value| match value {
+            Value::String(text) => !text.trim().is_empty(),
+            Value::Null => false,
+            Value::Object(object) => !object.is_empty(),
+            _ => true,
+        })
+        .unwrap_or(false)
+        || existing_provider_entry
+            .as_ref()
+            .and_then(|value| value.get("auth"))
+            .is_some();
 
     let mut unique_models = vec![request.model_id.clone()];
     if let Some(options) = request.model_options.as_ref() {
@@ -314,12 +326,22 @@ fn persist_saved_provider_config(
         .map(|item| build_model_entry(item))
         .collect::<Vec<_>>();
 
-    let provider_entry = json!({
-        "baseUrl": request.base_url,
-        "apiKey": effective_api_key,
-        "api": request.api,
-        "models": models,
-    });
+    let mut provider_entry = existing_provider_entry.unwrap_or_else(|| json!({}));
+    if !provider_entry.is_object() {
+        provider_entry = json!({});
+    }
+    let provider_object = provider_entry
+        .as_object_mut()
+        .ok_or("provider entry should be an object".to_string())?;
+    provider_object.insert(
+        "baseUrl".to_string(),
+        Value::String(request.base_url.clone()),
+    );
+    provider_object.insert("api".to_string(), Value::String(request.api.clone()));
+    provider_object.insert("models".to_string(), Value::Array(models));
+    if let Some(api_key_value) = effective_api_key_value {
+        provider_object.insert("apiKey".to_string(), api_key_value);
+    }
 
     config["models"]["providers"][&request.provider_key] = provider_entry.clone();
 
@@ -351,7 +373,7 @@ fn persist_saved_provider_config(
     Ok(ProviderSaveOutcome {
         provider_key: request.provider_key.clone(),
         model_id: request.model_id.clone(),
-        effective_api_key,
+        has_api_key,
         message: "Workspace model config saved".to_string(),
     })
 }
@@ -403,10 +425,7 @@ pub fn list_saved_providers() -> Result<Vec<SavedProvider>, String> {
                                 .get("name")
                                 .and_then(|n| n.as_str())
                                 .map(|s| s.to_string());
-                            Some(SavedModel {
-                                id,
-                                name,
-                            })
+                            Some(SavedModel { id, name })
                         })
                         .collect()
                 })
@@ -470,7 +489,7 @@ pub fn upsert_saved_provider_config(
     let outcome = persist_saved_provider_config(&request, true)?;
     let provider_key = outcome.provider_key.clone();
     let model_id = outcome.model_id.clone();
-    let has_key = !outcome.effective_api_key.is_empty();
+    let has_key = outcome.has_api_key;
 
     let _ = app.emit(
         "config-updated",
@@ -595,9 +614,7 @@ pub fn delete_saved_provider_config(
     }
 
     if should_sync_main_agent {
-        let fallback_main_model = next_primary
-            .clone()
-            .or_else(|| read_default_model(&config));
+        let fallback_main_model = next_primary.clone().or_else(|| read_default_model(&config));
         if let Some(model_ref) = fallback_main_model {
             set_main_agent_model(&mut config, &model_ref)?;
         }
@@ -711,10 +728,5 @@ pub fn add_model_to_provider(provider_name: String, model_id: String) -> Result<
 }
 
 #[cfg(test)]
-mod tests {
-    #[test]
-    fn test_provider_name_format() {
-        let model_id = format!("{}/{}", "bailian", "glm-5");
-        assert_eq!(model_id, "bailian/glm-5");
-    }
-}
+#[path = "provider_mgr_tests.rs"]
+mod tests;

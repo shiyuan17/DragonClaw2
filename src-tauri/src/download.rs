@@ -327,3 +327,63 @@ pub async fn download_openclaw_source(app: tauri::AppHandle) -> Result<String, S
         openclaw_dir.display()
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{validate_download_url, validate_extracted_openclaw_dir};
+    use std::fs;
+    use std::path::PathBuf;
+    use uuid::Uuid;
+
+    fn unique_temp_dir(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("dragonclaw-download-{name}-{}", Uuid::new_v4()))
+    }
+
+    #[test]
+    fn download_url_accepts_allowed_hosts_for_pinned_tag() {
+        let urls = [
+            "https://github.com/openclaw/openclaw/archive/refs/tags/v2026.5.4.zip",
+            "https://ghfast.top/https://github.com/openclaw/openclaw/archive/refs/tags/v2026.5.4.zip",
+            "https://mirror.ghproxy.com/https://github.com/openclaw/openclaw/archive/refs/tags/v2026.5.4.zip",
+        ];
+
+        for url in urls {
+            assert!(validate_download_url(url).is_ok(), "expected valid url: {url}");
+        }
+    }
+
+    #[test]
+    fn download_url_rejects_unapproved_hosts_and_wrong_tags() {
+        let bad_host = validate_download_url(
+            "https://example.com/openclaw/openclaw/archive/refs/tags/v2026.5.4.zip",
+        )
+        .expect_err("unapproved host should fail");
+        assert!(!bad_host.trim().is_empty());
+
+        let wrong_tag = validate_download_url(
+            "https://github.com/openclaw/openclaw/archive/refs/tags/v2026.5.3.zip",
+        )
+        .expect_err("wrong tag should fail");
+        assert!(!wrong_tag.trim().is_empty());
+    }
+
+    #[test]
+    fn extracted_openclaw_dir_requires_openclaw_package_name() {
+        let dir = unique_temp_dir("package-check");
+        fs::create_dir_all(&dir).unwrap();
+
+        let missing_package = validate_extracted_openclaw_dir(&dir)
+            .expect_err("missing package.json should fail");
+        assert!(missing_package.contains("package.json"));
+
+        fs::write(dir.join("package.json"), r#"{"name":"not-openclaw"}"#).unwrap();
+        let wrong_name = validate_extracted_openclaw_dir(&dir)
+            .expect_err("wrong package name should fail");
+        assert!(wrong_name.contains("package.json name=not-openclaw"));
+
+        fs::write(dir.join("package.json"), r#"{"name":"openclaw"}"#).unwrap();
+        validate_extracted_openclaw_dir(&dir).expect("valid openclaw package should pass");
+
+        let _ = fs::remove_dir_all(dir);
+    }
+}

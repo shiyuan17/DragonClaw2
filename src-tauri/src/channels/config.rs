@@ -760,3 +760,7 @@ pub fn remove_openclaw_channel_config(payload: OpenClawChannelRemovePayload) -> 
 
     config::write_openclaw_config(&config_value)
 }
+
+#[cfg(test)]
+#[path = "config_tests.rs"]
+mod tests;

@@ -99,19 +99,10 @@ impl ConfigRepository {
             }
         }
 
-        let control_ui = gateway
-            .entry("controlUi".to_string())
-            .or_insert_with(|| json!({}));
-        if !control_ui.is_object() {
-            *control_ui = json!({});
-        }
-        if let Some(control_ui_obj) = control_ui.as_object_mut() {
-            control_ui_obj
-                .entry("allowInsecureAuth".to_string())
-                .or_insert_with(|| json!(true));
-            control_ui_obj
-                .entry("dangerouslyDisableDeviceAuth".to_string())
-                .or_insert_with(|| json!(true));
+        if let Some(control_ui) = gateway.get_mut("controlUi") {
+            if !control_ui.is_object() {
+                *control_ui = json!({});
+            }
         }
     }
 
@@ -154,10 +145,6 @@ impl ConfigRepository {
             "auth": {
                 "mode": "token",
                 "token": Self::generate_gateway_token()
-            },
-            "controlUi": {
-                "allowInsecureAuth": true,
-                "dangerouslyDisableDeviceAuth": true
             }
         })
     }
@@ -200,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn ensure_gateway_config_bootstraps_token_and_control_ui() {
+    fn ensure_gateway_config_bootstraps_token_without_insecure_control_ui_defaults() {
         let mut value = json!({});
         ConfigRepository::ensure_gateway_config(&mut value);
 
@@ -210,10 +197,46 @@ mod tests {
             .as_str()
             .map(|token| !token.is_empty())
             .unwrap_or(false));
+        assert!(value["gateway"].get("controlUi").is_none());
+    }
+
+    #[test]
+    fn ensure_gateway_config_preserves_existing_control_ui_flags() {
+        let mut value = json!({
+            "gateway": {
+                "controlUi": {
+                    "allowInsecureAuth": true,
+                    "dangerouslyDisableDeviceAuth": true
+                }
+            }
+        });
+
+        ConfigRepository::ensure_gateway_config(&mut value);
+
         assert_eq!(value["gateway"]["controlUi"]["allowInsecureAuth"], true);
         assert_eq!(
             value["gateway"]["controlUi"]["dangerouslyDisableDeviceAuth"],
             true
         );
+    }
+
+    #[test]
+    fn ensure_gateway_config_rotates_legacy_fixed_token() {
+        let mut value = json!({
+            "gateway": {
+                "auth": {
+                    "mode": "token",
+                    "token": DEFAULT_GATEWAY_TOKEN
+                }
+            }
+        });
+
+        ConfigRepository::ensure_gateway_config(&mut value);
+
+        let token = value["gateway"]["auth"]["token"]
+            .as_str()
+            .expect("gateway token");
+        assert_ne!(token, DEFAULT_GATEWAY_TOKEN);
+        assert!(!token.trim().is_empty());
     }
 }

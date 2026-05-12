@@ -30,7 +30,7 @@ fn ensure_default_agent_models(config_value: &mut serde_json::Value) {
     let defaults = &mut config_value["agents"]["defaults"];
     let missing_defaults = defaults
         .get("models")
-        .map(|value| value.is_null())
+        .map(|value| value.is_null() || value.as_array().map(|items| items.is_empty()).unwrap_or(false) || value.as_object().map(|items| items.is_empty()).unwrap_or(false))
         .unwrap_or(true);
     if missing_defaults {
         defaults["models"] = json!(DEFAULT_FREE_MODELS);
@@ -296,4 +296,139 @@ pub async fn reinstall_environment(app: tauri::AppHandle) -> Result<String, Stri
     );
 
     setup_openclaw(app).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        check_node_modules_exists, ensure_default_agent_models, migrate_legacy_engine_config_if_needed,
+        DEFAULT_FREE_MODELS,
+    };
+    use crate::test_env;
+    use serde_json::json;
+    use std::fs;
+    use std::path::PathBuf;
+    use uuid::Uuid;
+
+    const USER_CONFIG_OVERRIDE_ENV: &str = "DRAGONCLAW_USER_CONFIG_DIR";
+    const SANDBOX_OVERRIDE_ENV: &str = "DRAGONCLAW_SANDBOX_DIR";
+
+    fn unique_temp_dir(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("dragonclaw-setup-{name}-{}", Uuid::new_v4()))
+    }
+
+    fn with_test_dirs<T>(name: &str, run: impl FnOnce(PathBuf, PathBuf) -> T) -> T {
+        let _guard = test_env::env_lock();
+        let root = unique_temp_dir(name);
+        let config_dir = root.join("config");
+        let sandbox_dir = root.join("sandbox");
+        let previous_config = std::env::var(USER_CONFIG_OVERRIDE_ENV).ok();
+        let previous_sandbox = std::env::var(SANDBOX_OVERRIDE_ENV).ok();
+
+        unsafe {
+            std::env::set_var(USER_CONFIG_OVERRIDE_ENV, &config_dir);
+            std::env::set_var(SANDBOX_OVERRIDE_ENV, &sandbox_dir);
+        }
+
+        let result = run(config_dir.clone(), sandbox_dir.clone());
+
+        unsafe {
+            if let Some(value) = previous_config {
+                std::env::set_var(USER_CONFIG_OVERRIDE_ENV, value);
+            } else {
+                std::env::remove_var(USER_CONFIG_OVERRIDE_ENV);
+            }
+
+            if let Some(value) = previous_sandbox {
+                std::env::set_var(SANDBOX_OVERRIDE_ENV, value);
+            } else {
+                std::env::remove_var(SANDBOX_OVERRIDE_ENV);
+            }
+        }
+
+        let _ = fs::remove_dir_all(root);
+        result
+    }
+
+    #[test]
+    fn ensure_default_agent_models_backfills_only_when_missing() {
+        let mut missing = json!({});
+        ensure_default_agent_models(&mut missing);
+        assert_eq!(missing["agents"]["defaults"]["models"], json!(DEFAULT_FREE_MODELS));
+
+        let mut explicit_null = json!({
+            "agents": { "defaults": { "models": null } }
+        });
+        ensure_default_agent_models(&mut explicit_null);
+        assert_eq!(explicit_null["agents"]["defaults"]["models"], json!(DEFAULT_FREE_MODELS));
+
+        let mut existing = json!({
+            "agents": { "defaults": { "models": ["custom/model"] } }
+        });
+        ensure_default_agent_models(&mut existing);
+        assert_eq!(existing["agents"]["defaults"]["models"], json!(["custom/model"]));
+    }
+
+    #[test]
+    fn migrate_legacy_engine_config_copies_defaults_into_user_config() {
+        with_test_dirs("migrate-legacy", |config_dir, sandbox_dir| {
+            let engine_dir = sandbox_dir.join("openclaw-engine");
+            fs::create_dir_all(&engine_dir).unwrap();
+            fs::write(
+                engine_dir.join("openclaw.json"),
+                serde_json::to_string_pretty(&json!({
+                    "models": {
+                        "providers": {}
+                    }
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+
+            let migrated =
+                migrate_legacy_engine_config_if_needed(None).expect("legacy config migration should succeed");
+            assert!(migrated);
+
+            let saved = fs::read_to_string(config_dir.join("openclaw.json")).unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&saved).unwrap();
+            assert!(parsed["gateway"]["auth"]["token"]
+                .as_str()
+                .map(|token| !token.trim().is_empty())
+                .unwrap_or(false));
+            assert_eq!(parsed["agents"]["defaults"]["models"], json!(DEFAULT_FREE_MODELS));
+        });
+    }
+
+    #[test]
+    fn migrate_legacy_engine_config_is_noop_when_user_config_exists() {
+        with_test_dirs("migrate-noop", |config_dir, sandbox_dir| {
+            let engine_dir = sandbox_dir.join("openclaw-engine");
+            fs::create_dir_all(&config_dir).unwrap();
+            fs::create_dir_all(&engine_dir).unwrap();
+            fs::write(config_dir.join("openclaw.json"), "{}").unwrap();
+            fs::write(engine_dir.join("openclaw.json"), r#"{"legacy":true}"#).unwrap();
+
+            let migrated =
+                migrate_legacy_engine_config_if_needed(None).expect("noop migration should succeed");
+            assert!(!migrated);
+            assert_eq!(fs::read_to_string(config_dir.join("openclaw.json")).unwrap(), "{}");
+        });
+    }
+
+    #[test]
+    fn check_node_modules_exists_requires_marker_pnpm_and_cli_build_output() {
+        with_test_dirs("node-modules-ready", |_config_dir, sandbox_dir| {
+            let engine_dir = sandbox_dir.join("openclaw-engine");
+            let node_modules = engine_dir.join("node_modules");
+            fs::create_dir_all(node_modules.join(".pnpm")).unwrap();
+            fs::write(node_modules.join(".install_complete"), "").unwrap();
+            fs::create_dir_all(engine_dir.join("dist")).unwrap();
+            fs::write(engine_dir.join("dist").join("entry.js"), "").unwrap();
+
+            assert!(check_node_modules_exists().unwrap());
+
+            fs::remove_file(node_modules.join(".install_complete")).unwrap();
+            assert!(!check_node_modules_exists().unwrap());
+        });
+    }
 }
