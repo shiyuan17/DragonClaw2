@@ -21,6 +21,7 @@
 - [ ] Phase 5.74.1a: 统一 `workspace-clone` live timeline 中“执行命令 / 调用工具 / 思考中”等步骤标签与消息 tag 的字号、行高、胶囊高度和状态 badge 尺寸，只改前端渲染层与样式层，不改 Tauri / Gateway / `invoke()` 契约。
 - [ ] Phase 5.74.1: 收敛 `workspace-clone` 内置 `/plan` 的用户可见回复，禁止输出 Spec 检测步骤、Spec Kit / Codex-style 模式判定和命令执行逻辑，只保留面向用户的规划结果或必要阻塞说明，不改 Tauri / Gateway / `invoke()` 契约。
 - [ ] Phase 5.74.2: 隐藏 `workspace-clone` 主聊天区中的 `(no output)`、shell 错误回显和内部提示文件 raw dump，并将用户消息时间移到气泡容器外部下方，不改 Tauri / Gateway / `invoke()` 契约。
+- [ ] Phase 5.74.3: 为 `workspace-clone` live timeline 增加 Codex 式工具操作类型，按真实动作显示“正在编辑 / 已编辑”“正在创建 / 已创建”“正在读取 / 已读取”“正在搜索 / 已搜索”等状态，并保持现有 Gateway / `invoke()` 契约不变。
 
 ## Phase 5.71: Workspace 知识库接入 Lake 编辑器
 - [ ] 将 `workspace-clone` 左侧 `knowledge` 从占位页升级为真实知识库页面，接入应用级共享知识库配置、多目录本地文件浏览、文本优先的 Lake 预览/编辑能力，并保持现有 Tauri / Gateway / `invoke()` 契约不破坏。
