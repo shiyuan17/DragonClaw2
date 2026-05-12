@@ -93,6 +93,97 @@ fn sync_main_agent_provider_models(provider: &str, provider_entry: &Value) -> Re
     save_pretty_json_file(&models_path, &agent_models)
 }
 
+pub(crate) fn read_model_reference(value: &Value) -> Option<String> {
+    value
+        .as_str()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+        .or_else(|| {
+            value
+                .get("primary")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(|value| value.to_string())
+        })
+}
+
+pub(crate) fn read_default_model(config: &Value) -> Option<String> {
+    config
+        .get("agents")
+        .and_then(|agents| agents.get("defaults"))
+        .and_then(|defaults| defaults.get("model"))
+        .and_then(read_model_reference)
+}
+
+pub(crate) fn read_main_agent_model(config: &Value) -> Option<String> {
+    config
+        .get("agents")
+        .and_then(|agents| agents.get("list"))
+        .and_then(Value::as_array)
+        .and_then(|agents| {
+            agents.iter().find(|agent| {
+                agent
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .map(|value| value.trim() == "main")
+                    .unwrap_or(false)
+            })
+        })
+        .and_then(|agent| agent.get("model"))
+        .and_then(read_model_reference)
+}
+
+pub(crate) fn resolve_effective_main_model(config: &Value) -> Option<String> {
+    read_main_agent_model(config).or_else(|| read_default_model(config))
+}
+
+pub(crate) fn set_main_agent_model(config: &mut Value, full_model_id: &str) -> Result<(), String> {
+    let normalized_model_id = full_model_id.trim();
+    if normalized_model_id.is_empty() {
+        return Err("main agent model cannot be empty".to_string());
+    }
+
+    ensure_config_roots(config);
+
+    if config["agents"].get("list").is_none() || !config["agents"]["list"].is_array() {
+        config["agents"]["list"] = json!([]);
+    }
+
+    let agents = config["agents"]["list"]
+        .as_array_mut()
+        .ok_or("agents.list should be an array".to_string())?;
+    let target_index = agents.iter().position(|agent| {
+        agent
+            .get("id")
+            .and_then(Value::as_str)
+            .map(|value| value.trim() == "main")
+            .unwrap_or(false)
+    });
+
+    let index = if let Some(index) = target_index {
+        index
+    } else {
+        agents.push(json!({ "id": "main" }));
+        agents.len() - 1
+    };
+
+    if !agents[index].is_object() {
+        agents[index] = json!({ "id": "main" });
+    }
+
+    let entry = agents[index]
+        .as_object_mut()
+        .ok_or("main agent entry should be an object".to_string())?;
+    entry.insert("id".to_string(), Value::String("main".to_string()));
+    entry.insert(
+        "model".to_string(),
+        Value::String(normalized_model_id.to_string()),
+    );
+    Ok(())
+}
+
 #[tauri::command]
 pub fn migrate_gateway_config() -> Result<String, String> {
     let original = read_openclaw_config()?;
@@ -129,13 +220,7 @@ pub fn get_current_config() -> Result<CurrentConfig, String> {
         })
         .unwrap_or(false);
 
-    let primary = config
-        .get("agents")
-        .and_then(|agents| agents.get("defaults"))
-        .and_then(|defaults| defaults.get("model"))
-        .and_then(|model| model.get("primary"))
-        .and_then(Value::as_str)
-        .map(|value| value.to_string());
+    let primary = resolve_effective_main_model(&config);
 
     let provider = primary
         .as_ref()
@@ -226,6 +311,7 @@ pub fn save_api_config(
 
         config["models"]["providers"][&provider] = new_provider_entry.clone();
         config["agents"]["defaults"]["model"] = json!({ "primary": full_model_id.clone() });
+        set_main_agent_model(config, &full_model_id)?;
 
         if let Some(provider_meta) = provider_info {
             for model in &provider_meta.models {
@@ -292,6 +378,7 @@ pub fn set_default_model(app: tauri::AppHandle, model_id: String) -> Result<Stri
     ConfigRepository::update(|config| {
         ensure_config_roots(config);
         config["agents"]["defaults"]["model"] = json!({ "primary": full_model_id.clone() });
+        set_main_agent_model(config, &full_model_id)?;
 
         if !provider_name.is_empty() {
             if let Some(provider_obj) = config

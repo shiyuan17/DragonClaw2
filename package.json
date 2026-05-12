@@ -24,14 +24,18 @@
     "@tauri-apps/plugin-opener": "^2",
     "clsx": "^2.1.1",
     "framer-motion": "^12.35.1",
+    "lake-codemirror": "^2.0.2",
+    "lakelib": "^0.4.6",
     "lucide-react": "^0.577.0",
+    "marked": "^18.0.3",
     "posthog-js": "^1.372.10",
     "qrcode": "^1.5.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "tailwind-merge": "^3.5.0"
+    "tailwind-merge": "^3.5.0",
+    "turndown": "^7.2.4"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

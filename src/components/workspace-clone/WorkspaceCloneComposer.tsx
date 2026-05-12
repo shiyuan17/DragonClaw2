@@ -17,6 +17,7 @@ interface WorkspaceCloneComposerProps {
   selectedEntityName: string | null;
   currentModelName: string;
   currentModelId: string;
+  selectedKnowledgeBaseName: string;
   draftValue: string;
   onDraftValueChange: (value: string) => void;
   scenePresetsOpen: boolean;
@@ -29,6 +30,7 @@ interface WorkspaceCloneComposerProps {
   onOpenSessionSection: (target: WorkspaceSessionSectionKey) => void;
   onOpenMemoryModal: () => void;
   onOpenCommandsModal: () => void;
+  onOpenKnowledgePanel: () => void;
   onOpenEmailBindingModal: () => void;
   modelMenuOpen: boolean;
   modelMenuItems: SavedModel[];
@@ -140,6 +142,7 @@ export function WorkspaceCloneComposer({
   connectionStatus,
   currentModelName,
   currentModelId,
+  selectedKnowledgeBaseName,
   draftValue,
   onDraftValueChange,
   scenePresetsOpen,
@@ -150,6 +153,7 @@ export function WorkspaceCloneComposer({
   isGenerating,
   resettingSession,
   onOpenCommandsModal,
+  onOpenKnowledgePanel,
   onOpenEmailBindingModal,
   modelMenuOpen,
   modelMenuItems,
@@ -190,6 +194,8 @@ export function WorkspaceCloneComposer({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const statusText = resolveComposerStatusText({ chatEnabled, running, connectionStatus, isGenerating });
+  const showStatusPill = !chatEnabled || !running || connectionStatus !== "connected" || isGenerating;
+  const knowledgeBaseStatusText = selectedKnowledgeBaseName ? `当前知识库：${selectedKnowledgeBaseName}` : "";
   const modelMenuOptions = useMemo(() => modelMenuItems.map((item) => resolveModelMenuOption(item)), [modelMenuItems]);
   const isModelMenuBusy = Boolean(modelMenuSwitchingId);
   const selectedSkillIds = useMemo(() => new Set(activeSkills.map((item) => item.id)), [activeSkills]);
@@ -548,6 +554,17 @@ export function WorkspaceCloneComposer({
             <WorkspaceCloneSessionWorkdirPicker variant="composer" selectedPath={selectedWorkspaceDir} disabled={!chatEnabled} onSelectDirectory={onSelectWorkspaceDir} onClearDirectory={onClearWorkspaceDir} />
             <button
               type="button"
+              className={`workspace-clone__composer-pill workspace-clone__composer-pill--muted workspace-clone__composer-pill--icon-only ${selectedKnowledgeBaseName ? "is-active" : ""}`}
+              onClick={onOpenKnowledgePanel}
+              disabled={!chatEnabled}
+              aria-label={knowledgeBaseStatusText || "知识库"}
+              title={knowledgeBaseStatusText || "知识库"}
+            >
+              <WorkspaceCloneIcon name="book-open" size={14} strokeWidth={1.9} />
+              知识库
+            </button>
+            <button
+              type="button"
               className="workspace-clone__composer-pill workspace-clone__composer-pill--muted workspace-clone__composer-pill--icon-only workspace-clone__composer-pill--email-binding"
               onClick={onOpenEmailBindingModal}
               disabled={!chatEnabled}
@@ -658,9 +675,23 @@ export function WorkspaceCloneComposer({
             </div>
           </div>
 
-          <span className={`workspace-clone__composer-status ${running && connectionStatus === "connected" ? "is-online" : "is-idle"}`}>
-            {statusText}
-          </span>
+          {knowledgeBaseStatusText ? (
+            <button
+              type="button"
+              className="workspace-clone__composer-knowledge-status"
+              onClick={onOpenKnowledgePanel}
+              disabled={!chatEnabled}
+              title="打开知识库"
+            >
+              {knowledgeBaseStatusText}
+            </button>
+          ) : null}
+
+          {showStatusPill ? (
+            <span className={`workspace-clone__composer-status ${running && connectionStatus === "connected" ? "is-online" : "is-idle"}`}>
+              {statusText}
+            </span>
+          ) : null}
 
           <div className="workspace-clone__composer-actions">
             <button

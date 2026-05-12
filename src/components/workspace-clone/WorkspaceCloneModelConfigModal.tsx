@@ -35,6 +35,8 @@ interface PendingWorkspaceProviderSave {
   optimisticCard: WorkspaceSavedProviderCard;
 }
 
+const WORKSPACE_MODEL_PROTOCOL_OPTIONS: Array<{ value: WorkspaceModelProviderApi; label: string }> = [{ value: "openai-completions", label: "OpenAI Completion" }, { value: "openai-responses", label: "OpenAI Responses" }, { value: "anthropic-messages", label: "Anthropic Messages" }];
+
 function normalizeBaseUrl(value: string) {
   return value.trim().replace(/\/+$/, "").toLowerCase();
 }
@@ -772,8 +774,11 @@ export function WorkspaceCloneModelConfigModal({
                     }))
                   }
                 >
-                  <option value="openai-completions">OpenAI 兼容</option>
-                  <option value="anthropic-messages">Anthropic Messages</option>
+                  {WORKSPACE_MODEL_PROTOCOL_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </label>
             </div>

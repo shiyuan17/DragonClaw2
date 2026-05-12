@@ -14,6 +14,9 @@ mod download;
 mod email_binding;
 mod environment;
 mod installer;
+mod knowledge;
+#[cfg(test)]
+mod knowledge_tests;
 mod launcher_state;
 mod memory;
 mod onboarding;
@@ -242,6 +245,12 @@ pub fn run() {
             chat_cache::clear_workspace_agent_cache,
             memory::load_memory_file_snapshot,
             memory::save_source_file,
+            knowledge::list_knowledge_bases,
+            knowledge::upsert_knowledge_base,
+            knowledge::delete_knowledge_base,
+            knowledge::load_knowledge_base_tree,
+            knowledge::load_knowledge_file,
+            knowledge::save_knowledge_file,
             onboarding::get_skillhub_install_runtime_info,
             onboarding::install_official_skillhub,
             onboarding::install_skillhub_recommended_skill,

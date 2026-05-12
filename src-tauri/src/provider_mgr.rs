@@ -12,7 +12,8 @@ use std::sync::{Mutex, OnceLock};
 
 use crate::config::{
     ensure_config_roots, ensure_default_workspace, ensure_gateway_config, get_user_openclaw_dir,
-    read_openclaw_config, write_openclaw_config,
+    read_default_model, read_main_agent_model, read_openclaw_config, set_main_agent_model,
+    write_openclaw_config,
 };
 use crate::launcher_state;
 use tauri::Emitter;
@@ -323,9 +324,11 @@ fn persist_saved_provider_config(
     config["models"]["providers"][&request.provider_key] = provider_entry.clone();
 
     if update_default_model {
+        let full_model_ref = format!("{}/{}", request.provider_key, request.model_id);
         config["agents"]["defaults"]["model"] = json!({
-            "primary": format!("{}/{}", request.provider_key, request.model_id)
+            "primary": full_model_ref.clone()
         });
+        set_main_agent_model(&mut config, &full_model_ref)?;
 
         for model in &unique_models {
             let model_ref = format!("{}/{}", request.provider_key, model);
@@ -548,14 +551,16 @@ pub fn delete_saved_provider_config(
     let mut config = read_config()?;
     ensure_config_roots(&mut config);
 
-    let current_provider = config
-        .get("agents")
-        .and_then(|agents| agents.get("defaults"))
-        .and_then(|defaults| defaults.get("model"))
-        .and_then(|model| model.get("primary"))
-        .and_then(|primary| primary.as_str())
+    let current_provider = read_default_model(&config)
+        .as_deref()
         .and_then(|primary| primary.split('/').next())
         .map(|provider| provider.to_string());
+    let main_agent_model = read_main_agent_model(&config);
+    let removed_model_prefix = format!("{}/", provider_key);
+    let should_sync_main_agent = main_agent_model
+        .as_deref()
+        .map(|model_ref| model_ref.starts_with(&removed_model_prefix))
+        .unwrap_or(false);
 
     let mut next_provider: Option<String> = None;
     let mut next_primary: Option<String> = None;
@@ -587,6 +592,15 @@ pub fn delete_saved_provider_config(
     if let Some(default_models) = config["agents"]["defaults"]["models"].as_object_mut() {
         let prefix = format!("{}/", provider_key);
         default_models.retain(|model_ref, _| !model_ref.starts_with(&prefix));
+    }
+
+    if should_sync_main_agent {
+        let fallback_main_model = next_primary
+            .clone()
+            .or_else(|| read_default_model(&config));
+        if let Some(model_ref) = fallback_main_model {
+            set_main_agent_model(&mut config, &model_ref)?;
+        }
     }
 
     write_config(&config)?;

@@ -6,8 +6,20 @@ use std::path::PathBuf;
 use tauri::Emitter;
 use tokio::io::AsyncWriteExt;
 
+const SANDBOX_OVERRIDE_ENV: &str = "DRAGONCLAW_SANDBOX_DIR";
+
 /// Get the sandbox base directory: AppData/Local/OpenClawLauncher (Win) or ~/Library/.../OpenClawLauncher (Mac) or ~/.local/share/OpenClawLauncher (Linux)
 pub fn get_sandbox_dir() -> Result<PathBuf, String> {
+    if let Ok(override_path) = std::env::var(SANDBOX_OVERRIDE_ENV) {
+        let trimmed = override_path.trim();
+        if !trimmed.is_empty() {
+            let sandbox = PathBuf::from(trimmed);
+            std::fs::create_dir_all(&sandbox)
+                .map_err(|e| format!("Failed to create sandbox dir: {}", e))?;
+            return Ok(sandbox);
+        }
+    }
+
     let base = dirs::data_local_dir().ok_or("Cannot determine AppData/Local directory")?;
     let sandbox = base.join("OpenClawLauncher");
     std::fs::create_dir_all(&sandbox)

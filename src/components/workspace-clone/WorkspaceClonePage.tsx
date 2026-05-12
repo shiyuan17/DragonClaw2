@@ -10,6 +10,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { resolveWorkspaceAgentDisplayName } from "../../data/agencyRoster";
 import type {
   CurrentConfig,
+  KnowledgeBaseRecord,
   LogEntry,
   ProviderInfo,
   SavedProvider,
@@ -61,6 +62,7 @@ import { WorkspaceCloneScenePresetSwitcher } from "./WorkspaceCloneScenePresetSw
 import { WorkspaceCloneSettingsModal } from "./WorkspaceCloneSettingsModal";
 import { WorkspaceCloneSidebar } from "./WorkspaceCloneSidebar";
 import { WorkspaceCloneTaskEditorModal } from "./WorkspaceCloneTaskEditorModal";
+import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
 import { Modal } from "../ui/Modal";
 import { buildWorkspaceManualTaskExecutionContent } from "./workspaceCloneManualTaskExecution";
 import { resolveWorkspaceTaskDisplayTitle } from "./workspaceCloneTaskTitle";
@@ -106,6 +108,9 @@ const WorkspaceCloneEmployeesView = lazy(() =>
 );
 const WorkspaceCloneSkillsMarketView = lazy(() =>
   import("./WorkspaceCloneSkillsMarketView").then((module) => ({ default: module.WorkspaceCloneSkillsMarketView })),
+);
+const WorkspaceCloneKnowledgePage = lazy(() =>
+  import("./WorkspaceCloneKnowledgePage").then((module) => ({ default: module.WorkspaceCloneKnowledgePage })),
 );
 const WorkspaceCloneOverlayStack = lazy(() =>
   import("./WorkspaceCloneOverlayStack").then((module) => ({ default: module.WorkspaceCloneOverlayStack })),
@@ -356,6 +361,8 @@ export function WorkspaceClonePage({
   const [relatedResource, setRelatedResource] = useState<WorkspaceRelatedResource>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [isModelConfigOpen, setIsModelConfigOpen] = useState(false);
+  const [knowledgePanelOpen, setKnowledgePanelOpen] = useState(false);
+  const [currentKnowledgeBase, setCurrentKnowledgeBase] = useState<KnowledgeBaseRecord | null>(null);
   const [savedProviders, setSavedProviders] = useState<SavedProvider[]>([]);
   const [savedProvidersLoading, setSavedProvidersLoading] = useState(false);
   const [providerSyncEvent, setProviderSyncEvent] = useState<{
@@ -377,6 +384,13 @@ export function WorkspaceClonePage({
   const telemetryConfigured = isTelemetryConfigured();
   const telemetryHost = getTelemetryHost();
   const showDirectory = activeMenu === "chat";
+
+  useEffect(() => {
+    if (activeMenu === "knowledge") {
+      setActiveMenu("chat");
+    }
+  }, [activeMenu]);
+
   const workspaceChannels = useWorkspaceChannels({ configVersion, enabled: showDirectory });
   const { setContextMenu } = workspaceChannels;
   const serviceStartup = useWorkspaceServiceStartupStatus({
@@ -1515,6 +1529,7 @@ export function WorkspaceClonePage({
                 connectionStatus={homepageChat.status}
                 selectedEntityName={selectedEntity?.name || null}
                 currentModelName={workspaceModelName}
+                selectedKnowledgeBaseName={currentKnowledgeBase?.name || ""}
                 draftValue={composerDraft}
                 onDraftValueChange={setComposerDraft}
                 scenePresetsOpen={scenePresetsOpen}
@@ -1527,6 +1542,7 @@ export function WorkspaceClonePage({
                 onOpenSessionSection={openSessionPanel}
                 onOpenMemoryModal={openMemoryModal}
                 onOpenCommandsModal={openCommandsModal}
+                onOpenKnowledgePanel={() => setKnowledgePanelOpen(true)}
                 onOpenEmailBindingModal={workspaceEmailBinding.openEmailBindingModal}
                 currentModelId={workspaceCurrentModelId}
                 modelMenuOpen={composerModelMenu.isOpen}
@@ -1560,6 +1576,7 @@ export function WorkspaceClonePage({
                     activeCommand: commandsAdmin.activeSlashCommand || undefined,
                     activeSkills,
                     attachments,
+                    knowledgeBase: currentKnowledgeBase || undefined,
                     workspaceDirectory: currentSessionWorkspaceDir || undefined,
                   })
                 }
@@ -1744,6 +1761,38 @@ export function WorkspaceClonePage({
             />
           </Suspense>
         ) : null}
+
+        <Modal
+          show={knowledgePanelOpen}
+          onClose={() => setKnowledgePanelOpen(false)}
+          maxWidth={1180}
+          overlayClassName="workspace-knowledge-panel__overlay"
+          contentClassName="workspace-knowledge-panel__surface"
+        >
+          <div className="workspace-knowledge-panel">
+            <div className="workspace-knowledge-panel__header">
+              <div>
+                <span className="workspace-knowledge-panel__kicker">Agent Resource</span>
+                <h3>知识库</h3>
+                <p>作为聊天和 `/kb-*` 命令的工作材料使用。</p>
+              </div>
+              <button
+                type="button"
+                className="workspace-knowledge-panel__close"
+                onClick={() => setKnowledgePanelOpen(false)}
+                aria-label="关闭知识库"
+                title="关闭"
+              >
+                <WorkspaceCloneIcon name="x" size={16} strokeWidth={2} />
+              </button>
+            </div>
+            <div className="workspace-knowledge-panel__body">
+              <Suspense fallback={<WorkspaceCloneLazyFallback label="\u77e5\u8bc6\u5e93" />}>
+                <WorkspaceCloneKnowledgePage onSelectedKnowledgeBaseChange={setCurrentKnowledgeBase} />
+              </Suspense>
+            </div>
+          </div>
+        </Modal>
 
         <WorkspaceCloneSettingsModal
           show={showWorkspaceSettingsModal}

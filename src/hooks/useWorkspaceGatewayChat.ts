@@ -5,7 +5,7 @@ import type { WorkspaceActiveSkillList, WorkspaceActiveSlashCommand, WorkspaceAg
 import { buildWorkspaceGatewayChatAttachments } from "../components/workspace-clone/workspaceCloneChatAttachments";
 import { buildWorkspaceComposerTransportMessage } from "../components/workspace-clone/workspaceCloneSlashCommands";
 import { isWorkspaceRawProcessEcho, sanitizeWorkspaceAssistantContent } from "../components/workspace-clone/workspaceCloneMessageVisibility";
-import type { CurrentConfig } from "../types";
+import type { CurrentConfig, KnowledgeBaseRecord } from "../types";
 import { buildAgentRecentSessionsById } from "./workspace-gateway/agent-recent-sessions";
 import { buildCachedAgentsResult, parseCachedMessagesJson, sanitizeAgentsResult, serializeCachedMessages, sortSessionsByUpdatedAt, toAgentCachePayload } from "./workspace-gateway/session-cache";
 import { buildSessionHistoryItem, extractAgentIdFromSessionKey, extractLastMeaningfulMessageSummary, normalizeGatewayMessage, resolveAgentSessionKey, resolveSessionHistoryTitleDetails, resolveStableSessionHistoryTitleDetails } from "./workspace-gateway/message-normalizers";
@@ -978,15 +978,16 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       ? loadHistory(sessionKey, { agentId: nextAgentId, connectionGeneration: connectionGenerationRef.current }).then(() => true)
       : Promise.resolve(false);
   }, [connected, loadHistory, resolveSessionContext, selectedAgentId]);
-  const sendMessage = useCallback(async (value: string, options?: { activeCommand?: WorkspaceActiveSlashCommand; activeSkills?: WorkspaceActiveSkillList; attachments?: WorkspaceComposerAttachment[]; workspaceDirectory?: string | null; targetSessionKey?: string | null; targetAgentId?: string | null; preserveSessionSwitch?: boolean; displayText?: string; transportText?: string; telemetrySessionType?: WorkspaceChatTelemetrySessionType }) => {
+  const sendMessage = useCallback(async (value: string, options?: { activeCommand?: WorkspaceActiveSlashCommand; activeSkills?: WorkspaceActiveSkillList; attachments?: WorkspaceComposerAttachment[]; knowledgeBase?: KnowledgeBaseRecord | null; workspaceDirectory?: string | null; targetSessionKey?: string | null; targetAgentId?: string | null; preserveSessionSwitch?: boolean; displayText?: string; transportText?: string; telemetrySessionType?: WorkspaceChatTelemetrySessionType }) => {
       const client = clientRef.current;
       const message = (options?.displayText ?? value).trim(); const outboundText = (options?.transportText ?? value).trim();
       const outgoingAttachments = options?.attachments ?? [];
       const hasAttachments = outgoingAttachments.length > 0;
-      const transportMessage = options?.activeCommand || options?.activeSkills?.length || options?.workspaceDirectory?.trim()
+      const transportMessage = options?.activeCommand || options?.activeSkills?.length || options?.knowledgeBase || options?.workspaceDirectory?.trim()
         ? buildWorkspaceComposerTransportMessage({
             command: options?.activeCommand,
             skills: options?.activeSkills,
+            knowledgeBase: options?.knowledgeBase,
             workspaceDirectory: options?.workspaceDirectory,
             userMessage: outboundText,
           })

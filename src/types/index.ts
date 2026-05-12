@@ -117,6 +117,76 @@ export interface CurrentConfig {
     workspace_path?: string | null;
 }
 
+export interface KnowledgeBaseRoot {
+    id: string;
+    name: string;
+    path: string;
+}
+
+export interface KnowledgeBaseRecord {
+    id: string;
+    name: string;
+    description?: string | null;
+    roots: KnowledgeBaseRoot[];
+    createdAtMs: number;
+    updatedAtMs: number;
+}
+
+export interface KnowledgeBaseRootInput {
+    id?: string | null;
+    name?: string | null;
+    path: string;
+}
+
+export interface UpsertKnowledgeBasePayload {
+    id?: string | null;
+    name: string;
+    description?: string | null;
+    roots?: KnowledgeBaseRootInput[];
+}
+
+export interface KnowledgeTreeNode {
+    id: string;
+    name: string;
+    relativePath: string;
+    nodeType: "directory" | "file";
+    extension?: string | null;
+    sizeBytes?: number | null;
+    updatedAtMs?: number | null;
+    children: KnowledgeTreeNode[];
+}
+
+export interface KnowledgeRootSnapshot {
+    id: string;
+    name: string;
+    path: string;
+    exists: boolean;
+    children: KnowledgeTreeNode[];
+}
+
+export interface KnowledgeBaseTreeSnapshot {
+    knowledgeBase: KnowledgeBaseRecord;
+    roots: KnowledgeRootSnapshot[];
+}
+
+export interface KnowledgeFileContent {
+    knowledgeBaseId: string;
+    rootId: string;
+    rootName: string;
+    rootPath: string;
+    relativePath: string;
+    absolutePath: string;
+    fileName: string;
+    format: "markdown" | "text" | "html" | "unsupported" | string;
+    editable: boolean;
+    sizeBytes: number;
+    updatedAtMs: number;
+    content: string;
+}
+
+export type KnowledgeEditorMode = "preview" | "edit";
+export type KnowledgeOverviewView = "grid" | "list";
+
 export interface LauncherState {
     setupCompleted: boolean;
     lastLaunchAt?: number | null;

@@ -5,13 +5,122 @@ import type {
   WorkspaceSlashCommandDefinition,
   WorkspaceSlashCommandRecord,
 } from "./workspaceCloneTypes";
+import type { KnowledgeBaseRecord } from "../../types";
 
 const WORKSPACE_SLASH_COMMAND_FALLBACK = "command";
 export const WORKSPACE_SLASH_COMMAND_MARKER = "[DC_WORKSPACE_SLASH_COMMAND_V1]";
 export const WORKSPACE_SKILL_MARKER = "[DC_WORKSPACE_SKILL_V1]";
 export const WORKSPACE_DIRECTORY_MARKER = "[DC_WORKSPACE_DIRECTORY_V1]";
+export const WORKSPACE_KNOWLEDGE_MARKER = "[DC_WORKSPACE_KNOWLEDGE_BASE_V1]";
 
-export const WORKSPACE_BUILTIN_SLASH_COMMANDS: WorkspaceSlashCommandDefinition[] = [];
+function buildKnowledgeCommandInstruction(action: string, commandFile: string, extraRules: string[]) {
+  return [
+    "You are running a DragonClaw knowledge-base workflow.",
+    `Target action: ${action}`,
+    "Prefer the knowledge base selected in the current chat. If no knowledge-base context is available, ask the user to select or create one from the composer before proceeding. Do not guess paths.",
+    "The managed knowledge-base runtime root is OpenClaw engine_dir()/knowledge-base/<slug>. Project workflow rules live under src/data/knowledge/Command/.",
+    `Before executing, read and follow ${commandFile}; also use the structural constraints under src/data/knowledge/schema/.`,
+    "Keep text-first handling. Markdown, txt, and html can be organized or edited; PDFs, images, archives, and other binary files should only receive metadata notes or extraction recommendations unless the user provides extracted text.",
+    ...extraRules,
+  ].join("\n");
+}
+
+function buildProjectSpecCommandInstruction() {
+  return [
+    "You are running DragonClaw /spec for the project selected by the current chat working directory.",
+    "This command is project-aware and must not assume the DragonClaw repository rules unless the selected project is DragonClaw itself.",
+    "If no [DC_WORKSPACE_DIRECTORY_V1] cwd block is present, ask the user to select a project directory first and stop.",
+    "Use the cwd as the project root. First inspect the project non-destructively: README files, package/Cargo/pyproject/manifests, existing docs, tests, AGENTS.md/CLAUDE.md/GEMINI.md, .specify/, and any local contribution or architecture rules.",
+    "If .specify/ exists, follow its templates, constitution, feature metadata, and project conventions. If it does not exist, use a minimal Spec Kit-compatible structure without installing or invoking Spec Kit CLI.",
+    "Create or propose a feature short name from the user's request using 2-4 descriptive words. Use the next numeric specs/<NNN-short-name>/ directory unless the selected project has a different .specify numbering policy.",
+    "Default artifacts: specs/<feature>/spec.md and specs/<feature>/checklists/requirements.md. Update or respect .specify/feature.json when the selected project already uses it.",
+    "The spec.md must describe WHAT and WHY, not HOW. Include user scenarios, acceptance scenarios, functional requirements, key entities, boundaries, assumptions, and measurable success criteria.",
+    "If important information is missing, include no more than 3 highest-impact clarification questions, prioritized by scope, security/privacy, UX, then technical detail.",
+    "The requirements checklist must verify that the spec avoids implementation details, is testable, has measurable success criteria, and has clear scope boundaries.",
+    "Do not write implementation code, run formatters, generate migrations, or modify product code as part of /spec.",
+  ].join("\n");
+}
+
+function buildAdaptivePlanCommandInstruction() {
+  return [
+    "You are running DragonClaw /plan. First decide whether this project has a reliable Spec Kit-style spec, then choose the correct planning strategy.",
+    "Use the [DC_WORKSPACE_DIRECTORY_V1] cwd block as the project root when present. If no cwd is present, you may produce a lightweight conversation plan, but must not attempt Spec Kit artifact planning until the user selects a project.",
+    "Spec detection order: 1) if the user explicitly names a spec or feature, use that if it resolves to a valid specs/<feature>/spec.md; 2) if .specify/feature.json points to a valid spec.md, use it; 3) if exactly one reliable specs/*/spec.md exists, use it and state that it was the only detected spec; 4) if multiple specs exist, ask the user to choose; 5) if no reliable spec exists, use Codex-style read-only planning.",
+    "Treat a spec as reliable only when it is a feature spec file under specs/<feature>/spec.md or is referenced by .specify metadata. Do not treat an arbitrary specs/ directory as Spec Kit evidence by itself.",
+    "Spec Kit plan mode: read the selected spec and project rules, then generate or propose plan.md, research.md, data-model.md, contracts/, and quickstart.md under that feature directory. The plan explains HOW and must reflect the real project stack, tests, constraints, and constitution checks.",
+    "Codex-style plan mode: perform only read-only exploration and output a conversation-level implementation plan with execution direction, affected areas, risks, tests, and open questions. Do not create specs/ or other artifacts in this mode.",
+    "In all modes, do not edit product code, run formatters/codegen/migrations, or modify non-planning artifacts. Spec Kit plan mode may create or update planning artifacts only under the selected specs/<feature>/ directory.",
+  ].join("\n");
+}
+
+export const WORKSPACE_BUILTIN_SLASH_COMMANDS: WorkspaceSlashCommandDefinition[] = [
+  {
+    id: "builtin-spec",
+    command: "/spec",
+    name: "Spec",
+    description: "基于当前选中的工作目录，生成或补全面向项目的 Spec Kit 风格功能规格。",
+    instruction: buildProjectSpecCommandInstruction(),
+    source: "builtin",
+    readonly: true,
+  },
+  {
+    id: "builtin-plan",
+    command: "/plan",
+    name: "Plan",
+    description: "自适应规划：存在可靠 spec 时使用 Spec Kit 规划产物，否则输出只读执行计划。",
+    instruction: buildAdaptivePlanCommandInstruction(),
+    source: "builtin",
+    readonly: true,
+  },
+  {
+    id: "builtin-kb-extract",
+    command: "/kb-extract",
+    name: "Knowledge Extract",
+    description: "将资料中的关键信息提取到当前选中的知识库，整理为可维护的 Markdown 文档。",
+    instruction: buildKnowledgeCommandInstruction("extract", "src/data/knowledge/Command/Extract.md", [
+      "Only perform faithful extraction and structuring. Do not rewrite subjectively, infer beyond the source, or expand conclusions.",
+      "Preserve sources, sections, key definitions, reusable excerpts, and questions that still need confirmation.",
+    ]),
+    source: "builtin",
+    readonly: true,
+  },
+  {
+    id: "builtin-kb-digest",
+    command: "/kb-digest",
+    name: "Knowledge Digest",
+    description: "将已提取的资料增量整理为摘要、概念、主题和索引。",
+    instruction: buildKnowledgeCommandInstruction("digest", "src/data/knowledge/Command/Digest.md", [
+      "Update existing knowledge-base files incrementally and avoid regenerating duplicate content.",
+      "Clearly separate new entries, merges, conflicts, and items that require human confirmation.",
+    ]),
+    source: "builtin",
+    readonly: true,
+  },
+  {
+    id: "builtin-kb-output",
+    command: "/kb-output",
+    name: "Knowledge Output",
+    description: "基于知识库中的索引与文档生成文章、方案、清单或问答。",
+    instruction: buildKnowledgeCommandInstruction("output", "src/data/knowledge/Command/Output.md", [
+      "Prefer already digested indexes, summaries, concepts, and topic documents from the knowledge base.",
+      "Before output, state which knowledge-base materials were used. If the material is insufficient, list the gaps first.",
+    ]),
+    source: "builtin",
+    readonly: true,
+  },
+  {
+    id: "builtin-kb-inspect",
+    command: "/kb-inspect",
+    name: "Knowledge Inspect",
+    description: "检查知识库结构、命名一致性、重复内容、缺失索引与自动化风险。",
+    instruction: buildKnowledgeCommandInstruction("inspect", "src/data/knowledge/Command/Inspect.md", [
+      "Only output an inspection report and repair recommendations unless the user explicitly asks for file edits.",
+      "Inspect directory structure, naming consistency, duplicates, orphaned documents, index gaps, and automation risks.",
+    ]),
+    source: "builtin",
+    readonly: true,
+  },
+];
 
 export function normalizeWorkspaceSlashCommandValue(value: string) {
   const normalized = value
@@ -149,16 +258,36 @@ function buildWorkspaceDirectoryTransportBlock(workspaceDirectory: string) {
   ].join("\n");
 }
 
+function buildWorkspaceKnowledgeTransportBlock(knowledgeBase: KnowledgeBaseRecord) {
+  const roots = knowledgeBase.roots.length > 0
+    ? knowledgeBase.roots.map((root) => `- ${root.name}: ${root.path}`).join("\n")
+    : "- no roots registered";
+
+  return [
+    WORKSPACE_KNOWLEDGE_MARKER,
+    `id: ${knowledgeBase.id}`,
+    `name: ${knowledgeBase.name}`,
+    `description: ${knowledgeBase.description?.trim() || "No description provided."}`,
+    "roots:",
+    roots,
+    "scope: current-session",
+    "instructions:",
+    "Use this knowledge base as the default source and destination for /kb-* workflows in this message. Do not write outside the listed roots.",
+  ].join("\n");
+}
+
 export function buildWorkspaceComposerTransportMessage(options: {
   command?: WorkspaceActiveSlashCommand | null;
   skills?: WorkspaceActiveSkillList | null;
+  knowledgeBase?: KnowledgeBaseRecord | null;
   workspaceDirectory?: string | null;
   userMessage: string;
 }) {
-  const { command, skills, workspaceDirectory, userMessage } = options;
+  const { command, skills, knowledgeBase, workspaceDirectory, userMessage } = options;
   const normalizedMessage = userMessage.trim();
   const transportBlocks = [
     ...(workspaceDirectory?.trim() ? [buildWorkspaceDirectoryTransportBlock(workspaceDirectory)] : []),
+    ...(knowledgeBase ? [buildWorkspaceKnowledgeTransportBlock(knowledgeBase)] : []),
     ...(skills?.map((skill) => buildWorkspaceSkillTransportBlock(skill)) ?? []),
     ...(command ? [buildWorkspaceSlashCommandTransportBlock(command)] : []),
   ];

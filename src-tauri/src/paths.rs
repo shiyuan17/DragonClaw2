@@ -15,6 +15,7 @@ use crate::config_store::ConfigRepository;
 use crate::environment;
 
 const OPENCLAW_DIR_NAME: &str = "openclaw-engine";
+const KNOWLEDGE_BASE_DIR_NAME: &str = "knowledge-base";
 const USER_CONFIG_OVERRIDE_ENV: &str = "DRAGONCLAW_USER_CONFIG_DIR";
 const DEFAULT_WORKSPACE_OVERRIDE_ENV: &str = "DRAGONCLAW_DEFAULT_WORKSPACE_DIR";
 
@@ -64,6 +65,18 @@ pub fn dragonclaw_launcher_state_path() -> Result<PathBuf, String> {
 /// Get the path to `~/.openclaw/slash-commands.json`.
 pub fn slash_commands_path() -> Result<PathBuf, String> {
     Ok(user_config_dir()?.join("slash-commands.json"))
+}
+
+/// Get the path to `~/.openclaw/knowledge-bases.json`.
+pub fn knowledge_bases_path() -> Result<PathBuf, String> {
+    Ok(user_config_dir()?.join("knowledge-bases.json"))
+}
+
+/// Get the fixed managed knowledge-base root under the OpenClaw engine sandbox.
+pub fn knowledge_base_root_dir() -> Result<PathBuf, String> {
+    let dir = engine_dir()?.join(KNOWLEDGE_BASE_DIR_NAME);
+    fs::create_dir_all(&dir).map_err(|error| format!("创建知识库目录失败: {error}"))?;
+    Ok(dir)
 }
 
 /// Get the path to `~/.config/imap-smtp-email/.env`.

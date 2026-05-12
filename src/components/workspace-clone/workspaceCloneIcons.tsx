@@ -1,4 +1,5 @@
 import {
+  ArrowLeft,
   BookOpen,
   Bot,
   CalendarClock,
@@ -9,11 +10,13 @@ import {
   Copy,
   Cpu,
   Folder,
+  Grid2x2,
   Pencil,
   Globe,
   Info,
   Languages,
   LayoutDashboard,
+  List,
   Mail,
   MessageSquarePlus,
   MessageCircle,
@@ -42,6 +45,7 @@ import {
 } from "lucide-react";
 
 const ICON_MAP = {
+  "arrow-left": ArrowLeft,
   book: BookOpen,
   "book-open": BookOpen,
   bot: Bot,
@@ -55,9 +59,11 @@ const ICON_MAP = {
   edit: Pencil,
   folder: Folder,
   globe: Globe,
+  grid: Grid2x2,
   info: Info,
   languages: Languages,
   "layout-dashboard": LayoutDashboard,
+  list: List,
   mail: Mail,
   "message-square-plus": MessageSquarePlus,
   "message-circle": MessageCircle,

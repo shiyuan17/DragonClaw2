@@ -15,7 +15,6 @@ import type {
 export const WORKSPACE_MENU_ITEMS: WorkspaceMenuItem[] = [
   { key: "chat", label: "聊天", icon: "message-circle" },
   { key: "schedule", label: "任务", icon: "calendar-clock" },
-  { key: "knowledge", label: "知识库管理", icon: "book-open" },
   { key: "employees", label: "数字员工", icon: "users" },
   { key: "skills", label: "技能市场", icon: "sparkles" },
   { key: "tasks", label: "产品落地", icon: "layout-dashboard" },
