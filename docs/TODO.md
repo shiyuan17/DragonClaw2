@@ -1,5 +1,8 @@
 ﻿# DragonClaw - 开发任务总表 (AI 开发规范版)
 
+## Phase 5.72.2: Workspace 模型热切换不重启服务
+- [ ] 将聊天 composer、旧模型切换弹窗、AI 引擎页模型 chip 与 Provider 新增/保存/删除流程改为仅刷新配置状态，不再自动 stop/start OpenClaw 服务，保持现有 Tauri / Gateway / `invoke()` 契约不变。
+
 ## Phase 5.68.1: Workspace Composer Pills 文案收敛
 - [x] 将 `workspace-clone` composer 的场景 / 邮箱 / 命令 / 工作目录入口收敛为紧凑图标按钮，修复工作目录菜单遮挡；邮箱已绑定态与邮箱绑定弹窗均改为对应 provider 图标语义，模型 pill 去掉“模型”前缀但保留当前模型名称，仅改前端渲染层与样式，不修改任何 Tauri / Gateway / `invoke()` 契约。
 
