@@ -16,7 +16,7 @@
     "check:file-size": "node scripts/check-file-size.mjs",
     "build": "npm run check:encoding && npm run check:file-size && tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "node scripts/run-tauri.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

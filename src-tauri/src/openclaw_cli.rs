@@ -19,6 +19,8 @@ use serde_json::Value;
 use crate::{environment, paths};
 
 const WINDOWS_HIDDEN_WINDOW_FLAG: u32 = 0x0800_0000;
+#[cfg(target_os = "windows")]
+const USER_PATH_VALUE_ENV: &str = "DRAGONCLAW_USER_PATH_VALUE";
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -206,13 +208,94 @@ fn run_powershell_script(script: &str, args: &[&str]) -> Result<Output, String> 
         .map_err(|error| format!("Failed to run PowerShell helper: {error}"))
 }
 
+fn decode_command_output(bytes: &[u8]) -> String {
+    match String::from_utf8(bytes.to_vec()) {
+        Ok(value) => value.trim().to_string(),
+        Err(_) => String::from_utf8_lossy(bytes).trim().to_string(),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn decode_windows_command_output(bytes: &[u8]) -> String {
+    let utf8 = decode_command_output(bytes);
+    if !utf8.contains('\u{FFFD}') {
+        return utf8;
+    }
+
+    decode_windows_code_page(bytes, 1)
+        .or_else(|| decode_windows_code_page(bytes, 0))
+        .unwrap_or(utf8)
+}
+
+#[cfg(target_os = "windows")]
+fn decode_windows_code_page(bytes: &[u8], code_page: u32) -> Option<String> {
+    use std::ffi::c_char;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn MultiByteToWideChar(
+            CodePage: u32,
+            dwFlags: u32,
+            lpMultiByteStr: *const c_char,
+            cbMultiByte: i32,
+            lpWideCharStr: *mut u16,
+            cchWideChar: i32,
+        ) -> i32;
+    }
+
+    if bytes.is_empty() || bytes.len() > i32::MAX as usize {
+        return None;
+    }
+
+    let byte_count = bytes.len() as i32;
+    let required = unsafe {
+        MultiByteToWideChar(
+            code_page,
+            0,
+            bytes.as_ptr() as *const c_char,
+            byte_count,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if required <= 0 {
+        return None;
+    }
+
+    let mut wide = vec![0u16; required as usize];
+    let written = unsafe {
+        MultiByteToWideChar(
+            code_page,
+            0,
+            bytes.as_ptr() as *const c_char,
+            byte_count,
+            wide.as_mut_ptr(),
+            required,
+        )
+    };
+    if written <= 0 {
+        return None;
+    }
+
+    Some(
+        String::from_utf16_lossy(&wide[..written as usize])
+            .trim()
+            .to_string(),
+    )
+}
+
+#[cfg(not(target_os = "windows"))]
+fn decode_windows_command_output(bytes: &[u8]) -> String {
+    decode_command_output(bytes)
+}
+
 #[cfg(target_os = "windows")]
 fn read_user_path_value() -> Result<Option<String>, String> {
     let output =
         run_powershell_script("[Environment]::GetEnvironmentVariable('Path', 'User')", &[])?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stderr = decode_windows_command_output(&output.stderr);
         return Err(if stderr.is_empty() {
             "Failed to read user PATH".to_string()
         } else {
@@ -220,7 +303,7 @@ fn read_user_path_value() -> Result<Option<String>, String> {
         });
     }
 
-    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let value = decode_windows_command_output(&output.stdout);
     if value.is_empty() {
         Ok(None)
     } else {
@@ -231,7 +314,11 @@ fn read_user_path_value() -> Result<Option<String>, String> {
 #[cfg(target_os = "windows")]
 fn write_user_path_value(path_value: &str) -> Result<(), String> {
     let script = r#"
-[Environment]::SetEnvironmentVariable('Path', $args[0], 'User')
+$pathValue = [Environment]::GetEnvironmentVariable('DRAGONCLAW_USER_PATH_VALUE', 'Process')
+if ($null -eq $pathValue) {
+    throw 'Missing DRAGONCLAW_USER_PATH_VALUE'
+}
+[Environment]::SetEnvironmentVariable('Path', $pathValue, 'User')
 try {
     Add-Type -TypeDefinition @"
 using System;
@@ -248,9 +335,25 @@ public static class NativeMethods {
 }
 "#;
 
-    let output = run_powershell_script(script, &[path_value])?;
+    let mut command = hidden_command("powershell");
+    command
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ])
+        .env(USER_PATH_VALUE_ENV, path_value)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let output = command
+        .output()
+        .map_err(|error| format!("Failed to run PowerShell helper: {error}"))?;
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stderr = decode_windows_command_output(&output.stderr);
         return Err(if stderr.is_empty() {
             "Failed to write user PATH".to_string()
         } else {
@@ -376,6 +479,23 @@ mod tests {
         assert!(updated);
         let merged = merged.to_string_lossy();
         assert!(merged.contains(r"C:\Users\Alice\.local\bin"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn merge_path_entries_preserves_complex_windows_path_entries() {
+        let target = PathBuf::from(r"C:\Users\cobalt-47\.local\bin");
+        let current = Some(OsStr::new(
+            r"C:\Users\cobalt-47\.cargo\bin;D:\Program Files (x86)\cursor\resources\app\bin;C:\Program Files\Microsoft VS Code\bin",
+        ));
+        let (merged, updated) = merge_path_entries(current, &target).unwrap();
+        let merged = merged.to_string_lossy();
+
+        assert!(updated);
+        assert!(merged.contains(r"C:\Users\cobalt-47\.cargo\bin"));
+        assert!(merged.contains(r"D:\Program Files (x86)\cursor\resources\app\bin"));
+        assert!(merged.contains(r"C:\Program Files\Microsoft VS Code\bin"));
+        assert!(merged.ends_with(r"C:\Users\cobalt-47\.local\bin"));
     }
 
     #[cfg(target_os = "windows")]
