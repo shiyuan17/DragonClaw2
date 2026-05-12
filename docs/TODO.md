@@ -1,6 +1,7 @@
 ﻿# DragonClaw - 开发任务总表 (AI 开发规范版)
 
 ## Phase 5.72: Project-Aware `/spec` and Adaptive `/plan`
+- [ ] Phase 5.75: keep `workspace-clone` startup focused on the main agent `agent:{id}:main` session while previewing that agent's most recently updated non-main conversation in the chat pane, auto-switch the first follow-up send into that real history session, and preserve all existing Tauri / Gateway / `invoke()` contracts.
 - [ ] 为 `workspace-clone` 新增 `/spec` 与 `/plan` 内置只读 slash commands：`/spec` 面向当前选择的项目目录生成 Spec Kit 风格规格产物，`/plan` 先检测可靠 spec 后自动选择 Spec Kit artifact plan 或 Codex 式只读会话计划，并保持现有 Tauri / Gateway / `invoke()` 契约不变。
 - [ ] Phase 5.72.1: 将 `workspace-clone` 内置 slash commands 的用户可见描述文案统一改为中文，覆盖命令管理弹窗与 `/` 联想列表中的 `/spec`、`/plan`、`/kb-*` 项，保持命令值、隐藏 instruction 与现有 `invoke()` / Gateway 契约不变。
 - [ ] Phase 5.72.2: 将聊天 composer、旧模型切换弹窗、AI 引擎页模型 chip 与 Provider 新增/保存/删除流程改为仅刷新配置状态，不再自动 stop/start OpenClaw 服务，保持现有 Tauri / Gateway / `invoke()` 契约不变。
