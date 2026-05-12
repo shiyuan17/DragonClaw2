@@ -15,11 +15,9 @@ import { captureTelemetryEvent } from "../utils/telemetry";
 
 interface UseConfigOptions {
     addLog: (level: string, message: string) => void;
-    running: boolean;
-    setRunning: (r: boolean) => void;
 }
 
-export function useConfig({ addLog, running, setRunning }: UseConfigOptions) {
+export function useConfig({ addLog }: UseConfigOptions) {
     const [providers, setProviders] = useState<ProviderInfo[]>([]);
     const [selectedCategory, setSelectedCategory] = useState("free");
     const [selectedProvider, setSelectedProvider] = useState("");
@@ -90,25 +88,12 @@ export function useConfig({ addLog, running, setRunning }: UseConfigOptions) {
             });
             setShowKeyModal(false);
             setConfigVersion((value) => value + 1);
-
-            if (running) {
-                addLog("info", "正在重启服务以加载新配置...");
-                try {
-                    await invoke("stop_service");
-                    setRunning(false);
-                    await new Promise((resolve) => setTimeout(resolve, 1000));
-                    await invoke("start_service_silent");
-                    addLog("success", "[OK] 服务重启请求已提交，新配置将随生命周期恢复生效");
-                } catch (err) {
-                    addLog("error", `重启服务失败: ${err}`);
-                }
-            }
         } catch (err) {
             setConfigStatus(`[!] 保存失败: ${err}`);
         } finally {
             setConfigSaving(false);
         }
-    }, [apiKeyInput, selectedProvider, baseUrlInput, selectedModel, addLog, refreshCurrentConfig, running, setRunning]);
+    }, [apiKeyInput, selectedProvider, baseUrlInput, selectedModel, addLog, refreshCurrentConfig]);
 
     const handleSetModel = useCallback(async (modelId: string) => {
         try {
@@ -121,23 +106,10 @@ export function useConfig({ addLog, running, setRunning }: UseConfigOptions) {
                 addLog("error", `刷新当前配置失败: ${error}`);
             });
             setConfigVersion((value) => value + 1);
-
-            if (running) {
-                addLog("info", "正在重启服务以加载新模型...");
-                try {
-                    await invoke("stop_service");
-                    setRunning(false);
-                    await new Promise((resolve) => setTimeout(resolve, 1000));
-                    await invoke("start_service_silent");
-                    addLog("success", "[OK] 服务重启请求已提交，新模型配置将随生命周期恢复生效");
-                } catch (restartErr) {
-                    addLog("error", `重启服务失败: ${restartErr}`);
-                }
-            }
         } catch (err) {
             setConfigStatus(`[!] 切换失败: ${err}`);
         }
-    }, [addLog, refreshCurrentConfig, running, setRunning]);
+    }, [addLog, refreshCurrentConfig]);
 
     const handleUpsertSavedProviderConfig = useCallback(async (payload: {
         providerKey: string;
@@ -166,21 +138,8 @@ export function useConfig({ addLog, running, setRunning }: UseConfigOptions) {
         });
         setConfigVersion((value) => value + 1);
 
-        if (running) {
-            addLog("info", "正在重启服务以应用新模型配置...");
-            try {
-                await invoke("stop_service");
-                setRunning(false);
-                await new Promise((resolve) => setTimeout(resolve, 1000));
-                await invoke("start_service_silent");
-                addLog("success", "[OK] Workspace 模型配置已更新，服务将随生命周期恢复");
-            } catch (restartErr) {
-                addLog("error", `重启服务失败: ${restartErr}`);
-            }
-        }
-
         return result;
-    }, [addLog, refreshCurrentConfig, running, setRunning]);
+    }, [addLog, refreshCurrentConfig]);
 
     const handleEnqueueWorkspaceSavedProviderConfig = useCallback(async (payload: {
         providerKey: string;
@@ -218,21 +177,8 @@ export function useConfig({ addLog, running, setRunning }: UseConfigOptions) {
         });
         setConfigVersion((value) => value + 1);
 
-        if (running) {
-            addLog("info", "正在重启服务以应用删除后的模型配置...");
-            try {
-                await invoke("stop_service");
-                setRunning(false);
-                await new Promise((resolve) => setTimeout(resolve, 1000));
-                await invoke("start_service_silent");
-                addLog("success", "[OK] Workspace 模型配置已删除，服务将随生命周期恢复");
-            } catch (restartErr) {
-                addLog("error", `重启服务失败: ${restartErr}`);
-            }
-        }
-
         return result;
-    }, [addLog, refreshCurrentConfig, running, setRunning]);
+    }, [addLog, refreshCurrentConfig]);
 
     const handleOpenRegister = useCallback(async (providerId: string) => {
         try {

@@ -103,7 +103,7 @@ function AppShell() {
     confirmReset,
     configVersion,
     bumpConfigVersion,
-  } = useConfig({ addLog, running, setRunning });
+  } = useConfig({ addLog });
 
   useEffect(() => {
     setInfoModalTitle(legacyInfoModalTitle);
