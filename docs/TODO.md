@@ -1,10 +1,21 @@
 ﻿# DragonClaw - 开发任务总表 (AI 开发规范版)
 
-## Phase 5.72.2: Workspace 模型热切换不重启服务
-- [ ] 将聊天 composer、旧模型切换弹窗、AI 引擎页模型 chip 与 Provider 新增/保存/删除流程改为仅刷新配置状态，不再自动 stop/start OpenClaw 服务，保持现有 Tauri / Gateway / `invoke()` 契约不变。
+## Phase 5.72: Project-Aware `/spec` and Adaptive `/plan`
+- [ ] 为 `workspace-clone` 新增 `/spec` 与 `/plan` 内置只读 slash commands：`/spec` 面向当前选择的项目目录生成 Spec Kit 风格规格产物，`/plan` 先检测可靠 spec 后自动选择 Spec Kit artifact plan 或 Codex 式只读会话计划，并保持现有 Tauri / Gateway / `invoke()` 契约不变。
+- [ ] Phase 5.72.1: 将 `workspace-clone` 内置 slash commands 的用户可见描述文案统一改为中文，覆盖命令管理弹窗与 `/` 联想列表中的 `/spec`、`/plan`、`/kb-*` 项，保持命令值、隐藏 instruction 与现有 `invoke()` / Gateway 契约不变。
+- [ ] Phase 5.72.2: 将聊天 composer、旧模型切换弹窗、AI 引擎页模型 chip 与 Provider 新增/保存/删除流程改为仅刷新配置状态，不再自动 stop/start OpenClaw 服务，保持现有 Tauri / Gateway / `invoke()` 契约不变。
+
+## Phase 5.71: Workspace 知识库接入 Lake 编辑器
+- [ ] 将 `workspace-clone` 左侧 `knowledge` 从占位页升级为真实知识库页面，接入应用级共享知识库配置、多目录本地文件浏览、文本优先的 Lake 预览/编辑能力，并保持现有 Tauri / Gateway / `invoke()` 契约不破坏。
+- [ ] Phase 5.71.1: 将知识库页面收敛为“总览态 / 知识库内页”双态布局：总览态左侧为知识库列表、右侧为知识库预览区并提供新建按钮与网格 / 列表切换；新建知识库仅填写名称与简介，自动绑定到 `engine_dir()/knowledge-base/<slug>`；进入知识库后切换为左侧文件目录、右侧 Lake 编辑器，不破坏现有 Tauri / Gateway / `invoke()` 契约。
+- [ ] Phase 5.71.2: 将知识库从 workspace 主侧边栏一级入口降级为聊天 / Agent 工作流资源入口，保留现有知识库面板、Lake 编辑和 Tauri command 契约，并新增 `/kb-extract`、`/kb-digest`、`/kb-output`、`/kb-inspect` 内置命令。
+
+## Phase 5.68.2: Workspace Composer 已连接状态入口收敛
+- [x] 去掉 `workspace-clone` 聊天 composer 中常驻显示的“会话已连接”状态 pill，仅保留连接中 / 未启动 / 异常 / 生成中等必要状态反馈，限定为前端渲染层微调，不改任何 Tauri / Gateway / `invoke()` 契约。
 
 ## Phase 5.68.1: Workspace Composer Pills 文案收敛
 - [x] 将 `workspace-clone` composer 的场景 / 邮箱 / 命令 / 工作目录入口收敛为紧凑图标按钮，修复工作目录菜单遮挡；邮箱已绑定态与邮箱绑定弹窗均改为对应 provider 图标语义，模型 pill 去掉“模型”前缀但保留当前模型名称，仅改前端渲染层与样式，不修改任何 Tauri / Gateway / `invoke()` 契约。
+- [ ] Phase 5.68.1a: 修复 `workspace-clone` composer 底部模型选择菜单与 slash 联想弹层被输入容器裁切的问题，限定为前端样式热修，不改任何 Tauri / Gateway / `invoke()` 契约。
 
 ## Phase 5.15.11b: Workspace Composer 邮箱入口已绑定文案收敛
 - [x] 将 `workspace-clone` composer 邮箱入口的已绑定态文案从“邮箱 + 服务商名”收敛为直接显示绑定邮箱账号，仅改前端渲染层，不改任何 Tauri / Gateway / `invoke()` 契约。
@@ -76,6 +87,7 @@
 
 ## Phase 5.65: Workspace 模型配置异步保存与卡片换行修复
 - [ ] 将 `workspace-clone` 模型配置弹窗的新建/编辑保存链路改为前端立即插卡、后端异步写入 `openclaw.json` / `agents/main/agent/models.json`，保持“保存配置不切换模型”的边界，并修复顶部卡片超过 3 条后的换行与 footer 挤出布局问题。
+- [ ] Phase 5.65.1: 将 `workspace-clone` 模型配置中的协议下拉从笼统的“OpenAI 兼容”拆分为 `OpenAI Completion`、`OpenAI Responses`、`Anthropic Messages` 三种显式协议值，保持现有保存命令、`invoke()` 参数形状与已存配置兼容。
 
 ## Phase 5.66: Workspace 聊天动画与渲染性能优化
 - [ ] 优化 `workspace-clone` 聊天区的滚动、live timeline、drawer / modal 首开体验与高频动效成本：流式更新默认使用非平滑自动跟底、精简运行态动画、取消 Markdown 首次懒加载闪烁、预取聊天侧 drawer / 模型弹窗、收口聊天相关 overlay blur，并补齐 `prefers-reduced-motion`，保持现有 Tauri / Gateway / `invoke()` 契约不变。
@@ -497,3 +509,6 @@
 - [ ] 将旧仓库头像调整能力迁移到 `workspace-clone > chat > agents`，支持预设头像、自定义上传、恢复默认，并使用前端本地存储持久化覆盖结果且不改动任何 Tauri command / `invoke()` 契约。
 ## Phase 5.48: Workspace 头像弹窗修复与默认头像分配
 - [ ] 修复 `workspace-clone` 聊天回复头像拉伸裁切、头像弹窗显示不全与英文文案残留，并为新加入的数字员工在无自带头像时按 `agentId` 稳定分配默认插画头像，不改任何 Tauri command / `invoke()` 契约。
+
+## Phase 5.72.3: Tauri 启动时的 Cargo PATH 自举
+- [ ] 修复 `npm run tauri dev` 在 Windows 上因 `cargo metadata` 找不到 `cargo` 而启动失败的问题；为 Tauri CLI 增加仅当前进程生效的 Cargo PATH 补全与更明确的缺失提示。
