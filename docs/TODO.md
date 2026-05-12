@@ -4,6 +4,22 @@
 - [ ] 为 `workspace-clone` 新增 `/spec` 与 `/plan` 内置只读 slash commands：`/spec` 面向当前选择的项目目录生成 Spec Kit 风格规格产物，`/plan` 先检测可靠 spec 后自动选择 Spec Kit artifact plan 或 Codex 式只读会话计划，并保持现有 Tauri / Gateway / `invoke()` 契约不变。
 - [ ] Phase 5.72.1: 将 `workspace-clone` 内置 slash commands 的用户可见描述文案统一改为中文，覆盖命令管理弹窗与 `/` 联想列表中的 `/spec`、`/plan`、`/kb-*` 项，保持命令值、隐藏 instruction 与现有 `invoke()` / Gateway 契约不变。
 - [ ] Phase 5.72.2: 将聊天 composer、旧模型切换弹窗、AI 引擎页模型 chip 与 Provider 新增/保存/删除流程改为仅刷新配置状态，不再自动 stop/start OpenClaw 服务，保持现有 Tauri / Gateway / `invoke()` 契约不变。
+- [ ] Phase 5.72.4: 加固 OpenClaw 配置写入安全底座，为 `openclaw.json` 增加备份、候选 JSON 校验、失败恢复、高级 JSON5 / `$include` 防重写保护，并保持现有启动链路、Tauri command 和 `invoke()` 契约不变。
+
+## Phase 5.73: 自动化测试基座与 P0 回归护栏
+- [ ] 为 DragonClaw 建立自动化测试基座：补齐前端 `Vitest + jsdom`、统一 Rust 测试包装脚本、PR 级质量工作流，以及 `test:frontend` / `test:rust` / `test:ci` npm 命令，保持现有 Tauri / Gateway / `invoke()` 契约不变。
+- [ ] Phase 5.73 P0: 为 `message-normalizers`、`session-cache`、`workspaceChannelBindingShared`、`workspaceCronTaskRunHelpers` 补高风险前端纯逻辑单测，覆盖聊天消息归一化、历史标题回退、缓存过滤、URL 白名单校验和任务运行桥接边界。
+- [ ] Phase 5.73 P0: 为 `download.rs`、`setup.rs`、`channels/config.rs` 补高风险 Rust helper 单测，覆盖下载 host allowlist、pinned tag zip 校验、默认模型注入、legacy config 迁移边界、`node_modules` readiness 判断、channel alias / allow-from / legacy account 迁移。
+- [ ] Phase 5.73 P1: 扩展到 `skillsMarket.ts`、`workspace-gateway/client.ts`、`live-steps.ts`、`workspaceCloneTaskSchedule*.ts`、`workspaceCloneChatFiles.ts` / `workspaceCloneChatAttachments.ts`，并为 `check:encoding` 增加已知乱码模式自测。
+- [ ] Phase 5.73 P1a: 继续为 `workspace-gateway/client.ts`、`live-steps.ts`、`skillsMarket.ts`、`workspaceCloneTaskSchedule*.ts`、`workspaceCloneChatFiles.ts`、`workspaceCloneChatAttachments.ts` 补纯逻辑单测，优先覆盖格式化回退、payload/type guard、Cron 解析与构建、消息附件/文件提取、去重与边界值。
+- [ ] Phase 5.73 P2: 引入最小 Playwright smoke，仅覆盖“启动服务 -> 连接 gateway -> 打开聊天”的桌面链路，不做全量视觉回归或完整安装 E2E。
+
+## Phase 5.74: Workspace 聊天输出流程治理
+- [x] 治理 `workspace-clone` 聊天输出流程：用户消息显示已使用的 slash command，隐藏工作目录/技能/知识库/命令 instruction 注入块，兼容增量与累计流式 delta，压缩工具/命令 live timeline，并隐藏目录列表、stdout/stderr、raw JSON/HTML 与 process 噪声，不改 Tauri / Gateway / `invoke()` 契约。
+- [ ] Phase 5.74.1: 将 `workspace-clone` 聊天回显样式对齐 Codex：用户命令/技能显示为图标 + 文本 tag，Agent 回复去掉外层气泡容器，streaming 阶段启用 Markdown / 富文本预览，并进一步压缩 live timeline，不改 Tauri / Gateway / `invoke()` 契约。
+- [ ] Phase 5.74.1a: 统一 `workspace-clone` live timeline 中“执行命令 / 调用工具 / 思考中”等步骤标签与消息 tag 的字号、行高、胶囊高度和状态 badge 尺寸，只改前端渲染层与样式层，不改 Tauri / Gateway / `invoke()` 契约。
+- [ ] Phase 5.74.1: 收敛 `workspace-clone` 内置 `/plan` 的用户可见回复，禁止输出 Spec 检测步骤、Spec Kit / Codex-style 模式判定和命令执行逻辑，只保留面向用户的规划结果或必要阻塞说明，不改 Tauri / Gateway / `invoke()` 契约。
+- [ ] Phase 5.74.2: 隐藏 `workspace-clone` 主聊天区中的 `(no output)`、shell 错误回显和内部提示文件 raw dump，并将用户消息时间移到气泡容器外部下方，不改 Tauri / Gateway / `invoke()` 契约。
 
 ## Phase 5.71: Workspace 知识库接入 Lake 编辑器
 - [ ] 将 `workspace-clone` 左侧 `knowledge` 从占位页升级为真实知识库页面，接入应用级共享知识库配置、多目录本地文件浏览、文本优先的 Lake 预览/编辑能力，并保持现有 Tauri / Gateway / `invoke()` 契约不破坏。
