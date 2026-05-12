@@ -88,7 +88,7 @@ interface WorkspaceCloneChatMessageRowProps {
   onBlankAreaClick: (event: ReactMouseEvent<HTMLElement>) => void;
 }
 
-const WorkspaceCloneChatMessageRow = memo(function WorkspaceCloneChatMessageRow({
+export const WorkspaceCloneChatMessageRow = memo(function WorkspaceCloneChatMessageRow({
   message,
   selectedEntity,
   liveSteps,
@@ -114,9 +114,11 @@ const WorkspaceCloneChatMessageRow = memo(function WorkspaceCloneChatMessageRow(
           ? renderAvatarMarker(selectedEntity, message.author)
           : message.author}
       </div>
-      <div className="workspace-clone__message-content">
-        {isStreaming ? <WorkspaceCloneLiveTimeline steps={liveSteps} /> : null}
-        {showPreview ? <WorkspaceCloneMessagePreview message={message} /> : null}
+      <div className="workspace-clone__message-body">
+        <div className="workspace-clone__message-content">
+          {isStreaming ? <WorkspaceCloneLiveTimeline steps={liveSteps} /> : null}
+          {showPreview ? <WorkspaceCloneMessagePreview message={message} /> : null}
+        </div>
         {showMeta ? <span className="workspace-clone__message-meta">{message.time}</span> : null}
       </div>
     </article>

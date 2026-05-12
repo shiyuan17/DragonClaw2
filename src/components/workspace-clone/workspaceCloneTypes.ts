@@ -115,6 +115,7 @@ export interface WorkspaceMessage {
   role: "assistant" | "user" | "system" | "tool";
   author: string;
   text: string;
+  commandTag?: string; skillTags?: string[];
   attachments?: WorkspaceMessageAttachment[];
   meta?: string;
   time: string;

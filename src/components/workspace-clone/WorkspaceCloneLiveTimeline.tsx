@@ -65,11 +65,11 @@ export const WorkspaceCloneLiveTimeline = memo(function WorkspaceCloneLiveTimeli
             ].join(" ")}
           >
             <span className="workspace-clone__live-step-icon" aria-hidden="true">
-              <WorkspaceCloneIcon name={STEP_ICON_BY_KIND[step.kind]} size={14} strokeWidth={2} />
+              <WorkspaceCloneIcon name={STEP_ICON_BY_KIND[step.kind]} size={12} strokeWidth={2} />
             </span>
             <span className="workspace-clone__live-step-copy">
               <span className="workspace-clone__live-step-title">
-                {showKindLabel ? <span>{kindLabel}</span> : null}
+                {showKindLabel ? <span className="workspace-clone__live-step-kind">{kindLabel}</span> : null}
                 <strong>{title}</strong>
               </span>
               {showDetail ? <small>{step.detail}</small> : null}

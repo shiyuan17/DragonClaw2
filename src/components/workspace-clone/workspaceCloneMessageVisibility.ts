@@ -1,9 +1,14 @@
 import type { WorkspaceMessage } from "./workspaceCloneTypes";
+import {
+  looksLikeWorkspaceInternalPromptFileDump,
+  looksLikeWorkspaceShellErrorTranscript,
+} from "./workspaceCloneMessageNoisePatterns";
+import { isWorkspaceComposerTransportMessage, stripWorkspaceComposerTransportBlocks } from "./workspaceCloneSlashCommands";
 
 const RAW_COMMAND_LINE_RE =
-  /^\s*(?:[-*]\s*)?(?:`{1,3})?(?:curl|pwsh|powershell|bash|sh|cmd(?:\.exe)?|python|node|npm|pnpm|npx|git|uv)\b/i;
+  /^\s*(?:[-*+]\s*)?(?:`{1,3})?(?:rg|curl|pwsh|powershell|bash|sh|cmd(?:\.exe)?|python|node|npm|pnpm|npx|git|uv)\b/i;
 const RAW_ERROR_METADATA_LINE_RE =
-  /^\s*(?:\+\s*)?(?:CategoryInfo|FullyQualifiedErrorId|At line:\d+ char:\d+|MissingMandatoryParameter|ParameterBindingException)\b/i;
+  /^\s*(?:\+\s*)?(?:CategoryInfo|FullyQualifiedErrorId|At line:\d+ char:\d+|所在位置\s+行:\d+\s+字符:\d+|MissingMandatoryParameter|ParameterBindingException)\b/i;
 const RAW_EXECUTION_HEADER_LINE_RE =
   /^\s*(?:Invoke-WebRequest|Microsoft\.PowerShell\.Commands\.InvokeWebRequestCommand)\b.*:/i;
 const RAW_EXIT_CODE_LINE_RE = /^\s*\(Command exited with code \d+\)\s*$/i;
@@ -13,6 +18,9 @@ const EXTERNAL_CONTENT_RE =
   /EXTERNAL_UNTRUSTED_CONTENT|SECURITY NOTICE: The following content is from an EXTERNAL, UNTRUSTED source/i;
 const COMMAND_STILL_RUNNING_RE =
   /^\s*Command still running \(session [^)]+\)\.\s*Use process \(list\/poll\/log\/write\/kill\/clear\/remove\) for follow-up\.?\s*$/i;
+const NO_OUTPUT_RE = /^\s*\((?:no output|no output recorded)\)\s*$/i;
+const NO_OUTPUT_PROCESS_EXIT_RE =
+  /^\s*(?:\((?:no output|no output recorded)\)\s*)?Process exited with (?:signal [A-Z0-9_.-]+|code -?\d+)\.?\s*$/i;
 const VIEW_IN_BROWSER_LINE_RE = /^\s*View in browser\b/i;
 const RAW_HTML_LINE_RE = /^\s*<(?:!doctype|html|head|body|div|span|p|h[1-6]|table|tr|td|style|script)\b/i;
 const RAW_PROCESS_TAIL_SIGNAL_RE =
@@ -200,7 +208,28 @@ function looksLikeStandaloneProcessStatus(text: string) {
     return false;
   }
 
-  return COMMAND_STILL_RUNNING_RE.test(normalized);
+  return COMMAND_STILL_RUNNING_RE.test(normalized) || NO_OUTPUT_RE.test(normalized) || NO_OUTPUT_PROCESS_EXIT_RE.test(normalized);
+}
+
+function looksLikeDirectoryOrFileListing(text: string) {
+  const normalized = text.trim();
+  if (!normalized || normalized.length > 3000) {
+    return false;
+  }
+
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+  if (tokens.length < 8) {
+    return false;
+  }
+
+  const windowsPathCount = tokens.filter((token) => /^[A-Za-z]:\\/.test(token)).length;
+  const fileLikeCount = tokens.filter((token) => (
+    /^\.?[A-Za-z0-9_.-]+\.(?:md|tsx?|jsx?|json|png|jpe?g|gif|toml|ya?ml|rs|css|html|log|lock|ico|icns)$/i.test(token) ||
+    /^[A-Za-z0-9_.-]+\/?$/.test(token) && /^(?:src|docs|node_modules|dist|public|scripts|target|\.git|\.github|\.vscode|src-tauri)$/i.test(token.replace(/\/$/, ""))
+  )).length;
+  const sentenceSignal = /[。！？；，]|(?:\b(?:the|and|with|for|this|that|because|please|should)\b)/i.test(normalized);
+
+  return windowsPathCount >= 3 || (fileLikeCount >= 8 && fileLikeCount / tokens.length >= 0.65 && !sentenceSignal);
 }
 
 function isMeaningfulUserFacingPrefix(text: string) {
@@ -232,6 +261,10 @@ function looksLikeMixedProcessTail(text: string) {
     VIEW_IN_BROWSER_LINE_RE.test(firstLine) &&
     (RAW_PROCESS_TAIL_SIGNAL_RE.test(trimmed) || /\n\s*[\[{]/.test(trimmed) || nonEmptyLines.some((line) => RAW_HTML_LINE_RE.test(line)))
   ) {
+    return true;
+  }
+
+  if (NO_OUTPUT_RE.test(firstLine) || NO_OUTPUT_PROCESS_EXIT_RE.test(firstLine) || looksLikeDirectoryOrFileListing(trimmed)) {
     return true;
   }
 
@@ -272,6 +305,9 @@ function trimMixedProcessTail(text: string) {
 
   const candidates = [
     trimmed.search(/\n\s*Command still running \(session [^)]+\)\./i),
+    trimmed.search(/\n\s*\((?:no output|no output recorded)\)/i),
+    trimmed.search(/\n\s*Process exited with (?:signal|code)/i),
+    trimmed.search(/\n\s*(?:[A-Za-z]:\\[^\n]+(?:\s+[A-Za-z]:\\[^\n]+){2,})/i),
     trimmed.search(/\n\s*View in browser\b/i),
     trimmed.search(/\n\s*EXTERNAL_UNTRUSTED_CONTENT/i),
   ].filter((value) => value >= 0);
@@ -350,13 +386,22 @@ export function isWorkspaceRawProcessEcho(text: string) {
   return (
     looksLikeStandaloneProcessStatus(trimmed) ||
     EXTERNAL_CONTENT_RE.test(trimmed) ||
+    isWorkspaceComposerTransportMessage(trimmed) ||
+    looksLikeDirectoryOrFileListing(trimmed) ||
+    looksLikeWorkspaceShellErrorTranscript(trimmed) ||
+    looksLikeWorkspaceInternalPromptFileDump(trimmed) ||
     looksLikeHiddenProcessPayloadJson(trimmed) ||
     looksLikeRawExecutionTranscript(trimmed)
   );
 }
 
 export function sanitizeWorkspaceAssistantText(text: string): { text: string; shouldHide: boolean } {
-  const trimmed = text.trim();
+  const original = text.trim();
+  if (isWorkspaceComposerTransportMessage(original)) {
+    return { text: "", shouldHide: true };
+  }
+
+  const trimmed = stripWorkspaceComposerTransportBlocks(original).trim();
   if (!trimmed) {
     return { text: "", shouldHide: true };
   }

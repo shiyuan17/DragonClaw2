@@ -12,6 +12,12 @@ export const WORKSPACE_SLASH_COMMAND_MARKER = "[DC_WORKSPACE_SLASH_COMMAND_V1]";
 export const WORKSPACE_SKILL_MARKER = "[DC_WORKSPACE_SKILL_V1]";
 export const WORKSPACE_DIRECTORY_MARKER = "[DC_WORKSPACE_DIRECTORY_V1]";
 export const WORKSPACE_KNOWLEDGE_MARKER = "[DC_WORKSPACE_KNOWLEDGE_BASE_V1]";
+const WORKSPACE_TRANSPORT_MARKERS = [
+  WORKSPACE_DIRECTORY_MARKER,
+  WORKSPACE_KNOWLEDGE_MARKER,
+  WORKSPACE_SKILL_MARKER,
+  WORKSPACE_SLASH_COMMAND_MARKER,
+] as const;
 
 function buildKnowledgeCommandInstruction(action: string, commandFile: string, extraRules: string[]) {
   return [
@@ -45,10 +51,13 @@ function buildAdaptivePlanCommandInstruction() {
   return [
     "You are running DragonClaw /plan. First decide whether this project has a reliable Spec Kit-style spec, then choose the correct planning strategy.",
     "Use the [DC_WORKSPACE_DIRECTORY_V1] cwd block as the project root when present. If no cwd is present, you may produce a lightweight conversation plan, but must not attempt Spec Kit artifact planning until the user selects a project.",
-    "Spec detection order: 1) if the user explicitly names a spec or feature, use that if it resolves to a valid specs/<feature>/spec.md; 2) if .specify/feature.json points to a valid spec.md, use it; 3) if exactly one reliable specs/*/spec.md exists, use it and state that it was the only detected spec; 4) if multiple specs exist, ask the user to choose; 5) if no reliable spec exists, use Codex-style read-only planning.",
+    "Spec detection order: 1) if the user explicitly names a spec or feature, use that if it resolves to a valid specs/<feature>/spec.md; 2) if .specify/feature.json points to a valid spec.md, use it; 3) if exactly one reliable specs/*/spec.md exists, use it; 4) if multiple specs exist, ask the user to choose; 5) if no reliable spec exists, use Codex-style read-only planning.",
     "Treat a spec as reliable only when it is a feature spec file under specs/<feature>/spec.md or is referenced by .specify metadata. Do not treat an arbitrary specs/ directory as Spec Kit evidence by itself.",
     "Spec Kit plan mode: read the selected spec and project rules, then generate or propose plan.md, research.md, data-model.md, contracts/, and quickstart.md under that feature directory. The plan explains HOW and must reflect the real project stack, tests, constraints, and constitution checks.",
     "Codex-style plan mode: perform only read-only exploration and output a conversation-level implementation plan with execution direction, affected areas, risks, tests, and open questions. Do not create specs/ or other artifacts in this mode.",
+    "The planning-strategy selection is internal command logic. In the user-visible reply, do not narrate the detection process, do not say whether you chose Spec Kit mode or Codex-style mode, and do not list missing spec evidence unless the user explicitly asks for that diagnosis.",
+    "Do not include preambles such as 'Spec detection result', 'currently I will use Codex-style read-only planning', or explanations about why plan.md/research.md will or will not be generated. Start with the actual plan, a concise blocker, or a short clarification question.",
+    "When multiple reliable specs exist or no project directory is selected, ask only the minimum next-step question needed to proceed. Phrase it as direct user guidance rather than command self-explanation.",
     "In all modes, do not edit product code, run formatters/codegen/migrations, or modify non-planning artifacts. Spec Kit plan mode may create or update planning artifacts only under the selected specs/<feature>/ directory.",
   ].join("\n");
 }
@@ -301,6 +310,55 @@ export function buildWorkspaceComposerTransportMessage(options: {
     "user message:",
     normalizedMessage,
   ].join("\n\n");
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getWorkspaceTransportUserMessage(value: string) {
+  const match = value.match(/(?:^|\n)user message:\s*\n([\s\S]*)$/i);
+  return match?.[1]?.trim() ?? "";
+}
+
+function getWorkspaceTransportCommand(value: string) {
+  const match = value.match(/(?:^|\n)command:\s*(\/[^\s\r\n]+)/i);
+  return match?.[1]?.trim() ?? "";
+}
+
+export function isWorkspaceComposerTransportMessage(value: string) {
+  return WORKSPACE_TRANSPORT_MARKERS.some((marker) => value.includes(marker));
+}
+
+export function stripWorkspaceComposerTransportBlocks(value: string) {
+  const normalized = value.trim();
+  if (!normalized || !isWorkspaceComposerTransportMessage(normalized)) {
+    return normalized;
+  }
+
+  const userMessage = getWorkspaceTransportUserMessage(normalized);
+  const command = getWorkspaceTransportCommand(normalized);
+  if (command) {
+    return [command, userMessage].filter(Boolean).join(" ").trim();
+  }
+  if (userMessage) {
+    return userMessage;
+  }
+
+  const markerPattern = WORKSPACE_TRANSPORT_MARKERS.map(escapeRegExp).join("|");
+  return normalized
+    .replace(new RegExp(`(?:^|\\n)(?:${markerPattern})[\\s\\S]*?(?=\\n(?:${markerPattern})|\\nuser message:|$)`, "gi"), "")
+    .replace(/(?:^|\n)user message:\s*/gi, "\n")
+    .trim();
+}
+
+export function buildWorkspaceVisibleComposerMessage(options: {
+  command?: WorkspaceActiveSlashCommand | null;
+  userMessage: string;
+}) {
+  const normalizedMessage = options.userMessage.trim();
+  const command = options.command?.command.trim();
+  return command ? [command, normalizedMessage].filter(Boolean).join(" ") : normalizedMessage;
 }
 
 export function parseWorkspaceSlashSelection(value: string) {

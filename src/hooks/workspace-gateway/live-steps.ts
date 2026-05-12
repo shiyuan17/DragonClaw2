@@ -9,7 +9,7 @@ export type WorkspaceGatewayAgentEventPayload = {
   data?: unknown;
 };
 
-const LIVE_STEP_LIMIT = 12;
+const LIVE_STEP_LIMIT = 6;
 const POST_TOOL_THINKING_STEP_SUFFIX = "post-tool-thinking";
 export const LIVE_STEP_DEDUPE_WINDOW_MS = 1500;
 export const LIVE_STEP_DEDUPE_ENTRY_TTL_MS = 10000;
@@ -62,7 +62,7 @@ function truncateInlineText(value: string, maxLength = 120) {
   if (compact.length <= maxLength) {
     return compact;
   }
-  return `${compact.slice(0, Math.max(0, maxLength - 1))}…`;
+  return `${compact.slice(0, Math.max(0, maxLength - 3))}...`;
 }
 
 function firstNonEmptyString(...values: unknown[]) {
@@ -76,33 +76,14 @@ function firstNonEmptyString(...values: unknown[]) {
 
 function resolveLiveStepKind(kind: string, title: string): WorkspaceLiveStepKind {
   const normalized = kind.trim().toLowerCase();
-  if (normalized === "skill") {
-    return "skill";
-  }
-  if (normalized === "command") {
-    return "command";
-  }
-  if (normalized === "command_output") {
-    return "command";
-  }
-  if (normalized === "search") {
-    return "search";
-  }
-  if (normalized === "analysis") {
-    return "thinking";
-  }
-  if (normalized === "patch") {
-    return "patch";
-  }
-  if (normalized === "plan") {
-    return "plan";
-  }
-  if (normalized === "approval") {
-    return "approval";
-  }
-  if (normalized === "tool") {
-    return title.includes("技能") ? "skill" : "tool";
-  }
+  if (normalized === "skill") return "skill";
+  if (normalized === "command" || normalized === "command_output") return "command";
+  if (normalized === "search") return "search";
+  if (normalized === "analysis") return "thinking";
+  if (normalized === "patch") return "patch";
+  if (normalized === "plan") return "plan";
+  if (normalized === "approval") return "approval";
+  if (normalized === "tool") return title.includes("技能") ? "skill" : "tool";
   return "other";
 }
 
@@ -154,7 +135,7 @@ function extractLiveStepDetail(data: Record<string, unknown>) {
     data.meta,
     data.title,
   );
-  return detail ? truncateInlineText(detail, 160) : "";
+  return detail ? truncateInlineText(detail, 120) : "";
 }
 
 function isCommandLikeTool(data: Record<string, unknown>) {
@@ -192,7 +173,7 @@ function buildLiveStepDetail(params: {
   }
   if (kind === "command") {
     const detail = firstNonEmptyString(data.summary, data.detail, data.progressText);
-    return detail ? truncateInlineText(detail, 160) : "";
+    return detail ? truncateInlineText(detail, 120) : "";
   }
   return extractLiveStepDetail(data);
 }

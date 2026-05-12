@@ -394,15 +394,18 @@ export function extractWorkspaceMessageAttachments(raw: unknown) {
     : typeof message.MediaPath === "string" && message.MediaPath.trim()
       ? [message.MediaPath]
       : [];
-  const mediaTypes = Array.isArray(message.MediaTypes)
-    ? message.MediaTypes.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+  const hasMediaTypesArray = Array.isArray(message.MediaTypes);
+  const rawMediaTypes: unknown[] = Array.isArray(message.MediaTypes) ? message.MediaTypes : [];
+  const mediaTypes = hasMediaTypesArray
+    ? rawMediaTypes.map((value: unknown) => (typeof value === "string" ? value.trim() : ""))
     : typeof message.MediaType === "string" && message.MediaType.trim()
       ? [message.MediaType]
       : [];
 
   mediaPaths.forEach((sourcePath, index) => {
     const fileName = basenameFromPath(sourcePath);
-    const mimeType = mediaTypes[index] || mediaTypes[0] || mimeTypeFromName(fileName);
+    const sharedMediaType = hasMediaTypesArray ? "" : (mediaTypes[0] || "");
+    const mimeType = mediaTypes[index] || sharedMediaType || mimeTypeFromName(fileName);
     const kind = resolveWorkspaceAttachmentKind(mimeType, fileName);
     pushUniqueAttachment(
       attachments,

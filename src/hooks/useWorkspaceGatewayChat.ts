@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { WorkspaceGatewayClient, buildGatewayUrl, createAgentSessionKey, filterAgentSessions, findMainAgentSession, formatAgentAvatar, isAgentsListResult, isChatEventPayload, isSessionsListResult } from "./workspace-gateway/client";
 import type { WorkspaceActiveSkillList, WorkspaceActiveSlashCommand, WorkspaceAgentCacheRow, WorkspaceChatSessionCacheRow, WorkspaceComposerAttachment, WorkspaceGatewayAgentsListResult, WorkspaceGatewaySessionsListResult, WorkspaceGatewayStatus, WorkspaceLiveStep, WorkspaceLiveStepStatus, WorkspaceMessage } from "../components/workspace-clone/workspaceCloneTypes";
 import { buildWorkspaceGatewayChatAttachments } from "../components/workspace-clone/workspaceCloneChatAttachments";
-import { buildWorkspaceComposerTransportMessage } from "../components/workspace-clone/workspaceCloneSlashCommands";
+import { buildWorkspaceComposerTransportMessage, buildWorkspaceVisibleComposerMessage } from "../components/workspace-clone/workspaceCloneSlashCommands";
 import { isWorkspaceRawProcessEcho, sanitizeWorkspaceAssistantContent } from "../components/workspace-clone/workspaceCloneMessageVisibility";
 import type { CurrentConfig, KnowledgeBaseRecord } from "../types";
 import { buildAgentRecentSessionsById } from "./workspace-gateway/agent-recent-sessions";
@@ -20,6 +20,7 @@ import { useWorkspaceTaskRunSessions } from "./workspace-gateway/useWorkspaceTas
 import { shouldSkipMirroredWorkspaceLiveStep } from "./workspace-gateway/live-step-dedupe";
 import { captureWorkspaceChatMessageSent, type WorkspaceChatTelemetrySessionType } from "./workspace-gateway/chat-telemetry";
 import { buildLiveStepFromAgentEvent, buildPostToolThinkingStep, getPostToolThinkingStepId, isRecord, isTerminalLiveStepStatus, toFiniteTimestamp, toStringValue, type WorkspaceGatewayAgentEventPayload, type WorkspaceLiveStepDedupeEntry, type WorkspaceLiveStepEventSource, updateLiveStepList } from "./workspace-gateway/live-steps";
+import { mergeWorkspaceStreamText } from "./workspace-gateway/stream-text-buffer";
 import { formatClockTime } from "./workspace-gateway/time-formatters";
 interface UseWorkspaceGatewayChatOptions {
   running: boolean;
@@ -727,10 +728,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
           if (!nextText || nextAssistantDelta.shouldHide) {
             return current;
           }
-          if (!current || nextText.length >= current.length) {
-            return nextText;
-          }
-          return current;
+          return mergeWorkspaceStreamText(current, nextText);
         });
         return;
       }
@@ -980,7 +978,11 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
   }, [connected, loadHistory, resolveSessionContext, selectedAgentId]);
   const sendMessage = useCallback(async (value: string, options?: { activeCommand?: WorkspaceActiveSlashCommand; activeSkills?: WorkspaceActiveSkillList; attachments?: WorkspaceComposerAttachment[]; knowledgeBase?: KnowledgeBaseRecord | null; workspaceDirectory?: string | null; targetSessionKey?: string | null; targetAgentId?: string | null; preserveSessionSwitch?: boolean; displayText?: string; transportText?: string; telemetrySessionType?: WorkspaceChatTelemetrySessionType }) => {
       const client = clientRef.current;
-      const message = (options?.displayText ?? value).trim(); const outboundText = (options?.transportText ?? value).trim();
+      const outboundText = (options?.transportText ?? value).trim();
+      const message = (options?.displayText ?? buildWorkspaceVisibleComposerMessage({
+        command: options?.activeCommand,
+        userMessage: value,
+      })).trim();
       const outgoingAttachments = options?.attachments ?? [];
       const hasAttachments = outgoingAttachments.length > 0;
       const transportMessage = options?.activeCommand || options?.activeSkills?.length || options?.knowledgeBase || options?.workspaceDirectory?.trim()
@@ -1013,6 +1015,8 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
           role: "user",
           author: "你",
           text: message,
+          commandTag: options?.activeCommand?.command.trim() || undefined,
+          skillTags: options?.activeSkills?.map((skill) => skill.title.trim()).filter(Boolean),
           attachments: outgoingAttachments.map((attachment) => ({ id: attachment.id, fileName: attachment.fileName, mimeType: attachment.mimeType, kind: attachment.kind, transportType: attachment.transportType, sizeBytes: attachment.sizeBytes, previewUrl: attachment.previewUrl ?? null })),
           time: formatClockTime(Date.now()),
         },

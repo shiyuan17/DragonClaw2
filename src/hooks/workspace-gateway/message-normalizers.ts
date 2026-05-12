@@ -7,6 +7,7 @@ import type {
 } from "../../components/workspace-clone/workspaceCloneTypes";
 import { extractWorkspaceMessageAttachments } from "../../components/workspace-clone/workspaceCloneChatAttachments";
 import { stripWorkspaceHiddenPromptBlocks } from "../../components/workspace-clone/workspaceCloneManualTaskExecution";
+import { stripWorkspaceComposerTransportBlocks } from "../../components/workspace-clone/workspaceCloneSlashCommands";
 import { isWorkspaceRawProcessEcho, sanitizeWorkspaceAssistantContent } from "../../components/workspace-clone/workspaceCloneMessageVisibility";
 import { looksLikeMojibakeText, normalizeVisibleText } from "../../utils/text-mojibake";
 import { formatClockTime, formatHistorySessionTime, formatRelativeSessionTime } from "./time-formatters";
@@ -105,7 +106,7 @@ function extractTextFromContentBlock(block: unknown): string {
 
 export function extractGatewayMessageText(message: unknown): string {
   if (typeof message === "string") {
-    return stripWorkspaceHiddenPromptBlocks(message);
+    return stripWorkspaceComposerTransportBlocks(stripWorkspaceHiddenPromptBlocks(message));
   }
 
   if (!message || typeof message !== "object") {
@@ -119,11 +120,11 @@ export function extractGatewayMessageText(message: unknown): string {
   };
 
   if (typeof candidate.text === "string") {
-    return stripWorkspaceHiddenPromptBlocks(candidate.text);
+    return stripWorkspaceComposerTransportBlocks(stripWorkspaceHiddenPromptBlocks(candidate.text));
   }
 
   if (Array.isArray(candidate.content)) {
-    return stripWorkspaceHiddenPromptBlocks(candidate.content.map(extractTextFromContentBlock).filter(Boolean).join("\n\n"));
+    return stripWorkspaceComposerTransportBlocks(stripWorkspaceHiddenPromptBlocks(candidate.content.map(extractTextFromContentBlock).filter(Boolean).join("\n\n")));
   }
 
   if (candidate.message) {
