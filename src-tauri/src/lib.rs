@@ -6,6 +6,14 @@ mod agent_resource_settings;
 mod agents;
 mod channels;
 mod chat_cache;
+mod chat_cache_compact;
+mod chat_cache_preview;
+mod chat_cache_render;
+mod chat_cache_schema;
+#[cfg(test)]
+mod chat_cache_agent_tests;
+#[cfg(test)]
+mod chat_cache_page_tests;
 mod config;
 mod config_store;
 mod control_ui;
@@ -237,9 +245,14 @@ pub fn run() {
             channels::feishu::request_feishu_openclaw_qr,
             channels::feishu::poll_feishu_openclaw_qr_result,
             chat_cache::load_workspace_chat_session_cache,
+            chat_cache::load_workspace_chat_session_cache_page,
+            chat_cache_compact::list_workspace_chat_session_cache_compact,
+            chat_cache_compact::warm_workspace_chat_session_cache_pages,
+            chat_cache_render::load_workspace_chat_session_render_page,
             chat_cache::upsert_workspace_chat_session_cache,
             chat_cache::list_workspace_chat_session_cache,
             chat_cache::prune_workspace_chat_session_cache,
+            chat_cache::reset_workspace_chat_history_cache,
             chat_cache::list_workspace_agent_cache,
             chat_cache::replace_workspace_agent_cache,
             chat_cache::clear_workspace_agent_cache,
