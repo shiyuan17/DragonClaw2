@@ -1,5 +1,5 @@
-# Phase 5.75: Workspace Main Session Startup Preview
-> Status: Planned
+# Phase 5.75: Workspace Main Session Startup Preview and Failure Attribution
+> Status: Implemented
 > Date: 2026-05-12
 > Type: Frontend session restoration / chat UX
 
@@ -7,83 +7,83 @@
 
 `workspace-clone` currently restores homepage chat by selecting the main agent and then resolving the active session key directly. That keeps startup anchored to `agent:{id}:main`, but it also means users reopen the app on the older main session even when their latest real conversation happened in a newer history session.
 
-The requested behavior is intentionally hybrid:
+Phase 5.75 originally implemented a hybrid flow where startup stayed anchored to `agent:{id}:main`, but the chat pane previewed a newer non-main history session and the first follow-up send was transparently redirected into that history session. That behavior improved first paint context, but it also split the chat state into multiple concurrent truths:
 
-- Startup should still visually land on the main agent's `agent:{id}:main` session.
-- If that same agent has a newer non-main history session, the chat pane should preview that conversation's full message history on first paint.
-- If the user continues from that preview, the first send should transparently switch into the real history session before `chat.send`, so "what the user sees" and "where the next message goes" stay aligned.
+- the selected homepage session stayed on `agent:{id}:main`
+- the displayed history could come from a different `previewSessionKey`
+- the first send could target that preview session instead of the selected main session
 
-This change must stay frontend-only and preserve all current Tauri, Gateway, and `invoke()` contracts.
+That split makes failure analysis harder and increases the chance that a gateway error or reconnect turns into a confusing UI state such as a lone `思考中 / 失败` live step without a clear reason. This hotfix keeps the useful startup preview, but demotes it to read-only display state and restores a single real send target unless the user explicitly chooses to continue a history session.
+
+This change stays frontend-only and preserves all current Tauri, Gateway, and `invoke()` contracts.
 
 ## Goals
 
 - Keep startup selection anchored to the main agent's `agent:{id}:main` session.
 - Preview the main agent's most recently updated non-main session only when it is newer than `:main`.
-- Make the first follow-up message automatically continue in that real previewed history session.
+- Keep startup preview read-only by default so the real send target stays the selected main session.
+- Provide an explicit user action to continue the previewed history session.
 - Show a clear lightweight UI hint so the preview is not mistaken for the actual `:main` transcript.
+- Replace ambiguous `思考中 / 失败` terminal states with explicit chat failure attribution.
 - Clear the preview state as soon as the user intentionally navigates somewhere else.
 
-## Implementation Scope
+## Implemented Scope
 
 ### 1. Startup Preview Resolution
 
-- Add a frontend-only helper that inspects the selected main agent's sessions.
-- Keep `selectedSessionKey` on `agent:{id}:main` during bootstrap.
-- Resolve an optional `startupPreviewSessionKey` as the newest non-main session for the same agent when:
-  - the non-main session exists, and
-  - its `updatedAt` is strictly newer than the main session's `updatedAt`.
-- Do not cross agents and do not consider synthetic task-run sessions.
+- Added a frontend-only helper that inspects the selected main agent's sessions.
+- Kept `selectedSessionKey` on `agent:{id}:main` during bootstrap.
+- Resolved an optional preview session as the newest non-main session for the same agent only when it is newer than the main session.
+- Kept the logic scoped to the current agent and excluded synthetic task-run sessions.
 
 ### 2. Preview Display State
 
-- Add startup preview state to `useWorkspaceGatewayChat`.
-- When preview is active, load chat history from `startupPreviewSessionKey` for display only.
-- Keep existing history caches, title caches, and `chat.history` requests unchanged.
-- Expose preview metadata needed by the view layer, including the preview session key and a user-facing title.
+- Added startup preview state to `useWorkspaceGatewayChat`.
+- Kept the real send target anchored to the selected main session while preview is active.
+- Preserved existing history caches, title caches, and `chat.history` behavior.
+- Exposed preview metadata and an explicit continue action to the view layer.
 
-### 3. First Send Auto-Switch
+### 3. Explicit Continue Instead of Auto-Switch
 
-- If startup preview is active, `sendMessage(...)` must:
-  - switch `selectedSessionKey` to `startupPreviewSessionKey`,
-  - clear the startup preview state,
-  - then continue through the normal send flow into that real history session.
-- After that first send, all later streaming, live timeline, history refresh, and session operations behave exactly like a normal selected history session.
+- Removed the transparent first-send redirect into `startupPreviewSessionKey`.
+- Added an explicit continue action that switches `selectedSessionKey` into the previewed history session before the next send.
+- If the user sends while preview is still active, the preview is cleared and the normal main-session send flow is used.
 
 ### 4. Preview Exit Rules
 
 - Clear startup preview immediately when the user:
   - selects another session,
   - selects another agent,
+  - sends a new message from the main session while preview is active,
   - creates a new session,
   - resets the current session,
   - starts a task in a new chat,
-  - or when the preview target disappears / becomes invalid after refresh.
+  - or when the preview target disappears after refresh.
+- If reconnect or history loading becomes unstable while preview is active, the preview falls back to the main session instead of preserving split state.
 
-### 5. UI Communication
+### 5. Failure Attribution and UI Communication
 
-- Add a compact banner above the message list when startup preview is active.
-- The banner should clearly explain that:
-  - the page is currently showing the latest conversation record,
-  - and sending a new message will automatically continue in that real session.
-- Do not change history drawer ordering or the existing session list structure.
+- Added a compact banner above the message list when startup preview is active.
+- Added a compact failure card for send, model, and reconnect failures with source plus `sessionKey` and `runId` when available.
+- If a run fails before any non-thinking live step appears, the UI now replaces a bare `思考中 / 失败` step with an explicit title such as `会话发送失败`, `模型返回错误`, or `网关连接丢失`.
+- Kept the history drawer ordering and session list structure unchanged.
 
 ## Acceptance Criteria
 
 - On app reopen, the homepage still selects the main agent and keeps `selectedSessionKey` on `agent:{id}:main`.
-- If the main agent has a newer non-main history session, the chat pane shows that session's messages on first paint.
-- The preview banner is visible while this startup preview is active.
-- The first send from the preview automatically switches into the previewed history session before the outbound `chat.send`.
+- If the main agent has a newer non-main history session, the chat pane can preview that session while main remains the real send target.
+- The preview banner is visible while startup preview is active.
+- Sending from the preview without explicitly switching does not auto-target the preview session.
+- Clicking the explicit continue action switches into the previewed history session before the next outbound `chat.send`.
 - Selecting a session, changing agents, creating a new chat, resetting, or starting a task-run chat clears the startup preview state.
-- No Tauri command names, `invoke()` shapes, or Gateway RPC method names change.
+- Chat send failures, model error events, and reconnect failures render explicit failure context instead of only a terminal thinking step.
+- No Tauri command names, `invoke()` shapes, or Gateway RPC method names changed.
 
 ## Verification
 
-- Add pure helper tests for startup preview resolution.
-- Add chat view coverage for the startup preview banner.
-- Run `npm run check:encoding`.
-- Run targeted frontend tests for the new helper and chat-view coverage.
-- Manually verify:
-  - reopen app -> main session stays selected,
-  - newer history is previewed,
-  - first follow-up send continues in that history session,
-  - no-history agents still behave like the current main-session flow.
+- Added pure helper tests for startup preview resolution.
+- Added chat view coverage for the startup preview banner and failure card.
+- Added `useWorkspaceGatewayChat` coverage for session-target behavior and chat failure attribution.
+- Passed `npm run check:encoding`.
+- Passed `npm run check:file-size`.
+- Passed targeted frontend tests for startup preview, chat send behavior, and chat-view coverage.

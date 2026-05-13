@@ -1,7 +1,7 @@
 ﻿# DragonClaw - 开发任务总表 (AI 开发规范版)
 
 ## Phase 5.72: Project-Aware `/spec` and Adaptive `/plan`
-- [ ] Phase 5.75: keep `workspace-clone` startup focused on the main agent `agent:{id}:main` session while previewing that agent's most recently updated non-main conversation in the chat pane, auto-switch the first follow-up send into that real history session, and preserve all existing Tauri / Gateway / `invoke()` contracts.
+- [x] Phase 5.75: keep `workspace-clone` startup focused on the main agent `agent:{id}:main` session while previewing that agent's most recently updated non-main conversation in the chat pane as read-only context, require an explicit user action to continue that history session, improve chat failure attribution for send / model / reconnect errors, and preserve all existing Tauri / Gateway / `invoke()` contracts.
 - [ ] 为 `workspace-clone` 新增 `/spec` 与 `/plan` 内置只读 slash commands：`/spec` 面向当前选择的项目目录生成 Spec Kit 风格规格产物，`/plan` 先检测可靠 spec 后自动选择 Spec Kit artifact plan 或 Codex 式只读会话计划，并保持现有 Tauri / Gateway / `invoke()` 契约不变。
 - [ ] Phase 5.72.1: 将 `workspace-clone` 内置 slash commands 的用户可见描述文案统一改为中文，覆盖命令管理弹窗与 `/` 联想列表中的 `/spec`、`/plan`、`/kb-*` 项，保持命令值、隐藏 instruction 与现有 `invoke()` / Gateway 契约不变。
 - [ ] Phase 5.72.2: 将聊天 composer、旧模型切换弹窗、AI 引擎页模型 chip 与 Provider 新增/保存/删除流程改为仅刷新配置状态，不再自动 stop/start OpenClaw 服务，保持现有 Tauri / Gateway / `invoke()` 契约不变。
@@ -45,6 +45,8 @@
 ## Phase 5.69: Workspace 欢迎态与会话级工作目录选择
 - [x] 将 `workspace-clone` 新建聊天空态改为 logo + `DragonClaw,让Ai更简单` hero，并为欢迎态与 composer 共用一套会话级“选择工作目录”入口，通过前端隐藏上下文注入工作目录而不改任何 Tauri / Gateway / `invoke()` 契约。
 - [x] Phase 5.69.1: 去掉 `workspace-clone` 欢迎态 hero 外层容器框，并让 logo / 文案 / 工作目录入口在聊天内容区域内垂直居中，限定为前端布局与样式微调，不改任何 Tauri / Gateway / `invoke()` 契约。
+- [ ] Phase 5.69.2: 让 `workspace-clone` composer 在已选择项目目录后显示目录名称，未选择时仍保留紧凑图标入口，不改任何 Tauri / Gateway / `invoke()` 契约。
+- [ ] Phase 5.69.3: 将 `workspace-clone` 项目目录选择从会话级内存态改为按 Agent 共享默认值；同一 Agent 下新对话继承最新项目目录，旧会话也显示该 Agent 当前默认目录，并使用前端本地存储跨重启持久化，保持现有 Tauri / Gateway / `invoke()` 契约不变。
 
 ## Phase 5.68: Workspace Composer Action Icon Refresh
 - [ ] 将 `workspace-clone` 聊天 composer 的 `新对话` 入口改为更明确的图标操作，并把发送按钮替换为更符合发送语义的标准图标，限定为前端渲染层与样式微调，不改任何 Tauri / Gateway / `invoke()` 契约。
