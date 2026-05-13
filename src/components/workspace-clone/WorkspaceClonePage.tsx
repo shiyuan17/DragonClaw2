@@ -1,7 +1,7 @@
 // Copyright (C) 2026 shiyuan
 // SPDX-License-Identifier: GPL-3.0-only
 // This file is part of DragonClaw. See LICENSE for details.
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -40,6 +40,13 @@ import { buildWorkspaceRuntimeLogs } from "./workspaceCloneLogs";
 import { formatAgentAvatar } from "./workspaceCloneGateway";
 import { workspaceCloneAvatarCategoryTabs } from "./workspaceCloneAvatarPresets";
 import { resolveWorkspaceGatewayAvatarUrl } from "./workspaceCloneAvatarUtils";
+import {
+  loadWorkspaceAgentWorkdirs,
+  persistWorkspaceAgentWorkdirs,
+  resolveWorkspaceAgentWorkdir,
+  resolveWorkspaceChatAgentId,
+  updateWorkspaceAgentWorkdirs,
+} from "./workspaceCloneAgentWorkdirState";
 import {
   buildWorkspaceChatFileItems,
   isWorkspaceUrlTarget,
@@ -250,7 +257,6 @@ function WorkspaceCloneLazyFallback({ label }: { label: string }) {
 function buildGatewayAgentEntities(params: {
   agents: NonNullable<ReturnType<typeof useWorkspaceGatewayChat>["agents"]>;
   selectedAgentId: string;
-  currentSessionKey: string;
   currentMainSession: ReturnType<typeof useWorkspaceGatewayChat>["currentMainSession"];
   sessionsResult: ReturnType<typeof useWorkspaceGatewayChat>["sessionsResult"];
   agentListSource: ReturnType<typeof useWorkspaceGatewayChat>["agentListSource"];
@@ -265,7 +271,6 @@ function buildGatewayAgentEntities(params: {
   const {
     agents,
     selectedAgentId,
-    currentSessionKey,
     currentMainSession,
     sessionsResult,
     agentListSource,
@@ -281,7 +286,7 @@ function buildGatewayAgentEntities(params: {
 
   return agents.map<WorkspaceEntity>((agent) => {
     const sessionKey = `agent:${agent.id}:main`;
-    const isAgentSessionActive = currentSessionKey.startsWith(`agent:${agent.id}:`);
+    const isSelectedAgent = agent.id === selectedAgentId;
     const mainSession = sessionsResult?.sessions.find((session) => session.key === sessionKey) ?? null;
     const modelLabel =
       [mainSession?.modelProvider || currentProviderName, mainSession?.model || currentModelName]
@@ -300,9 +305,9 @@ function buildGatewayAgentEntities(params: {
       status:
         isCachedAgentList || !running
           ? "offline"
-          : isGenerating && isAgentSessionActive
+          : isGenerating && isSelectedAgent
             ? "busy"
-            : agent.id === selectedAgentId && currentMainSession?.abortedLastRun
+            : isSelectedAgent && currentMainSession?.abortedLastRun
               ? "busy"
               : "online",
       avatarLabel: formatAgentAvatar(agent),
@@ -313,7 +318,7 @@ function buildGatewayAgentEntities(params: {
           ? "\u8fde\u63a5\u540e\u540c\u6b65\u6700\u65b0 Agent \u72b6\u6001\u3002"
           : !running
           ? "\u670d\u52a1\u5c1a\u672a\u542f\u52a8\uff0c\u9996\u9875\u804a\u5929\u6682\u4e0d\u53ef\u7528\u3002"
-          : isGenerating && isAgentSessionActive
+          : isGenerating && isSelectedAgent
             ? "\u6b63\u5728\u751f\u6210\u5f53\u524d\u4e3b\u4f1a\u8bdd\u56de\u590d\u3002"
             : "\u9996\u9875\u5df2\u63a5\u5165\u5f53\u524d Agent \u7684\u4e3b\u4f1a\u8bdd\u3002",
       recentOutput: modelLabel,
@@ -349,7 +354,9 @@ export function WorkspaceClonePage({
   const [searchQuery, setSearchQuery] = useState("");
   const [composerDraft, setComposerDraft] = useState("");
   const [activeSkillIds, setActiveSkillIds] = useState<string[]>([]);
-  const [sessionWorkspaceDirs, setSessionWorkspaceDirs] = useState<Record<string, string>>({});
+  const [agentWorkspaceDirs, setAgentWorkspaceDirs] = useState<Record<string, string>>(
+    () => loadWorkspaceAgentWorkdirs(),
+  );
   const [utilityPanel, setUtilityPanel] = useState<WorkspaceUtilityPanel>(null);
   const [activeSessionSection, setActiveSessionSection] = useState<WorkspaceSessionSectionKey>("model");
   const [adminOpen, setAdminOpen] = useState(false);
@@ -374,9 +381,6 @@ export function WorkspaceClonePage({
     () => loadWorkspaceScenePresetOpenState(),
   );
   const homepageChat = useWorkspaceGatewayChat({ running, servicePort, gatewayToken });
-  const currentSessionWorkspaceDir = homepageChat.currentSessionKey
-    ? sessionWorkspaceDirs[homepageChat.currentSessionKey] ?? ""
-    : "";
   const savedProvidersLoadSeqRef = useRef(0);
   const providerSyncEventSeqRef = useRef(0);
   const modelConfigOpenRef = useRef(false);
@@ -390,6 +394,10 @@ export function WorkspaceClonePage({
       setActiveMenu("chat");
     }
   }, [activeMenu]);
+
+  useEffect(() => {
+    persistWorkspaceAgentWorkdirs(agentWorkspaceDirs);
+  }, [agentWorkspaceDirs]);
 
   const workspaceChannels = useWorkspaceChannels({ configVersion, enabled: showDirectory });
   const { setContextMenu } = workspaceChannels;
@@ -620,7 +628,6 @@ export function WorkspaceClonePage({
         ? buildGatewayAgentEntities({
             agents: mergedGatewayAgents,
             selectedAgentId: homepageChat.selectedAgentId,
-            currentSessionKey: homepageChat.currentSessionKey,
             currentMainSession: homepageChat.currentMainSession,
             sessionsResult: homepageChat.sessionsResult,
             agentListSource: mergedAgentListSource,
@@ -644,7 +651,6 @@ export function WorkspaceClonePage({
       workspaceModelName,
       workspaceProviderName,
       homepageChat.currentMainSession,
-      homepageChat.currentSessionKey,
       homepageChat.agentLastMessageById,
       homepageChat.agentRecentSessionsById,
       homepageChat.isGenerating,
@@ -672,6 +678,78 @@ export function WorkspaceClonePage({
       `${entity.name} ${entity.searchText || ""} ${entity.subtitle}`.toLowerCase().includes(query),
     );
   }, [activeType, entitiesByType, searchQuery]);
+
+  const handleToggleDirectoryCollapsed = useCallback(() => {
+    setIsDirectoryCollapsed((value) => !value);
+  }, []);
+
+  const handleSelectDirectoryEntity = useCallback((entityId: string) => {
+    setSelectedEntityId(entityId);
+    if (activeType === "agents") {
+      homepageChat.selectAgent(entityId);
+      return;
+    }
+    if (activeType === "channels") {
+      const entity = filteredEntities.find((item) => item.id === entityId);
+      if (entity?.runtimeAgentId) {
+        homepageChat.selectAgent(entity.runtimeAgentId);
+      }
+    }
+  }, [activeType, filteredEntities, homepageChat.selectAgent]);
+
+  const handleOpenDirectoryContextMenu = useCallback((event: ReactMouseEvent<HTMLButtonElement>, entity: WorkspaceEntity) => {
+    event.stopPropagation();
+    setContextMenu({
+      kind: entity.entityType === "channels" ? "channel" : entity.entityType === "teams" ? "team" : "agent",
+      entityId: entity.id,
+      title: entity.name,
+      x: event.clientX,
+      y: event.clientY,
+      configured: entity.status !== "offline",
+    });
+  }, [setContextMenu]);
+
+  const handleCloseDirectoryContextMenu = useCallback(() => {
+    setContextMenu(null);
+  }, [setContextMenu]);
+
+  const handleOpenChannelBindingModal = useCallback((entity: WorkspaceEntity) => {
+    void workspaceChannels.openBindingModal(entity);
+  }, [workspaceChannels.openBindingModal]);
+
+  const handleCloseChannelBindingModal = useCallback(() => {
+    void workspaceChannels.closeBindingModal();
+  }, [workspaceChannels.closeBindingModal]);
+
+  const handleStartWeixinQrBinding = useCallback(() => {
+    void workspaceChannels.startWeixinQrBindingFlow();
+  }, [workspaceChannels.startWeixinQrBindingFlow]);
+
+  const handleOpenExternalBindingLink = useCallback((url: string) => {
+    void workspaceChannels.handleOpenExternalBindingLink(
+      url,
+      (workspaceChannels.modal.channelId as WorkspaceChannelId) || "weixin",
+    );
+  }, [workspaceChannels.handleOpenExternalBindingLink, workspaceChannels.modal.channelId]);
+
+  const handleRequestFeishuQr = useCallback(() => {
+    void workspaceChannels.handleRequestFeishuQr();
+  }, [workspaceChannels.handleRequestFeishuQr]);
+
+  const handleCheckFeishuQr = useCallback(() => {
+    void workspaceChannels.handleCheckFeishuQr();
+  }, [workspaceChannels.handleCheckFeishuQr]);
+
+  const handleSaveChannelBinding = useCallback(() => {
+    void workspaceChannels.handleSaveBinding();
+  }, [workspaceChannels.handleSaveBinding]);
+
+  const handleRemoveChannelBinding = useCallback((entityId: string) => {
+    const target = entitiesByType.channels.find((item) => item.id === entityId);
+    if (target) {
+      void workspaceChannels.handleRemoveBinding(target);
+    }
+  }, [entitiesByType.channels, workspaceChannels.handleRemoveBinding]);
 
   const visibleAgentHistoryTitlePrefetch = useMemo(() => {
     if (!showDirectory || activeType !== "agents") {
@@ -788,18 +866,21 @@ export function WorkspaceClonePage({
       ? "unsupported"
       : undefined;
 
-  const currentMemoryAgentId = useMemo(
-    () => {
-      if (activeType === "agents") {
-        return selectedEntity?.id || selectedEntityId || homepageChat.selectedAgentId || "main";
-      }
-      if (activeType === "channels" && selectedEntity?.runtimeAgentId) {
-        return selectedEntity.runtimeAgentId;
-      }
-      return null;
-    },
+  const currentWorkspaceAgentId = useMemo(
+    () =>
+      resolveWorkspaceChatAgentId({
+        activeType,
+        selectedEntityId: selectedEntity?.id || selectedEntityId,
+        selectedEntityRuntimeAgentId: selectedEntity?.runtimeAgentId,
+        selectedAgentId: homepageChat.selectedAgentId,
+      }),
     [activeType, homepageChat.selectedAgentId, selectedEntity?.id, selectedEntity?.runtimeAgentId, selectedEntityId],
   );
+  const currentSessionWorkspaceDir = useMemo(
+    () => resolveWorkspaceAgentWorkdir(agentWorkspaceDirs, currentWorkspaceAgentId),
+    [agentWorkspaceDirs, currentWorkspaceAgentId],
+  );
+  const currentMemoryAgentId = currentWorkspaceAgentId || null;
   const memoryAdmin = useWorkspaceMemoryAdmin({ agentId: currentMemoryAgentId });
   const commandsAdmin = useWorkspaceCommandsAdmin();
   const requestSkillStatus = useCallback(
@@ -923,8 +1004,7 @@ export function WorkspaceClonePage({
   }, []);
 
   const handleSelectSessionWorkspaceDir = useCallback(async () => {
-    const sessionKey = homepageChat.currentSessionKey.trim();
-    if (!sessionKey) {
+    if (!currentWorkspaceAgentId) {
       return;
     }
 
@@ -935,24 +1015,17 @@ export function WorkspaceClonePage({
     });
 
     if (selected && typeof selected === "string") {
-      setSessionWorkspaceDirs((current) => ({
-        ...current,
-        [sessionKey]: selected,
-      }));
+      setAgentWorkspaceDirs((current) => updateWorkspaceAgentWorkdirs(current, currentWorkspaceAgentId, selected));
     }
-  }, [homepageChat.currentSessionKey]);
+  }, [currentWorkspaceAgentId]);
 
   const handleClearSessionWorkspaceDir = useCallback(() => {
-    const sessionKey = homepageChat.currentSessionKey.trim();
-    if (!sessionKey) {
+    if (!currentWorkspaceAgentId) {
       return;
     }
 
-    setSessionWorkspaceDirs((current) => ({
-      ...current,
-      [sessionKey]: "",
-    }));
-  }, [homepageChat.currentSessionKey]);
+    setAgentWorkspaceDirs((current) => updateWorkspaceAgentWorkdirs(current, currentWorkspaceAgentId, ""));
+  }, [currentWorkspaceAgentId]);
 
   const toggleScenePresets = useCallback(() => {
     if (!showScenePresetToggle) {
@@ -1349,57 +1422,20 @@ export function WorkspaceClonePage({
             feishuManualExpanded={workspaceChannels.feishuManualExpanded}
             feishuAllowFromDraft={workspaceChannels.feishuAllowFromDraft}
             feishuAllowFromSessionIds={workspaceChannels.feishuAllowFromSessionIds}
-            onToggleCollapsed={() => setIsDirectoryCollapsed((value) => !value)}
+            onToggleCollapsed={handleToggleDirectoryCollapsed}
             onSelectType={setActiveType}
-            onSelectEntity={(entityId) => {
-              setSelectedEntityId(entityId);
-              if (activeType === "agents") {
-                homepageChat.selectAgent(entityId);
-                return;
-              }
-              if (activeType === "channels") {
-                const entity = filteredEntities.find((item) => item.id === entityId);
-                if (entity?.runtimeAgentId) {
-                  homepageChat.selectAgent(entity.runtimeAgentId);
-                }
-              }
-            }}
+            onSelectEntity={handleSelectDirectoryEntity}
             onSelectSession={homepageChat.selectSession}
             onSearchChange={setSearchQuery}
-            onOpenContextMenu={(event, entity) => {
-              event.stopPropagation();
-              setContextMenu({
-                kind: entity.entityType === "channels" ? "channel" : entity.entityType === "teams" ? "team" : "agent",
-                entityId: entity.id,
-                title: entity.name,
-                x: event.clientX,
-                y: event.clientY,
-                configured: entity.status !== "offline",
-              });
-            }}
-            onCloseContextMenu={() => setContextMenu(null)}
-            onOpenChannelBindingModal={(entity) => {
-              void workspaceChannels.openBindingModal(entity);
-            }}
-            onCloseChannelBindingModal={() => {
-              void workspaceChannels.closeBindingModal();
-            }}
+            onOpenContextMenu={handleOpenDirectoryContextMenu}
+            onCloseContextMenu={handleCloseDirectoryContextMenu}
+            onOpenChannelBindingModal={handleOpenChannelBindingModal}
+            onCloseChannelBindingModal={handleCloseChannelBindingModal}
             onSelectChannelBindingAgent={workspaceChannels.setSelectedAgentId}
-            onStartWeixinQrBinding={() => {
-              void workspaceChannels.startWeixinQrBindingFlow();
-            }}
-            onOpenExternalBindingLink={(url) => {
-              void workspaceChannels.handleOpenExternalBindingLink(
-                url,
-                (workspaceChannels.modal.channelId as WorkspaceChannelId) || "weixin",
-              );
-            }}
-            onRequestFeishuQr={() => {
-              void workspaceChannels.handleRequestFeishuQr();
-            }}
-            onCheckFeishuQr={() => {
-              void workspaceChannels.handleCheckFeishuQr();
-            }}
+            onStartWeixinQrBinding={handleStartWeixinQrBinding}
+            onOpenExternalBindingLink={handleOpenExternalBindingLink}
+            onRequestFeishuQr={handleRequestFeishuQr}
+            onCheckFeishuQr={handleCheckFeishuQr}
             onChangeFeishuAppId={workspaceChannels.setFeishuAppId}
             onChangeFeishuAppSecret={workspaceChannels.setFeishuAppSecret}
             onChangeFeishuDmPolicy={workspaceChannels.setFeishuDmPolicy}
@@ -1408,15 +1444,8 @@ export function WorkspaceClonePage({
             onRemoveFeishuAllowFromSessionId={workspaceChannels.removeFeishuAllowFromSessionId}
             onToggleFeishuManualExpanded={workspaceChannels.toggleFeishuManualExpanded}
             onToggleFeishuAppSecretVisible={workspaceChannels.toggleFeishuAppSecretVisible}
-            onSaveChannelBinding={() => {
-              void workspaceChannels.handleSaveBinding();
-            }}
-            onRemoveChannelBinding={(entityId) => {
-              const target = entitiesByType.channels.find((item) => item.id === entityId);
-              if (target) {
-                void workspaceChannels.handleRemoveBinding(target);
-              }
-            }}
+            onSaveChannelBinding={handleSaveChannelBinding}
+            onRemoveChannelBinding={handleRemoveChannelBinding}
           />
         )}
 
@@ -1454,12 +1483,14 @@ export function WorkspaceClonePage({
                 chatDisabledReason={chatDisabledReason}
                 messages={chatMessages}
                 liveSteps={chatEnabled ? homepageChat.liveSteps : []}
+                liveTranscriptItems={chatEnabled ? homepageChat.liveTranscriptItems : []}
                 connectionError={homepageChat.error}
                 pendingTaskRunBridge={cronTasks.pendingRunNowBridge ? {
                   title: cronTasks.pendingRunNowBridge.taskDisplayTitle,
                   message: cronTasks.pendingRunNowBridge.message,
                 } : null}
                 historyLoading={homepageChat.historyLoading}
+                historyPageState={homepageChat.historyPageState}
                 isGenerating={homepageChat.isGenerating}
                 utilityPanel={utilityPanel}
                 activeSessionSection={activeSessionSection}
@@ -1474,6 +1505,8 @@ export function WorkspaceClonePage({
                 taskRunsLoadingId={cronTasks.taskRunsLoadingId}
                 taskActionJobId={cronTasks.taskActionJobId}
                 optimisticRunningTaskIds={cronTasks.optimisticRunningTaskIds}
+                startupPreview={homepageChat.startupPreview}
+                chatFailure={homepageChat.chatFailure}
                 gatewayConnected={homepageChat.connected}
                 workbenchItems={WORKSPACE_WORKBENCH}
                 fileItems={chatFileItems}
@@ -1514,6 +1547,13 @@ export function WorkspaceClonePage({
                   void handleRunTask(task);
                 }}
                 onDeleteTask={handleDeleteTask}
+                onContinueStartupPreview={() => {
+                  homepageChat.continueStartupPreview();
+                }}
+                onRetryChatFailure={() => {
+                  void homepageChat.retryLastSend();
+                }}
+                onLoadOlderHistoryPage={homepageChat.loadOlderHistoryPage}
               />
 
               {showScenePresetToggle && scenePresetsOpen && (
@@ -1581,16 +1621,7 @@ export function WorkspaceClonePage({
                   })
                 }
                 onAbort={homepageChat.abortMessage}
-                onResetSession={async () => {
-                  const nextSessionKey = await homepageChat.createNewSession();
-                  if (nextSessionKey) {
-                    setSessionWorkspaceDirs((current) => ({
-                      ...current,
-                      [nextSessionKey]: "",
-                    }));
-                  }
-                  return Boolean(nextSessionKey);
-                }}
+                onResetSession={async () => Boolean(await homepageChat.createNewSession())}
               />
             </>
           ) : activeMenu === "employees" ? (

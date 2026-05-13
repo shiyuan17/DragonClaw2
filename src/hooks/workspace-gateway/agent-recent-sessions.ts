@@ -13,7 +13,6 @@ export function buildAgentRecentSessionsById(params: {
   sessionsResult: WorkspaceGatewaySessionsListResult | null;
   historyTitleCache: Record<string, string>;
   sessionHistoryCache: Record<string, unknown[]>;
-  currentSessionKey: string;
 }) {
   const next: Record<string, WorkspaceHistoryItem[]> = {};
 
@@ -23,7 +22,7 @@ export function buildAgentRecentSessionsById(params: {
       .map((session) => buildSessionHistoryItem(session, {
         cachedTitle: params.historyTitleCache[session.key],
         memoryMessages: params.sessionHistoryCache[session.key],
-        currentSessionKey: params.currentSessionKey,
+        currentSessionKey: "",
       }));
 
     if (recentSessions.length > 0) {

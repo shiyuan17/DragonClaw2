@@ -18,6 +18,7 @@ import {
   normalizeLiveStepSignaturePart,
   updateLiveStepList,
 } from "./live-steps";
+import { shouldSkipMirroredWorkspaceLiveStep } from "./live-step-dedupe";
 
 describe("workspace live steps", () => {
   it("normalizes stable ids and signature fragments", () => {
@@ -60,6 +61,7 @@ describe("workspace live steps", () => {
     expect(toolStep).toMatchObject({
       id: "call-1",
       kind: "command",
+      action: "command",
       status: "success",
       title: "pnpm test",
       detail: "finished cleanly",
@@ -79,9 +81,67 @@ describe("workspace live steps", () => {
     expect(patchStep).toMatchObject({
       id: "patch-1",
       kind: "patch",
+      action: "edit",
       status: "error",
       title: "Apply patch",
       time: "t-1020",
+    });
+  });
+
+  it("infers Codex-style tool actions and concise titles", () => {
+    expect(buildLiveStepFromAgentEvent({
+      stream: "tool",
+      ts: 1,
+      data: { id: "write-1", phase: "start", name: "write", args: { path: "src/new-file.ts" } },
+    }, "run")).toMatchObject({
+      kind: "tool",
+      action: "create",
+      status: "running",
+      title: "new-file.ts",
+    });
+
+    expect(buildLiveStepFromAgentEvent({
+      stream: "tool",
+      ts: 2,
+      data: { id: "edit-1", phase: "end", name: "apply_patch", args: { filePath: "src/app.tsx" } },
+    }, "run")).toMatchObject({
+      kind: "patch",
+      action: "edit",
+      status: "success",
+      title: "app.tsx",
+    });
+
+    expect(buildLiveStepFromAgentEvent({
+      stream: "tool",
+      ts: 3,
+      data: { id: "read-1", phase: "end", name: "read", args: { path: "package.json" } },
+    }, "run")).toMatchObject({
+      kind: "tool",
+      action: "read",
+      status: "success",
+      title: "package.json",
+    });
+
+    expect(buildLiveStepFromAgentEvent({
+      stream: "tool",
+      ts: 4,
+      data: { id: "search-1", phase: "start", name: "search", args: { query: "workspace live step" } },
+    }, "run")).toMatchObject({
+      kind: "search",
+      action: "search",
+      status: "running",
+      title: "workspace live step",
+    });
+
+    expect(buildLiveStepFromAgentEvent({
+      stream: "tool",
+      ts: 5,
+      data: { id: "shell-1", phase: "end", name: "shell", args: { command: "npm test -- live-steps" } },
+    }, "run")).toMatchObject({
+      kind: "command",
+      action: "command",
+      status: "success",
+      title: "npm test -- live-steps",
     });
   });
 
@@ -98,8 +158,9 @@ describe("workspace live steps", () => {
       },
     }, "run-2");
     expect(itemStep).toMatchObject({
-      id: "run-2:Search docs",
+      id: "run-2:item:555:running:search docs",
       kind: "search",
+      action: "search",
       status: "running",
       title: "Search docs",
       time: "t-555",
@@ -148,6 +209,97 @@ describe("workspace live steps", () => {
     expect(capped[capped.length - 1]?.id).toBe("step-99");
   });
 
+  it("keeps unstable tool calls as separate ordered live steps", () => {
+    const first = buildLiveStepFromAgentEvent({
+      stream: "tool",
+      ts: 10,
+      data: { phase: "start", name: "exec", args: { command: "Get-ChildItem -Force" } },
+    }, "run-4");
+    const second = buildLiveStepFromAgentEvent({
+      stream: "tool",
+      ts: 11,
+      data: { phase: "start", name: "exec", args: { command: "Write-Host files" } },
+    }, "run-4");
+
+    expect(first?.id).not.toBe(second?.id);
+    expect(first).toMatchObject({ action: "command", title: "Get-ChildItem -Force" });
+    expect(second).toMatchObject({ action: "command", title: "Write-Host files" });
+
+    const steps = [first, second].filter((step): step is WorkspaceLiveStep => Boolean(step))
+      .reduce<WorkspaceLiveStep[]>((current, step) => updateLiveStepList(current, step), []);
+
+    expect(steps.map((step) => step.title)).toEqual(["Get-ChildItem -Force", "Write-Host files"]);
+  });
+
+  it("still merges stable tool updates into the same live step", () => {
+    const start = buildLiveStepFromAgentEvent({
+      stream: "tool",
+      ts: 20,
+      data: { id: "stable-exec", phase: "start", name: "exec", args: { command: "npm run build" } },
+    }, "run-5");
+    const end = buildLiveStepFromAgentEvent({
+      stream: "tool",
+      ts: 21,
+      data: { id: "stable-exec", phase: "end", name: "exec", args: { command: "npm run build" } },
+    }, "run-5");
+
+    const steps = [start, end].filter((step): step is WorkspaceLiveStep => Boolean(step))
+      .reduce<WorkspaceLiveStep[]>((current, step) => updateLiveStepList(current, step), []);
+
+    expect(steps).toHaveLength(1);
+    expect(steps[0]).toMatchObject({
+      id: "stable-exec",
+      status: "success",
+      title: "npm run build",
+    });
+  });
+
+  it("only suppresses mirrored live-step events across event sources", () => {
+    const cache = new Map();
+    const firstPayload = {
+      stream: "tool",
+      ts: 30,
+      data: { phase: "start", name: "exec", args: { command: "npm test" } },
+    };
+    const replayPayload = {
+      stream: "tool",
+      ts: 31,
+      data: { phase: "start", name: "exec", args: { command: "npm test" } },
+    };
+    const firstStep = buildLiveStepFromAgentEvent(firstPayload, "run-6");
+    const sameSourceStep = buildLiveStepFromAgentEvent(replayPayload, "run-6");
+    const mirroredStep = buildLiveStepFromAgentEvent(replayPayload, "run-6");
+
+    expect(firstStep).toBeTruthy();
+    expect(sameSourceStep).toBeTruthy();
+    expect(mirroredStep).toBeTruthy();
+
+    expect(shouldSkipMirroredWorkspaceLiveStep({
+      cache,
+      step: firstStep!,
+      payload: firstPayload,
+      source: "agent",
+      runId: "run-6",
+      timestampMs: 30,
+    })).toBe(false);
+    expect(shouldSkipMirroredWorkspaceLiveStep({
+      cache,
+      step: sameSourceStep!,
+      payload: replayPayload,
+      source: "agent",
+      runId: "run-6",
+      timestampMs: 31,
+    })).toBe(false);
+    expect(shouldSkipMirroredWorkspaceLiveStep({
+      cache,
+      step: mirroredStep!,
+      payload: replayPayload,
+      source: "session.tool",
+      runId: "run-6",
+      timestampMs: 31,
+    })).toBe(true);
+  });
+
   it("builds post-tool thinking placeholders and dedupe keys", () => {
     expect(getPostToolThinkingStepId("run-3")).toBe("run-3:post-tool-thinking");
     expect(isTerminalLiveStepStatus("success")).toBe(true);
@@ -166,6 +318,7 @@ describe("workspace live steps", () => {
       step: {
         id: "tool-1",
         kind: "tool" as const,
+        action: "search" as const,
         status: "running" as const,
         title: "  Search   Docs ",
         detail: "  Query   terms ",
@@ -178,13 +331,13 @@ describe("workspace live steps", () => {
     };
 
     expect(buildLiveStepOperationKey(signatureInput)).toBe(
-      "operation:tool:search docs:query terms:agent:ops:main",
+      "operation:tool:search:search docs:query terms:agent:ops:main",
     );
     expect(buildLiveStepSignatureKey(signatureInput)).toBe(
-      "operation:tool:search docs:query terms:agent:ops:main:running",
+      "operation:tool:search:search docs:query terms:agent:ops:main:running",
     );
     expect(buildLiveStepDedupeKey(signatureInput)).toBe(
-      "operation:tool:search docs:query terms:agent:ops:main:running",
+      "operation:tool:search:search docs:query terms:agent:ops:main:running",
     );
   });
 });

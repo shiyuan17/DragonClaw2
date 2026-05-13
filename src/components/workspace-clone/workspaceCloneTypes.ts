@@ -152,26 +152,20 @@ export interface WorkspaceGatewayChatAttachmentPayload {
   content: string;
 }
 
-export type WorkspaceLiveStepKind =
-  | "thinking"
-  | "skill"
-  | "tool"
-  | "command"
-  | "search"
-  | "patch"
-  | "plan"
-  | "approval"
-  | "other";
+export type WorkspaceLiveStepKind = "thinking" | "skill" | "tool" | "command" | "search" | "patch" | "plan" | "approval" | "other";
+export type WorkspaceLiveStepAction = "read" | "create" | "edit" | "delete" | "search" | "command" | "skill" | "plan" | "approval" | "generic-tool";
 
 export type WorkspaceLiveStepStatus = "pending" | "running" | "success" | "error" | "aborted";
 
 export interface WorkspaceLiveStep {
   id: string;
   kind: WorkspaceLiveStepKind;
+  action?: WorkspaceLiveStepAction;
   status: WorkspaceLiveStepStatus;
   title: string;
   detail?: string;
   time: string;
+  aggregateCount?: number;
 }
 
 export interface WorkspaceHistoryItem {

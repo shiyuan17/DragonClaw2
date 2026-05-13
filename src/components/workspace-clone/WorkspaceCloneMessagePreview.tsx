@@ -12,6 +12,9 @@ interface WorkspaceCloneMessagePreviewProps {
 }
 
 const COMMAND_PREFIX_RE = /^(\/[a-z0-9][a-z0-9-]*)(?:\s+([\s\S]*))?$/i;
+const WINDOWS_PATH_LINE_RE = /^[A-Za-z]:\\[^\n]+$/;
+const CODE_LIKE_LINE_RE =
+  /^\s*(?:\/\/|\/\*|\*\/|\*|import\s|export\s|from\s|use\s|type\s|interface\s|class\s|function\s|async\s|const\s|let\s|var\s|return\b|if\s*\(|for\s*\(|while\s*\(|switch\s*\(|try\s*\{|catch\s*\(|await\s|[\]}]\);?|[});,]+)\s*.*$/;
 
 function tryFormatJsonPreview(text: string) {
   const trimmed = text.trim();
@@ -46,6 +49,49 @@ function looksLikeMarkdown(text: string) {
     /(^|\n)\|[^|\n]+(?:\|[^|\n]*)+\|?\s*$/m,
     /(^|\n)\s*[-*_]{3,}\s*$/m,
   ].some((pattern) => pattern.test(trimmed));
+}
+
+function guessTechnicalBlockLanguage(text: string) {
+  if (text.split(/\r?\n/).filter((line) => WINDOWS_PATH_LINE_RE.test(line.trim())).length >= 2) {
+    return "text";
+  }
+  if (/\bfrom\s+["'][^"']+["']|import\s+type\s+\{|\buse[A-Z][A-Za-z0-9]*\(/.test(text)) {
+    return "ts";
+  }
+  if (/\bfn\s+\w+|\buse\s+[a-zA-Z0-9_:]+::|^\s*#\[.+\]/m.test(text)) {
+    return "rust";
+  }
+  return "text";
+}
+
+function looksLikeUnfencedTechnicalBlock(text: string) {
+  if (/```/.test(text)) {
+    return false;
+  }
+
+  const lines = text
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim().length > 0);
+  if (lines.length < 2) {
+    return false;
+  }
+
+  const technicalLineCount = lines.filter((line) => {
+    const trimmed = line.trim();
+    return WINDOWS_PATH_LINE_RE.test(trimmed) || CODE_LIKE_LINE_RE.test(trimmed);
+  }).length;
+
+  return technicalLineCount >= 2 && technicalLineCount / lines.length >= 0.55;
+}
+
+function formatUnfencedTechnicalBlock(text: string) {
+  if (!looksLikeUnfencedTechnicalBlock(text)) {
+    return text;
+  }
+
+  return `\`\`\`${guessTechnicalBlockLanguage(text)}\n${text.trim()}\n\`\`\``;
 }
 
 export function resolveWorkspaceMessageDisplayParts(message: WorkspaceMessage): {
@@ -84,7 +130,7 @@ function resolvePreview(message: WorkspaceMessage): {
   const displayParts = resolveWorkspaceMessageDisplayParts(message);
   const content =
     message.role === "assistant"
-      ? sanitizeWorkspaceAssistantText(message.text).text
+      ? formatUnfencedTechnicalBlock(sanitizeWorkspaceAssistantText(message.text).text)
       : displayParts.content;
 
   if (message.role !== "assistant") {

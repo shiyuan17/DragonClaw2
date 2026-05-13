@@ -56,8 +56,12 @@ export function shouldSkipMirroredWorkspaceLiveStep(params: {
   const withinWindow = previous
     ? Math.abs(params.timestampMs - previous.timestampMs) <= LIVE_STEP_DEDUPE_WINDOW_MS
     : false;
+  const isMirroredSource = Boolean(previous && previous.source !== params.source);
   const shouldReuseCanonicalStepId = Boolean(
-    previous && (stableKey || withinWindow || previous.canonicalStepId === params.step.id),
+    previous && (
+      stableKey ||
+      (isMirroredSource && (withinWindow || previous.canonicalStepId === params.step.id))
+    ),
   );
 
   if (previous && shouldReuseCanonicalStepId && previous.canonicalStepId !== params.step.id) {
@@ -84,7 +88,7 @@ export function shouldSkipMirroredWorkspaceLiveStep(params: {
     params.cache.set(stableKey, nextEntry);
   }
 
-  if (previous && previous.signatureKey === signatureKey && withinWindow) {
+  if (previous && isMirroredSource && previous.signatureKey === signatureKey && withinWindow) {
     logLiveStepDedupe("suppressed-replay", {
       source: params.source,
       stableId,

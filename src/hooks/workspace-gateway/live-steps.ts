@@ -1,4 +1,4 @@
-import type { WorkspaceLiveStep, WorkspaceLiveStepKind, WorkspaceLiveStepStatus } from "../../components/workspace-clone/workspaceCloneTypes";
+import type { WorkspaceLiveStep, WorkspaceLiveStepAction, WorkspaceLiveStepKind, WorkspaceLiveStepStatus } from "../../components/workspace-clone/workspaceCloneTypes";
 import { formatClockTime } from "./time-formatters";
 
 export type WorkspaceGatewayAgentEventPayload = {
@@ -25,7 +25,7 @@ export interface WorkspaceLiveStepDedupeEntry {
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object";
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 export function toStringValue(value: unknown, fallback = "") {
@@ -74,6 +74,98 @@ function firstNonEmptyString(...values: unknown[]) {
   return "";
 }
 
+function normalizeToolSignal(value: string) {
+  return value.trim().toLowerCase().replace(/[\s.-]+/g, "_");
+}
+
+function hasToolSignal(signal: string, candidates: string[]) {
+  const normalized = normalizeToolSignal(signal);
+  return candidates.some((candidate) => (
+    normalized === candidate ||
+    normalized.includes(`_${candidate}`) ||
+    normalized.includes(`${candidate}_`)
+  ));
+}
+
+function extractArgs(data: Record<string, unknown>) {
+  return isRecord(data.args) ? data.args : {};
+}
+
+function extractPathLikeValue(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+    if (Array.isArray(value)) {
+      const nested: string = extractPathLikeValue(...value);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+  return "";
+}
+
+function basenameFromPath(value: string) {
+  const normalized = value.trim().replace(/^file:\/\//i, "").replace(/\\/g, "/");
+  const segments = normalized.split("/").filter(Boolean);
+  return segments[segments.length - 1] || normalized;
+}
+
+function extractFileTarget(data: Record<string, unknown>) {
+  const args = extractArgs(data);
+  const target = extractPathLikeValue(
+    data.path,
+    data.filePath,
+    data.file_path,
+    data.target,
+    data.file,
+    data.fileName,
+    data.filename,
+    data.files,
+    args.path,
+    args.filePath,
+    args.file_path,
+    args.target,
+    args.file,
+    args.fileName,
+    args.filename,
+    args.files,
+  );
+  return target ? truncateInlineText(basenameFromPath(target), 96) : "";
+}
+
+function extractSearchQuery(data: Record<string, unknown>) {
+  const args = extractArgs(data);
+  return truncateInlineText(firstNonEmptyString(
+    data.query,
+    data.searchQuery,
+    data.q,
+    data.term,
+    data.keywords,
+    args.query,
+    args.searchQuery,
+    args.q,
+    args.term,
+    args.keywords,
+  ), 96);
+}
+
+function extractCommandSnippet(data: Record<string, unknown>) {
+  const args = extractArgs(data);
+  const command = firstNonEmptyString(
+    data.command,
+    args.command,
+    data.cmd,
+    data.script,
+    data.line,
+  );
+  if (!command) {
+    return "";
+  }
+  return truncateInlineText(command.split("\n", 1)[0] ?? command, 128);
+}
+
 function resolveLiveStepKind(kind: string, title: string): WorkspaceLiveStepKind {
   const normalized = kind.trim().toLowerCase();
   if (normalized === "skill") return "skill";
@@ -83,8 +175,59 @@ function resolveLiveStepKind(kind: string, title: string): WorkspaceLiveStepKind
   if (normalized === "patch") return "patch";
   if (normalized === "plan") return "plan";
   if (normalized === "approval") return "approval";
-  if (normalized === "tool") return title.includes("技能") ? "skill" : "tool";
+  if (normalized === "tool") return /skill|技能/i.test(title) ? "skill" : "tool";
   return "other";
+}
+
+function resolveLiveStepAction(params: {
+  kind: WorkspaceLiveStepKind;
+  stream: string;
+  data: Record<string, unknown>;
+  title: string;
+}): WorkspaceLiveStepAction | undefined {
+  const { kind, stream, data, title } = params;
+  if (kind === "thinking") return undefined;
+  if (kind === "skill") return "skill";
+  if (kind === "command") return "command";
+  if (kind === "search") return "search";
+  if (kind === "patch") return "edit";
+  if (kind === "plan") return "plan";
+  if (kind === "approval") return "approval";
+
+  const args = extractArgs(data);
+  const signal = [
+    stream,
+    data.kind,
+    data.name,
+    data.toolName,
+    data.title,
+    data.command,
+    args.command,
+    args.operation,
+    args.action,
+    title,
+  ]
+    .map((value) => (typeof value === "string" ? value : ""))
+    .filter(Boolean)
+    .join(" ");
+
+  if (hasToolSignal(signal, ["apply_patch", "patch", "edit", "replace", "modify", "update_file"])) return "edit";
+  if (hasToolSignal(signal, ["create_file", "write", "write_file", "new_file", "touch", "mkdir", "create"])) return "create";
+  if (hasToolSignal(signal, ["read_file", "read", "view", "open_file", "cat", "load_file"])) return "read";
+  if (hasToolSignal(signal, ["delete_file", "remove_file", "delete", "remove", "unlink", "trash", "rm"])) return "delete";
+  if (hasToolSignal(signal, ["search", "grep", "ripgrep", "rg", "find", "lookup"])) return "search";
+  if (hasToolSignal(signal, ["exec", "shell", "terminal", "command", "powershell", "bash", "cmd", "run_command"])) return "command";
+  return "generic-tool";
+}
+
+function coerceKindForAction(kind: WorkspaceLiveStepKind, action?: WorkspaceLiveStepAction) {
+  if (action === "command") return "command";
+  if (action === "search") return "search";
+  if (action === "edit") return "patch";
+  if (action === "skill") return "skill";
+  if (action === "plan") return "plan";
+  if (action === "approval") return "approval";
+  return kind;
 }
 
 function resolveLiveStepStatus(params: {
@@ -110,22 +253,6 @@ function resolveLiveStepStatus(params: {
   return "pending";
 }
 
-function extractCommandSnippet(data: Record<string, unknown>) {
-  const args = isRecord(data.args) ? data.args : {};
-  const command = firstNonEmptyString(
-    data.command,
-    args.command,
-    data.cmd,
-    data.script,
-    data.line,
-    data.title,
-  );
-  if (!command) {
-    return "";
-  }
-  return truncateInlineText(command.split("\n", 1)[0] ?? command, 128);
-}
-
 function extractLiveStepDetail(data: Record<string, unknown>) {
   const detail = firstNonEmptyString(
     data.summary,
@@ -145,20 +272,27 @@ function isCommandLikeTool(data: Record<string, unknown>) {
 
 function buildLiveStepTitle(params: {
   kind: WorkspaceLiveStepKind;
+  action?: WorkspaceLiveStepAction;
   data: Record<string, unknown>;
 }) {
-  const { kind, data } = params;
+  const { kind, action, data } = params;
   if (kind === "thinking") {
     return firstNonEmptyString(data.title, data.message, data.summary, "思考中");
+  }
+  if (action === "command") {
+    return extractCommandSnippet(data) || firstNonEmptyString(data.name, data.title, "命令");
+  }
+  if (action === "search") {
+    return extractSearchQuery(data) || firstNonEmptyString(data.query, data.name, data.title, "搜索");
+  }
+  if (action === "read" || action === "create" || action === "edit" || action === "delete") {
+    return extractFileTarget(data) || firstNonEmptyString(data.title, data.name, data.toolName, "文件");
   }
   if (kind === "skill") {
     return firstNonEmptyString(data.name, data.skillName, data.title, "技能");
   }
   if (kind === "tool") {
     return firstNonEmptyString(data.name, data.toolName, data.title, "工具");
-  }
-  if (kind === "command") {
-    return extractCommandSnippet(data) || firstNonEmptyString(data.name, data.title, "命令");
   }
   return firstNonEmptyString(data.title, data.name, data.toolName, data.kind, "步骤");
 }
@@ -185,13 +319,36 @@ function getLiveStepId(payload: WorkspaceGatewayAgentEventPayload, fallback: str
     if (fromData) {
       return fromData;
     }
-    if (typeof data.name === "string" && data.name.trim()) {
-      return `${fallback}:${data.name.trim()}`;
-    }
+
+    const args = extractArgs(data);
+    const stream = toStringValue(payload.stream, "step");
+    const timestamp = toFiniteTimestamp(payload.ts) ?? Date.now();
+    const titleSeed = firstNonEmptyString(
+      data.name,
+      data.toolName,
+      data.title,
+      data.command,
+      data.query,
+      args.command,
+      args.query,
+    );
+    const phaseSeed = firstNonEmptyString(data.phase, data.status, data.state);
+    const detailSeed = firstNonEmptyString(data.summary, data.detail, data.message, data.progressText);
+    const signature = [
+      normalizeLiveStepSignaturePart(stream),
+      String(timestamp),
+      normalizeLiveStepSignaturePart(phaseSeed),
+      normalizeLiveStepSignaturePart(titleSeed),
+      normalizeLiveStepSignaturePart(detailSeed),
+    ]
+      .filter(Boolean)
+      .join(":");
+    return `${fallback}:${signature || stream}`;
   }
 
   const stream = toStringValue(payload.stream, "step");
-  return `${fallback}:${stream}`;
+  const timestamp = toFiniteTimestamp(payload.ts) ?? Date.now();
+  return `${fallback}:${stream}:${timestamp}`;
 }
 
 export function buildLiveStepFromAgentEvent(
@@ -223,7 +380,9 @@ export function buildLiveStepFromAgentEvent(
   if (stream === "tool") {
     const phase = toStringValue(data.phase);
     const title = firstNonEmptyString(data.name, data.toolName, data.title, "工具");
-    const kind = isCommandLikeTool(data) ? "command" : resolveLiveStepKind("tool", title);
+    const initialKind = isCommandLikeTool(data) ? "command" : resolveLiveStepKind("tool", title);
+    const action = resolveLiveStepAction({ kind: initialKind, stream, data, title });
+    const kind = coerceKindForAction(initialKind, action);
     const status = resolveLiveStepStatus({
       phase,
       status: toStringValue(data.status),
@@ -232,18 +391,22 @@ export function buildLiveStepFromAgentEvent(
     return {
       id: getLiveStepId(payload, fallbackRunId),
       kind,
+      action,
       status,
-      title: buildLiveStepTitle({ kind, data }),
+      title: buildLiveStepTitle({ kind, action, data }),
       detail: buildLiveStepDetail({ kind, data }) || undefined,
       time,
     };
   }
 
   if (stream === "item" || stream === "command_output" || stream === "plan" || stream === "approval" || stream === "patch") {
-    const kind = resolveLiveStepKind(
+    const title = firstNonEmptyString(data.title, data.name, data.toolName, stream);
+    const initialKind = resolveLiveStepKind(
       firstNonEmptyString(data.kind, stream === "command_output" ? "command" : stream),
-      firstNonEmptyString(data.title, data.name, data.toolName, stream),
+      title,
     );
+    const action = resolveLiveStepAction({ kind: initialKind, stream, data, title });
+    const kind = coerceKindForAction(initialKind, action);
     const status = resolveLiveStepStatus({
       phase: toStringValue(data.phase),
       status: firstNonEmptyString(data.status, data.state, stream === "command_output" ? "running" : ""),
@@ -252,8 +415,9 @@ export function buildLiveStepFromAgentEvent(
     return {
       id: getLiveStepId(payload, fallbackRunId),
       kind,
+      action,
       status,
-      title: buildLiveStepTitle({ kind, data }),
+      title: buildLiveStepTitle({ kind, action, data }),
       detail: buildLiveStepDetail({ kind, data }) || undefined,
       time,
     };
@@ -266,8 +430,12 @@ export function updateLiveStepList(
   current: WorkspaceLiveStep[],
   nextStep: WorkspaceLiveStep,
 ): WorkspaceLiveStep[] {
+  const shouldRemoveTransientThinking =
+    nextStep.kind !== "thinking" ||
+    nextStep.status === "running" ||
+    nextStep.status === "pending";
   const base =
-    nextStep.kind === "thinking"
+    !shouldRemoveTransientThinking
       ? current
       : current.filter((step) => step.kind !== "thinking" || (step.status !== "running" && step.status !== "pending"));
   const index = base.findIndex((step) => step.id === nextStep.id);
@@ -300,6 +468,7 @@ export function buildLiveStepOperationKey(params: {
   return [
     "operation",
     step.kind,
+    step.action ?? "",
     normalizeLiveStepSignaturePart(step.title),
     normalizeLiveStepSignaturePart(step.detail),
     normalizeLiveStepSignaturePart(sessionScope),

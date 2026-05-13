@@ -1,6 +1,7 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import type { WorkspaceEntityType } from "../../types";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
+import { useWorkspaceCloneRenderPerfMark } from "./workspaceCloneRenderPerf";
 import type {
   ChannelBindingModalState,
   DirectoryContextMenuState,
@@ -82,6 +83,17 @@ interface WorkspaceCloneDirectoryProps {
   onToggleFeishuAppSecretVisible: () => void;
   onSaveChannelBinding: () => void;
   onRemoveChannelBinding: (entityId: string) => void;
+  agentBranchRenderCounter?: (entityId: string) => void;
+}
+
+function useEventCallback<T extends (...args: any[]) => unknown>(callback: T): T {
+  const callbackRef = useRef(callback);
+
+  useEffect(() => {
+    callbackRef.current = callback;
+  }, [callback]);
+
+  return useCallback(((...args: Parameters<T>) => callbackRef.current(...args)) as T, []);
 }
 
 function renderEntityAvatar(entity: WorkspaceEntity) {
@@ -210,7 +222,149 @@ function renderEntityButton(
   );
 }
 
-export function WorkspaceCloneDirectory({
+interface WorkspaceCloneAgentBranchProps {
+  entity: WorkspaceEntity;
+  selectedEntityId: string;
+  activeSessionKey: string;
+  expanded: boolean;
+  onToggleExpanded: (entityId: string) => void;
+  onSelectEntity: (entityId: string) => void;
+  onSelectSession: (sessionKey: string, fallbackAgentId?: string | null) => void;
+  renderCounter?: (entityId: string) => void;
+}
+
+function branchHasSession(entity: WorkspaceEntity, sessionKey: string) {
+  return Boolean(sessionKey && entity.recentSessions?.some((session) => (session.sessionKey || session.id) === sessionKey));
+}
+
+function didBranchActiveSessionChange(previous: WorkspaceCloneAgentBranchProps, next: WorkspaceCloneAgentBranchProps) {
+  if (previous.activeSessionKey === next.activeSessionKey) {
+    return false;
+  }
+
+  return branchHasSession(previous.entity, previous.activeSessionKey) || branchHasSession(next.entity, next.activeSessionKey);
+}
+
+function didBranchSelectedStateChange(previous: WorkspaceCloneAgentBranchProps, next: WorkspaceCloneAgentBranchProps) {
+  if (previous.selectedEntityId === next.selectedEntityId) {
+    return false;
+  }
+
+  return previous.selectedEntityId === previous.entity.id || next.selectedEntityId === next.entity.id;
+}
+
+function areStringArraysEqual(left?: string[], right?: string[]) {
+  if (left === right) {
+    return true;
+  }
+  if (!left || !right || left.length !== right.length) {
+    return false;
+  }
+  return left.every((value, index) => value === right[index]);
+}
+
+function areRecentSessionsEqual(left: WorkspaceEntity["recentSessions"], right: WorkspaceEntity["recentSessions"]) {
+  if (left === right) {
+    return true;
+  }
+  if (!left || !right || left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((session, index) => {
+    const nextSession = right[index];
+    return Boolean(nextSession) &&
+      session.id === nextSession.id &&
+      session.sessionKey === nextSession.sessionKey &&
+      session.title === nextSession.title &&
+      session.subtitle === nextSession.subtitle &&
+      session.time === nextSession.time &&
+      session.updatedAt === nextSession.updatedAt &&
+      session.isMain === nextSession.isMain &&
+      session.kind === nextSession.kind &&
+      session.boundSessionKey === nextSession.boundSessionKey;
+  });
+}
+
+function areBranchEntitiesEqual(left: WorkspaceEntity, right: WorkspaceEntity) {
+  return left.id === right.id &&
+    left.entityType === right.entityType &&
+    left.name === right.name &&
+    left.searchText === right.searchText &&
+    left.subtitle === right.subtitle &&
+    left.status === right.status &&
+    left.avatarLabel === right.avatarLabel &&
+    left.avatarUrl === right.avatarUrl &&
+    left.accent === right.accent &&
+    left.iconSrc === right.iconSrc &&
+    left.channelLabel === right.channelLabel &&
+    left.runtimeAgentId === right.runtimeAgentId &&
+    left.currentWork === right.currentWork &&
+    left.recentOutput === right.recentOutput &&
+    areStringArraysEqual(left.memberLabels, right.memberLabels) &&
+    areRecentSessionsEqual(left.recentSessions, right.recentSessions);
+}
+
+const WorkspaceCloneAgentBranch = memo(function WorkspaceCloneAgentBranch({
+  entity,
+  selectedEntityId,
+  activeSessionKey,
+  expanded,
+  onToggleExpanded,
+  onSelectEntity,
+  onSelectSession,
+  renderCounter,
+}: WorkspaceCloneAgentBranchProps) {
+  renderCounter?.(entity.id);
+  const recentSessions = entity.recentSessions ?? [];
+  const hasOverflowSessions = recentSessions.length > DEFAULT_VISIBLE_AGENT_RECENT_SESSIONS;
+  const visibleSessions = recentSessions.slice(0, expanded ? MAX_VISIBLE_AGENT_RECENT_SESSIONS : DEFAULT_VISIBLE_AGENT_RECENT_SESSIONS);
+  const isActive = selectedEntityId === entity.id;
+
+  return (
+    <article key={entity.id} className={["workspace-clone__entity-item", "workspace-clone__entity-branch", isActive ? "is-active" : "", expanded ? "is-expanded" : ""].join(" ").trim()}>
+      <div className="workspace-clone__entity-branch-head">
+        <button type="button" className="workspace-clone__entity-branch-main" onClick={() => onSelectEntity(entity.id)}>
+          <span className="workspace-clone__entity-avatar-shell">
+            <span className={`workspace-clone__entity-avatar is-${entity.accent}`}>{renderEntityAvatar(entity)}</span>
+            <i className={`workspace-clone__entity-status workspace-clone__entity-status--avatar is-${entity.status}`} />
+          </span>
+          <span className="workspace-clone__entity-text">
+            <strong>{entity.name}</strong>
+            {entity.subtitle ? <small title={entity.subtitle}>{entity.subtitle}</small> : null}
+          </span>
+        </button>
+      </div>
+      {visibleSessions.length > 0 ? (
+        <div className="workspace-clone__entity-session-list">
+          {visibleSessions.map((session) => (
+            <button key={session.id} type="button" className={`workspace-clone__entity-session-item ${(session.sessionKey || session.id) === activeSessionKey ? "is-active" : ""}`} onClick={() => onSelectSession(session.sessionKey || session.id, entity.id)}>
+              <span className="workspace-clone__entity-session-icon"><WorkspaceCloneIcon name="message-circle" size={14} strokeWidth={1.8} /></span>
+              <span className="workspace-clone__entity-session-copy">
+                <strong>{session.title}</strong>
+                <small>{session.isMain ? `${session.time} / Main` : session.time}</small>
+              </span>
+            </button>
+          ))}
+          {hasOverflowSessions ? (
+            <button type="button" className="workspace-clone__entity-session-toggle" aria-expanded={expanded} aria-label={expanded ? `收起 ${entity.name} 的更多会话` : `展开 ${entity.name} 的更多会话`} onClick={() => onToggleExpanded(entity.id)}>
+              <span className="workspace-clone__entity-session-toggle-icon"><WorkspaceCloneIcon name="more" size={14} strokeWidth={2} /></span>
+              <span className="workspace-clone__entity-session-toggle-label">{expanded ? "收起更多" : "展开更多"}</span>
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </article>
+  );
+}, (previous, next) => (
+  areBranchEntitiesEqual(previous.entity, next.entity)
+  && previous.expanded === next.expanded
+  && !didBranchSelectedStateChange(previous, next)
+  && !didBranchActiveSessionChange(previous, next)
+  && previous.renderCounter === next.renderCounter
+));
+
+export const WorkspaceCloneDirectory = memo(function WorkspaceCloneDirectory({
   typeTabs,
   activeType,
   entities,
@@ -274,13 +428,22 @@ export function WorkspaceCloneDirectory({
   onToggleFeishuAppSecretVisible,
   onSaveChannelBinding,
   onRemoveChannelBinding,
+  agentBranchRenderCounter,
 }: WorkspaceCloneDirectoryProps) {
+  useWorkspaceCloneRenderPerfMark("directory", `${activeType}:${entities.length}`);
   const [expandedAgentIds, setExpandedAgentIds] = useState<Record<string, boolean>>({});
   const emptyLabel = activeType === "channels" ? "暂无频道结果" : activeType === "teams" ? "暂无团队结果" : "暂无数字员工结果";
   const directoryToggleLabel = isCollapsed ? "展开目录栏" : "收起目录栏";
   const visibleEntities = activeType === "agents" ? entities : entities.slice(0, 6);
   const boundChannels = activeType === "channels" ? entities.filter((entity) => entity.isBoundChannel) : [];
   const catalogChannels = activeType === "channels" ? entities.filter((entity) => entity.isCatalogEntry) : [];
+  const stableSelectEntity = useEventCallback(onSelectEntity);
+  const stableSelectSession = useEventCallback(onSelectSession);
+  const stableOpenContextMenu = useEventCallback(onOpenContextMenu);
+  const stableOpenChannelBindingModal = useEventCallback(onOpenChannelBindingModal);
+  const toggleRecentSessions = useCallback((entityId: string) => {
+    setExpandedAgentIds((current) => ({ ...current, [entityId]: !(current[entityId] ?? false) }));
+  }, []);
 
   useEffect(() => {
     if (activeType !== "agents") {
@@ -319,94 +482,26 @@ export function WorkspaceCloneDirectory({
         entity,
         selectedEntityId,
         activeType,
-        onSelectEntity,
-        onOpenContextMenu,
-        onOpenChannelBindingModal,
+        stableSelectEntity,
+        stableOpenContextMenu,
+        stableOpenChannelBindingModal,
       );
     }
 
-    const recentSessions = entity.recentSessions ?? [];
-    const hasRecentSessions = recentSessions.length > 0;
-    const hasOverflowSessions = recentSessions.length > DEFAULT_VISIBLE_AGENT_RECENT_SESSIONS;
     const isExpanded = expandedAgentIds[entity.id] ?? false;
-    const visibleSessions = recentSessions.slice(
-      0,
-      isExpanded ? MAX_VISIBLE_AGENT_RECENT_SESSIONS : DEFAULT_VISIBLE_AGENT_RECENT_SESSIONS,
-    );
-    const isActive = selectedEntityId === entity.id;
-    const toggleRecentSessions = () => {
-      setExpandedAgentIds((current) => ({
-        ...current,
-        [entity.id]: !(current[entity.id] ?? false),
-      }));
-    };
 
     return (
-      <article
+      <WorkspaceCloneAgentBranch
         key={entity.id}
-        className={[
-          "workspace-clone__entity-item",
-          "workspace-clone__entity-branch",
-          isActive ? "is-active" : "",
-          isExpanded ? "is-expanded" : "",
-        ].join(" ").trim()}
-      >
-        <div className="workspace-clone__entity-branch-head">
-          <button
-            type="button"
-            className="workspace-clone__entity-branch-main"
-            onClick={() => onSelectEntity(entity.id)}
-          >
-            <span className="workspace-clone__entity-avatar-shell">
-              <span className={`workspace-clone__entity-avatar is-${entity.accent}`}>
-                {renderEntityAvatar(entity)}
-              </span>
-              <i className={`workspace-clone__entity-status workspace-clone__entity-status--avatar is-${entity.status}`} />
-            </span>
-            <span className="workspace-clone__entity-text">
-              <strong>{entity.name}</strong>
-              {entity.subtitle ? <small title={entity.subtitle}>{entity.subtitle}</small> : null}
-            </span>
-          </button>
-        </div>
-
-        {hasRecentSessions ? (
-          <div className="workspace-clone__entity-session-list">
-            {visibleSessions.map((session) => (
-              <button
-                key={session.id}
-                type="button"
-                className={`workspace-clone__entity-session-item ${session.active || session.sessionKey === currentSessionKey ? "is-active" : ""}`}
-                onClick={() => onSelectSession(session.sessionKey || session.id, entity.id)}
-              >
-                <span className="workspace-clone__entity-session-icon">
-                  <WorkspaceCloneIcon name="message-circle" size={14} strokeWidth={1.8} />
-                </span>
-                <span className="workspace-clone__entity-session-copy">
-                  <strong>{session.title}</strong>
-                  <small>{session.isMain ? `${session.time} / Main` : session.time}</small>
-                </span>
-              </button>
-            ))}
-            {hasOverflowSessions ? (
-              <button
-                type="button"
-                className="workspace-clone__entity-session-toggle"
-                aria-expanded={isExpanded}
-                aria-label={isExpanded ? `收起 ${entity.name} 的更多会话` : `展开 ${entity.name} 的更多会话`}
-                onClick={toggleRecentSessions}
-              >
-                <span className="workspace-clone__entity-session-toggle-icon">
-                  <WorkspaceCloneIcon name="more" size={14} strokeWidth={2} />
-                </span>
-                <span className="workspace-clone__entity-session-toggle-label">
-                  {isExpanded ? "收起更多" : "展开更多"}
-                </span>
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-      </article>
+        entity={entity}
+        selectedEntityId={selectedEntityId}
+        activeSessionKey={currentSessionKey}
+        expanded={isExpanded}
+        onToggleExpanded={toggleRecentSessions}
+        onSelectEntity={stableSelectEntity}
+        onSelectSession={stableSelectSession}
+        renderCounter={agentBranchRenderCounter}
+      />
     );
   };
 
@@ -446,9 +541,9 @@ export function WorkspaceCloneDirectory({
                   type="button"
                   title={entity.name}
                   onClick={() => {
-                    onSelectEntity(entity.id);
+                    stableSelectEntity(entity.id);
                     if (activeType === "channels" && entity.isCatalogEntry) {
-                      onOpenChannelBindingModal(entity);
+                      stableOpenChannelBindingModal(entity);
                     }
                   }}
                 >
@@ -494,9 +589,9 @@ export function WorkspaceCloneDirectory({
                         entity,
                         selectedEntityId,
                         activeType,
-                        onSelectEntity,
-                        onOpenContextMenu,
-                        onOpenChannelBindingModal,
+                        stableSelectEntity,
+                        stableOpenContextMenu,
+                        stableOpenChannelBindingModal,
                       ),
                     )
                   ) : (
@@ -520,9 +615,9 @@ export function WorkspaceCloneDirectory({
                         entity,
                         selectedEntityId,
                         activeType,
-                        onSelectEntity,
-                        onOpenContextMenu,
-                        onOpenChannelBindingModal,
+                        stableSelectEntity,
+                        stableOpenContextMenu,
+                        stableOpenChannelBindingModal,
                       ),
                     )}
                   </div>
@@ -641,4 +736,4 @@ export function WorkspaceCloneDirectory({
       ) : null}
     </>
   );
-}
+});

@@ -2,17 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 
 import type {
-  WorkspaceChatSessionCacheRow,
-  WorkspaceChatSessionCacheSummary,
   WorkspaceGatewayAgentRow,
 } from "../../components/workspace-clone/workspaceCloneTypes";
-import { extractLastMeaningfulMessageSummary } from "./message-normalizers";
-import { parseCachedMessagesJson } from "./session-cache";
+import type { WorkspaceChatSessionCacheCompactRow } from "./session-history-pages";
 
-export function useWorkspaceCachedAgentLastMessages(
-  agents: WorkspaceGatewayAgentRow[],
-  loadPersistedSessionHistoryCache: (sessionKey: string, agentId: string) => Promise<WorkspaceChatSessionCacheRow | null>,
-) {
+export function useWorkspaceCachedAgentLastMessages(agents: WorkspaceGatewayAgentRow[]) {
   const [cachedAgentLastMessageById, setCachedAgentLastMessageById] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -26,8 +20,9 @@ export function useWorkspaceCachedAgentLastMessages(
     async function loadAgentLastMessages() {
       const entries = await Promise.all(
         agents.map(async (agent) => {
-          const rows = await invoke<WorkspaceChatSessionCacheSummary[]>("list_workspace_chat_session_cache", {
+          const rows = await invoke<WorkspaceChatSessionCacheCompactRow[]>("list_workspace_chat_session_cache_compact", {
             agentId: agent.id,
+            limit: 7,
           }).catch(() => []);
 
           const sortedRows = [...rows].sort(
@@ -35,10 +30,8 @@ export function useWorkspaceCachedAgentLastMessages(
           );
 
           for (const row of sortedRows) {
-            const cachedRow = await loadPersistedSessionHistoryCache(row.sessionKey, agent.id).catch(() => null);
-            const summary = cachedRow ? extractLastMeaningfulMessageSummary(parseCachedMessagesJson(cachedRow.messagesJson)) : null;
-            if (summary) {
-              return [agent.id, summary] as const;
+            if (row.lastMessageSummary) {
+              return [agent.id, row.lastMessageSummary] as const;
             }
           }
 
@@ -69,7 +62,7 @@ export function useWorkspaceCachedAgentLastMessages(
     return () => {
       cancelled = true;
     };
-  }, [agents, loadPersistedSessionHistoryCache]);
+  }, [agents]);
 
   return cachedAgentLastMessageById;
 }

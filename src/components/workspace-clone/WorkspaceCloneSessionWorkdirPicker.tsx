@@ -35,9 +35,17 @@ export function WorkspaceCloneSessionWorkdirPicker({
   const menuRef = useRef<HTMLDivElement | null>(null);
   const hasSelectedPath = selectedPath.trim().length > 0;
   const displayName = useMemo(() => resolveWorkspaceDirectoryName(selectedPath), [selectedPath]);
+  const showTriggerCopy = variant === "hero" || (variant === "composer" && hasSelectedPath);
   const triggerClassName = [
     "workspace-clone__workdir-trigger",
-    variant === "composer" ? "workspace-clone__composer-pill workspace-clone__composer-pill--muted workspace-clone__composer-pill--icon-only workspace-clone__workdir-trigger--composer" : "",
+    variant === "composer"
+      ? [
+          "workspace-clone__composer-pill",
+          "workspace-clone__composer-pill--muted",
+          !hasSelectedPath ? "workspace-clone__composer-pill--icon-only" : "",
+          "workspace-clone__workdir-trigger--composer",
+        ].join(" ")
+      : "",
   ]
     .join(" ")
     .trim();
@@ -153,7 +161,7 @@ export function WorkspaceCloneSessionWorkdirPicker({
         "workspace-clone__workdir-picker",
         `workspace-clone__workdir-picker--${variant}`,
         menuOpen ? "is-menu-open" : "",
-        hasSelectedPath && variant === "hero" ? "is-selected" : "",
+        hasSelectedPath ? "is-selected" : "",
       ].join(" ").trim()}
     >
       <button
@@ -170,7 +178,7 @@ export function WorkspaceCloneSessionWorkdirPicker({
         <span className="workspace-clone__workdir-trigger-icon">
           <WorkspaceCloneIcon name="folder" size={14} strokeWidth={1.9} />
         </span>
-        {variant === "hero" ? (
+        {showTriggerCopy ? (
           <span className="workspace-clone__workdir-trigger-copy">
             <strong>{hasSelectedPath ? displayName : "选择工作目录"}</strong>
             <small>{hasSelectedPath ? selectedPath : "为当前聊天指定默认工作目录"}</small>
