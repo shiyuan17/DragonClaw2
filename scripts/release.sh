@@ -1,6 +1,6 @@
 #!/bin/bash
-# release.sh — Full release pipeline: bump + test + commit + tag + push
-# Usage: ./scripts/release.sh 0.2.6 "feat: description of changes"
+# release.sh — Release helper: bump + verify + commit + annotated tag
+# Usage: ./scripts/release.sh 0.2.6 "chore(release): bump version to v0.2.6"
 
 set -e
 
@@ -20,45 +20,54 @@ cd "$PROJECT_DIR"
 echo "🚀 Release Pipeline v$VERSION"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+CURRENT_BRANCH="$(git branch --show-current)"
+if [ "$CURRENT_BRANCH" != "v2-dev" ]; then
+    echo "❌ Release must start from v2-dev. Current branch: $CURRENT_BRANCH"
+    exit 1
+fi
+
+if [ -n "$(git status --porcelain)" ]; then
+    echo "❌ Working tree is not clean. Commit or stash unrelated changes before release."
+    git status --short
+    exit 1
+fi
+
 # Step 1: Bump version
 echo ""
 echo "📦 Step 1/5: Bump version"
 bash "$SCRIPT_DIR/bump-version.sh" "$VERSION"
 
-# Step 2: Run tests
+# Step 2: Run quality gates
 echo ""
-echo "🧪 Step 2/5: Running tests"
-cd src-tauri
-cargo test 2>&1
-if [ $? -ne 0 ]; then
-    echo "❌ Tests failed! Aborting release."
-    exit 1
-fi
-echo "  ✅ All tests passed"
-cd "$PROJECT_DIR"
+echo "🧪 Step 2/5: Running quality gates"
+npm run test:ci
 
-# Step 3: Build (compile check)
+# Step 3: Build release package
 echo ""
-echo "🔨 Step 3/5: Building..."
-npm run tauri build 2>&1 || true  # xdg-open error is expected in WSL
+echo "🔨 Step 3/5: Building release package..."
+npm run tauri -- build
 echo "  ✅ Build completed"
 
 # Step 4: Commit and tag
 echo ""
 echo "📝 Step 4/5: Committing..."
-git add .
+git add package.json package-lock.json src-tauri/Cargo.toml src-tauri/tauri.conf.json
 git commit -m "$MESSAGE"
-git tag "v$VERSION"
+git tag -a "v$VERSION" -m "DragonClaw v$VERSION"
 echo "  ✅ Tagged v$VERSION"
 
-# Step 5: Push
+# Step 5: Print push instructions
 echo ""
-echo "🚀 Step 5/5: Pushing to GitHub..."
-git push origin main "v$VERSION"
-echo "  ✅ Pushed to GitHub"
+echo "🚀 Step 5/5: Push manually after reviewing the commit:"
+echo "   git push origin v2-dev"
+echo "   git checkout main"
+echo "   git merge v2-dev"
+echo "   git push origin main"
+echo "   git push origin v$VERSION"
+echo "   git checkout v2-dev"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🎉 Release v$VERSION complete!"
-echo "   CI will build and create GitHub Release automatically."
-echo "   Check: https://github.com/shiyuan17/DragonClaw2/security/actions"
+echo "🎉 Local release prep for v$VERSION complete."
+echo "   The v* tag push will trigger GitHub Release builds."
+echo "   Check: https://github.com/shiyuan17/DragonClaw2/actions"
