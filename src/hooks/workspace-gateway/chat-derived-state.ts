@@ -15,8 +15,8 @@ import type { WorkspaceStartupPreviewState } from "./startup-preview";
 export function buildWorkspaceHistoryItems(params: {
   currentSessionKey: string;
   historyTitleCache: Record<string, string>;
+  sessionSummaryByKey: Record<string, string>;
   selectedAgentId: string;
-  sessionHistoryCache: Record<string, unknown[]>;
   sessionsResult: WorkspaceGatewaySessionsListResult | null;
   taskRunSessions: Record<string, WorkspaceTaskRunSession>;
 }): WorkspaceHistoryItem[] {
@@ -43,13 +43,14 @@ export function buildWorkspaceHistoryItems(params: {
     .map((session) => {
       const resolvedTitle = resolveSessionHistoryTitleDetails(session, {
         cachedTitle: params.historyTitleCache[session.key],
-        memoryMessages: params.sessionHistoryCache[session.key],
       });
       const item = buildSessionHistoryItem(session, {
         cachedTitle: resolvedTitle.title,
-        memoryMessages: params.sessionHistoryCache[session.key],
         currentSessionKey: params.currentSessionKey,
       });
+      if (params.sessionSummaryByKey[session.key]) {
+        item.subtitle = params.sessionSummaryByKey[session.key];
+      }
       return import.meta.env.DEV ? { ...item, _historyTitleSource: resolvedTitle.source } : item;
     });
 
@@ -153,7 +154,6 @@ export function buildWorkspaceAgentLastMessageById(params: {
 
 export function buildWorkspaceStartupPreview(params: {
   historyTitleCache: Record<string, string>;
-  sessionHistoryCache: Record<string, unknown[]>;
   sessionsResult: WorkspaceGatewaySessionsListResult | null;
   startupPreviewActive: boolean;
   startupPreviewState: WorkspaceStartupPreviewState | null;
@@ -169,7 +169,6 @@ export function buildWorkspaceStartupPreview(params: {
     sessionRow ?? { key: params.startupPreviewState.previewSessionKey, displayName: undefined, label: undefined },
     {
       cachedTitle: params.historyTitleCache[params.startupPreviewState.previewSessionKey],
-      memoryMessages: params.sessionHistoryCache[params.startupPreviewState.previewSessionKey],
     },
   ).title;
 

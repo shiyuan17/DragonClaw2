@@ -517,11 +517,13 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
           loadedAt: Date.now(),
           updatedAt: sessionRow?.updatedAt ?? null,
         });
-        updateSessionHistoryCache(gatewaySessionKey, messages);
-        setSessionHistoryPageStateByKey((current) => ({
-          ...current,
-          [gatewaySessionKey]: buildSessionHistoryPageStateFromGatewayMessages(messages, current[gatewaySessionKey]),
-        }));
+        startSessionTransition(() => {
+          updateSessionHistoryCache(gatewaySessionKey, messages);
+          setSessionHistoryPageStateByKey((current) => ({
+            ...current,
+            [gatewaySessionKey]: buildSessionHistoryPageStateFromGatewayMessages(messages, current[gatewaySessionKey]),
+          }));
+        });
 
         const nextTitle = resolveStableSessionHistoryTitleDetails(sessionRow ?? { key: gatewaySessionKey, displayName: undefined, label: undefined }, {
           currentTitle: historyTitleCacheRef.current[gatewaySessionKey],
@@ -570,6 +572,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
       saveSessionHistoryCache,
       selectedAgentId,
       sessionsResult,
+      startSessionTransition,
       startupPreviewActive,
       startupPreviewState,
       updateSessionHistoryCache,
@@ -1262,7 +1265,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
     return client.request<T>(method, params);
   }, []);
 
-  const historyItems = useMemo(() => buildWorkspaceHistoryItems({ currentSessionKey, historyTitleCache, selectedAgentId, sessionHistoryCache, sessionsResult, taskRunSessions }), [currentSessionKey, historyTitleCache, selectedAgentId, sessionHistoryCache, sessionsResult, taskRunSessions]);
+  const historyItems = useMemo(() => buildWorkspaceHistoryItems({ currentSessionKey, historyTitleCache, sessionSummaryByKey, selectedAgentId, sessionsResult, taskRunSessions }), [currentSessionKey, historyTitleCache, selectedAgentId, sessionSummaryByKey, sessionsResult, taskRunSessions]);
 
   const agentRecentSessionsById = useMemo(() => buildAgentRecentSessionsById({
     agents, sessionsResult, historyTitleCache, sessionHistoryCache: {},
@@ -1277,7 +1280,7 @@ export function useWorkspaceGatewayChat({ running, servicePort, gatewayToken }: 
   const messages = useMemo(() => buildWorkspaceMessages({ currentGatewaySessionKey, currentTaskRunSystemMessages: currentTaskRunSession?.systemMessages, localSessionMessagesByKey, normalizedHistoryMessages, pendingUserMessage, startupPreviewActive, streamMessage }), [currentGatewaySessionKey, currentTaskRunSession?.systemMessages, localSessionMessagesByKey, normalizedHistoryMessages, pendingUserMessage, startupPreviewActive, streamMessage]);
   const agentLastMessageById = useMemo(() => buildWorkspaceAgentLastMessageById({ agents, cachedAgentLastMessageById, sessionSummaryByKey, sessionsResult }), [agents, cachedAgentLastMessageById, sessionSummaryByKey, sessionsResult]);
   const currentMainSession = useMemo(() => (selectedAgentId ? findMainAgentSession(sessionsResult, selectedAgentId) : null), [selectedAgentId, sessionsResult]);
-  const startupPreview = useMemo(() => buildWorkspaceStartupPreview({ historyTitleCache, sessionHistoryCache, sessionsResult, startupPreviewActive, startupPreviewState }), [historyTitleCache, sessionHistoryCache, sessionsResult, startupPreviewActive, startupPreviewState]);
+  const startupPreview = useMemo(() => buildWorkspaceStartupPreview({ historyTitleCache, sessionsResult, startupPreviewActive, startupPreviewState }), [historyTitleCache, sessionsResult, startupPreviewActive, startupPreviewState]);
   const retryLastSend = useCallback(() => {
     const lastAttempt = lastSendAttemptRef.current;
     return lastAttempt ? sendMessage(lastAttempt.value, lastAttempt.options) : Promise.resolve(false);

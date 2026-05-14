@@ -48,10 +48,11 @@ import {
   updateWorkspaceAgentWorkdirs,
 } from "./workspaceCloneAgentWorkdirState";
 import {
-  buildWorkspaceChatFileItems,
+  buildWorkspaceChatFileItemsFromRenderableMessages,
   isWorkspaceUrlTarget,
   resolveWorkspaceLocalOpenPath,
 } from "./workspaceCloneChatFiles";
+import { useWorkspaceRenderableMessages } from "./useWorkspaceRenderableMessages";
 import { WorkspaceCloneChatView } from "./WorkspaceCloneChatView";
 import { WorkspaceCloneComposer } from "./WorkspaceCloneComposer";
 import { toWorkspaceActiveSkill } from "./workspaceCloneSlashCommands";
@@ -1114,9 +1115,10 @@ export function WorkspaceClonePage({
     () => (chatEnabled ? homepageChat.messages : []),
     [chatEnabled, homepageChat.messages],
   );
+  const chatRenderableMessages = useWorkspaceRenderableMessages(chatMessages);
   const chatFileItems = useMemo(
-    () => buildWorkspaceChatFileItems(chatMessages),
-    [chatMessages],
+    () => buildWorkspaceChatFileItemsFromRenderableMessages(chatRenderableMessages),
+    [chatRenderableMessages],
   );
   const selectedRuntimeLog = useMemo<WorkspaceRuntimeLogItem | null>(
     () => derivedLogs.find((item) => item.id === selectedRuntimeLogId) ?? null,
@@ -1481,7 +1483,7 @@ export function WorkspaceClonePage({
                 selectedEntity={selectedEntity}
                 chatEnabled={chatEnabled}
                 chatDisabledReason={chatDisabledReason}
-                messages={chatMessages}
+                messages={chatRenderableMessages}
                 liveSteps={chatEnabled ? homepageChat.liveSteps : []}
                 liveTranscriptItems={chatEnabled ? homepageChat.liveTranscriptItems : []}
                 connectionError={homepageChat.error}

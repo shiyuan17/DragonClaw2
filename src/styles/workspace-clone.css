@@ -7379,6 +7379,25 @@
   overflow-anchor: none;
 }
 
+.workspace-clone__message-list--virtual {
+  display: block;
+  gap: 0;
+  padding-bottom: 12px;
+}
+
+.workspace-clone__live-status-overlay {
+  position: absolute;
+  right: 14px;
+  bottom: 74px;
+  left: 14px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.workspace-clone__live-status-overlay .workspace-clone__message {
+  pointer-events: auto;
+}
+
 .workspace-clone__history-page-loading {
   align-self: center;
   color: var(--dc-text-muted);

@@ -1,6 +1,5 @@
-import {
+﻿import {
   lazy,
-  memo,
   Suspense,
   useCallback,
   useEffect,
@@ -12,7 +11,6 @@ import {
 import { useReducedMotion } from "framer-motion";
 import dragonclawLogo from "../../assets/dragonclaw-logo.png";
 import { WORKSPACE_HOME_SUGGESTIONS } from "./workspaceCloneData";
-import { shouldHideWorkspaceMessage } from "./workspaceCloneMessageVisibility";
 import type { WorkspaceChatFailureNotice } from "./workspaceCloneChatFailure";
 import type {
   WorkspaceCronJob,
@@ -31,13 +29,18 @@ import type {
   WorkspaceUtilityPanel,
   WorkspaceWorkbenchItem,
 } from "./workspaceCloneTypes";
+import type { WorkspaceRenderableMessage } from "./workspaceChatRenderTypes";
 import type { WorkspaceSessionHistoryPageState } from "../../hooks/workspace-gateway/session-history-pages";
 import type { WorkspaceLiveTranscriptItem } from "../../hooks/workspace-gateway/live-transcript";
 import { WorkspaceCloneIcon } from "./workspaceCloneIcons";
 import { WorkspaceCloneLiveTimeline } from "./WorkspaceCloneLiveTimeline";
-import { WorkspaceCloneMessagePreview } from "./WorkspaceCloneMessagePreview";
+import { WorkspaceCloneChatMessageRow } from "./WorkspaceCloneChatMessageRow";
 import { WorkspaceCloneRunTranscript } from "./WorkspaceCloneRunTranscript";
 import { WorkspaceCloneSessionWorkdirPicker } from "./WorkspaceCloneSessionWorkdirPicker";
+import { WorkspaceChatVirtualMessageList } from "./WorkspaceChatVirtualMessageList";
+import { buildWorkspaceRenderableMessage } from "./workspaceChatMessageRenderState";
+
+export { WorkspaceCloneChatMessageRow } from "./WorkspaceCloneChatMessageRow";
 import {
   WorkspaceCloneServiceStartupPanel,
   type WorkspaceServiceStartupLogLine,
@@ -47,7 +50,7 @@ import {
 import { useWorkspaceCloneRenderPerfMark } from "./workspaceCloneRenderPerf";
 
 const MESSAGE_BOTTOM_THRESHOLD_PX = 72;
-const MESSAGE_RENDER_LIMIT = 60;
+const MESSAGE_RENDER_LIMIT = 120;
 const loadWorkspaceCloneUtilityDrawer = () =>
   import("./WorkspaceCloneUtilityDrawer").then((module) => ({ default: module.WorkspaceCloneUtilityDrawer }));
 const WorkspaceCloneUtilityDrawer = lazy(loadWorkspaceCloneUtilityDrawer);
@@ -100,77 +103,11 @@ function getChatFailureNoticeKey(chatFailure: WorkspaceChatFailureNotice | null)
   ].join("|");
 }
 
-interface WorkspaceCloneChatMessageRowProps {
-  message: WorkspaceMessage;
-  selectedEntity: WorkspaceEntity | null;
-  liveSteps: WorkspaceLiveStep[];
-  liveTranscriptItems: WorkspaceLiveTranscriptItem[];
-  onBlankAreaClick: (event: ReactMouseEvent<HTMLElement>) => void;
-}
-
-export const WorkspaceCloneChatMessageRow = memo(function WorkspaceCloneChatMessageRow({
-  message,
-  selectedEntity,
-  liveSteps,
-  liveTranscriptItems,
-  onBlankAreaClick,
-}: WorkspaceCloneChatMessageRowProps) {
-  const isStreaming = message.status === "streaming";
-  const hasStreamText = message.text.trim().length > 0;
-  const hasTranscript = isStreaming && liveTranscriptItems.length > 0;
-  const showPreview = !hasTranscript && (!isStreaming || hasStreamText);
-  const showMeta = !isStreaming && Boolean(message.time);
-
-  return (
-    <article
-      className={[
-        "workspace-clone__message",
-        "workspace-clone__message--chat",
-        `is-${message.role}`,
-        message.status ? `is-${message.status}` : "",
-      ].join(" ").trim()}
-      onClick={onBlankAreaClick}
-    >
-      <div className="workspace-clone__message-marker">
-        {message.role === "assistant"
-          ? renderAvatarMarker(selectedEntity, message.author)
-          : message.author}
-      </div>
-      <div className="workspace-clone__message-body">
-        <div className="workspace-clone__message-content">
-          {hasTranscript ? (
-            <WorkspaceCloneRunTranscript assistantAuthor={message.author} items={liveTranscriptItems} />
-          ) : isStreaming ? (
-            <WorkspaceCloneLiveTimeline steps={liveSteps} />
-          ) : null}
-          {showPreview ? <WorkspaceCloneMessagePreview message={message} /> : null}
-        </div>
-        {showMeta ? <span className="workspace-clone__message-meta">{message.time}</span> : null}
-      </div>
-    </article>
-  );
-}, (previousProps, nextProps) => {
-  if (previousProps.message !== nextProps.message) {
-    return false;
-  }
-  if (previousProps.onBlankAreaClick !== nextProps.onBlankAreaClick) {
-    return false;
-  }
-  if ((previousProps.selectedEntity?.avatarUrl ?? "") !== (nextProps.selectedEntity?.avatarUrl ?? "")) {
-    return false;
-  }
-  if (previousProps.message.status === "streaming" || nextProps.message.status === "streaming") {
-    return previousProps.liveSteps === nextProps.liveSteps
-      && previousProps.liveTranscriptItems === nextProps.liveTranscriptItems;
-  }
-  return true;
-});
-
 export interface WorkspaceCloneChatViewProps {
   selectedEntity: WorkspaceEntity | null;
   chatEnabled: boolean;
   chatDisabledReason?: "channel-unbound" | "unsupported";
-  messages: WorkspaceMessage[];
+  messages: Array<WorkspaceMessage | WorkspaceRenderableMessage>;
   liveSteps: WorkspaceLiveStep[];
   liveTranscriptItems: WorkspaceLiveTranscriptItem[];
   connectionError: string | null;
@@ -323,13 +260,17 @@ export function WorkspaceCloneChatView({
   const showUnboundChannelState = !chatEnabled && chatDisabledReason === "channel-unbound";
   const chatFailureNoticeKey = getChatFailureNoticeKey(chatFailure);
   const showChatFailureNotice = Boolean(chatFailure && chatFailureNoticeKey !== dismissedChatFailureKey);
-  const visibleMessages = useMemo(
-    () => messages.filter((message) => !shouldHideWorkspaceMessage(message)),
+  const renderableSourceMessages = useMemo(
+    () => messages.map((message) => ("render" in message ? message : buildWorkspaceRenderableMessage(message))),
     [messages],
   );
+  const messageWindow = useMemo(
+    () => (renderableSourceMessages.length > MESSAGE_RENDER_LIMIT ? renderableSourceMessages.slice(-MESSAGE_RENDER_LIMIT) : renderableSourceMessages),
+    [renderableSourceMessages],
+  );
   const renderedMessages = useMemo(
-    () => (visibleMessages.length > MESSAGE_RENDER_LIMIT ? visibleMessages.slice(-MESSAGE_RENDER_LIMIT) : visibleMessages),
-    [visibleMessages],
+    () => messageWindow.filter((message) => !message.render.hidden),
+    [messageWindow],
   );
   const hasRenderableMessages = renderedMessages.length > 0 || liveSteps.length > 0 || liveTranscriptItems.length > 0;
   const showStartupPanel = chatEnabled && serviceStartup.showPanel && !hasRenderableMessages;
@@ -389,19 +330,6 @@ export function WorkspaceCloneChatView({
       updateScrollToBottomVisibility();
     });
   }, [updateScrollToBottomVisibility]);
-
-  const handleMessageScroll = useCallback(() => {
-    scheduleScrollToBottomVisibilityUpdate();
-    const element = messageScrollRef.current;
-    if (!element || !historyPageState?.hasMoreBefore || historyPageState.loadingOlder || !onLoadOlderHistoryPage) {
-      return;
-    }
-    if (element.scrollTop > 48) {
-      return;
-    }
-    previousScrollHeightRef.current = element.scrollHeight;
-    void Promise.resolve(onLoadOlderHistoryPage()).catch(() => undefined);
-  }, [historyPageState?.hasMoreBefore, historyPageState?.loadingOlder, onLoadOlderHistoryPage, scheduleScrollToBottomVisibilityUpdate]);
 
   const dismissUtilityDrawerFromBlankArea = useCallback(() => {
     if (!utilityPanel) {
@@ -543,12 +471,12 @@ export function WorkspaceCloneChatView({
               <div className="workspace-clone__chat-notice-actions">
                 {chatFailure.canRetry && onRetryChatFailure ? (
                   <button
-                  type="button"
-                  className="workspace-clone__composer-action-text is-solid"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onRetryChatFailure();
-                  }}
+                    type="button"
+                    className="workspace-clone__composer-action-text is-solid"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onRetryChatFailure();
+                    }}
                   >
                     重试发送
                   </button>
@@ -591,14 +519,14 @@ export function WorkspaceCloneChatView({
                     : !running
                       ? "服务尚未启动"
                       : showMissingTokenState
-                        ? "本地网关 token 未同步"
-                        : "首页聊天暂时无法连接 OpenClaw"}
+                      ? "本地网关 token 未同步"
+                      : "首页聊天暂时无法连接 OpenClaw"}
                 </strong>
                 <p>
                   {!chatEnabled
                     ? showUnboundChannelState
                       ? selectedEntity?.emptyHint || "请先完成频道绑定，绑定成功后首页主聊天区会直接复用目标 Agent 的主会话。"
-                      : "当前阶段只有数字员工页会接入真实 Agent 主会话，其它区域仍保留工作台骨架。"
+                      : "当前阶段只有数字员工页会接入真实 Agent 主会话，其他区域仍保留工作台骨架。"
                     : connectionError || (running
                       ? "正在等待本地网关握手完成，你也可以先查看运行日志确认 OpenClaw 状态。"
                       : "启动服务后，这里会自动接入当前 Agent 的主会话。")}
@@ -618,51 +546,51 @@ export function WorkspaceCloneChatView({
             </section>
           ) : hasRenderableMessages ? (
             <div className="workspace-clone__message-stage" onClick={handleBlankAreaClick}>
-              <div
-                ref={messageScrollRef}
-                className="workspace-clone__message-scroll"
-                onScroll={handleMessageScroll}
-                onClick={handleBlankAreaClick}
-              >
-                <div className="workspace-clone__message-list" onClick={handleBlankAreaClick}>
-                  {historyPageState?.loadingOlder ? (
-                    <div className="workspace-clone__history-page-loading">正在加载更早消息...</div>
-                  ) : null}
-                  {renderedMessages.map((message) => {
-                    return (
-                      <WorkspaceCloneChatMessageRow
-                        key={message.id}
-                        message={message}
-                        selectedEntity={selectedEntity}
-                        liveSteps={liveSteps}
-                        liveTranscriptItems={liveTranscriptItems}
-                        onBlankAreaClick={handleBlankAreaClick}
-                      />
-                    );
-                  })}
-                  {(liveTranscriptItems.length > 0 || liveSteps.length > 0) && !hasStreamingMessage ? (
-                    <article
-                      className="workspace-clone__message workspace-clone__message--chat is-assistant is-live-status"
-                      onClick={handleBlankAreaClick}
-                    >
-                      <div className="workspace-clone__message-marker">
-                        {renderAvatarMarker(selectedEntity, selectedEntity?.avatarLabel || "A")}
-                      </div>
-                      <div className="workspace-clone__message-content">
-                        {liveTranscriptItems.length > 0 ? (
-                          <WorkspaceCloneRunTranscript
-                            assistantAuthor={selectedEntity?.avatarLabel || "A"}
-                            items={liveTranscriptItems}
-                          />
-                        ) : (
-                          <WorkspaceCloneLiveTimeline steps={liveSteps} />
-                        )}
-                      </div>
-                    </article>
-                  ) : null}
+              <WorkspaceChatVirtualMessageList
+                messages={renderedMessages}
+                sessionKey={renderedMessages[0]?.id.split(":").slice(0, 3).join(":") || ""}
+                loadingOlder={historyPageState?.loadingOlder}
+                hasMoreBefore={historyPageState?.hasMoreBefore}
+                onLoadOlderHistoryPage={onLoadOlderHistoryPage}
+                onBlankAreaClick={handleBlankAreaClick}
+                scrollElementRef={messageScrollRef}
+                onNearBottomChange={(nearBottom) => {
+                  wasNearBottomRef.current = nearBottom;
+                  setShowScrollToBottom((current) => (current === !nearBottom ? current : !nearBottom));
+                }}
+                renderMessage={(message) => (
+                  <WorkspaceCloneChatMessageRow
+                    key={message.id}
+                    message={message}
+                    selectedEntity={selectedEntity}
+                    liveSteps={liveSteps}
+                    liveTranscriptItems={liveTranscriptItems}
+                    onBlankAreaClick={handleBlankAreaClick}
+                  />
+                )}
+              />
+              {(liveTranscriptItems.length > 0 || liveSteps.length > 0) && !hasStreamingMessage ? (
+                <div className="workspace-clone__live-status-overlay">
+                  <article
+                    className="workspace-clone__message workspace-clone__message--chat is-assistant is-live-status"
+                    onClick={handleBlankAreaClick}
+                  >
+                    <div className="workspace-clone__message-marker">
+                      {renderAvatarMarker(selectedEntity, selectedEntity?.avatarLabel || "A")}
+                    </div>
+                    <div className="workspace-clone__message-content">
+                      {liveTranscriptItems.length > 0 ? (
+                        <WorkspaceCloneRunTranscript
+                          assistantAuthor={selectedEntity?.avatarLabel || "A"}
+                          items={liveTranscriptItems}
+                        />
+                      ) : (
+                        <WorkspaceCloneLiveTimeline steps={liveSteps} />
+                      )}
+                    </div>
+                  </article>
                 </div>
-                <div className="workspace-clone__canvas-fill" onClick={dismissUtilityDrawerFromBlankArea} />
-              </div>
+              ) : null}
               {showScrollToBottom ? (
                 <button
                   type="button"
@@ -682,7 +610,7 @@ export function WorkspaceCloneChatView({
                   <img src={dragonclawLogo} alt="DragonClaw" className="workspace-clone__welcome-logo" />
                 </div>
                 <div className="workspace-clone__welcome-copy">
-                  <strong>DragonClaw,让Ai更简单</strong>
+                  <strong>DragonClaw，让 AI 更简单</strong>
                   <p>{historyLoading ? "正在准备当前会话..." : "选择工作目录后，这个会话会默认围绕该目录展开。"}</p>
                 </div>
                 <WorkspaceCloneSessionWorkdirPicker
@@ -700,8 +628,8 @@ export function WorkspaceCloneChatView({
                 <div className="workspace-clone__message-content">
                   <p>
                     {historyLoading
-                      ? "正在同步 Agent 会话记录..."
-                      : "你可以直接给当前数字员工安排任务、提问，或从下方卡片快速进入常用工作流。"}
+                       ? "正在同步 Agent 会话记录..."
+                       : "你可以直接给当前数字员工安排任务、提问，或从下方卡片快速进入常用工作流。"}
                   </p>
                   <span>{isGenerating ? "思考中..." : "试着发起第一条消息"}</span>
                 </div>

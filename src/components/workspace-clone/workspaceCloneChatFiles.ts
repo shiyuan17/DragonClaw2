@@ -4,13 +4,11 @@ import type {
   WorkspaceChatFileSourceRole,
   WorkspaceMessage,
 } from "./workspaceCloneTypes";
+import type { WorkspaceMessageFileTarget, WorkspaceRenderableMessage } from "./workspaceChatRenderTypes";
 
 type WorkspaceChatFileSpecificCategory = Exclude<WorkspaceChatFileCategory, "all">;
 
-type ExtractedFileTarget = {
-  label?: string;
-  target: string;
-};
+type ExtractedFileTarget = WorkspaceMessageFileTarget;
 
 const DOCUMENT_EXTENSIONS = new Set(["pdf", "doc", "docx", "txt", "md", "rtf"]);
 const EXCEL_EXTENSIONS = new Set(["xls", "xlsx", "csv"]);
@@ -57,7 +55,7 @@ function normalizePathSlashes(value: string) {
   return value.replace(/\\/g, "/");
 }
 
-function normalizeTarget(value: string) {
+export function normalizeWorkspaceChatFileTarget(value: string) {
   const trimmed = trimWrappedPunctuation(value);
   if (!trimmed) {
     return "";
@@ -171,7 +169,7 @@ function resolveTitle(target: string, label?: string) {
   return target;
 }
 
-function buildMessagePreview(text: string) {
+export function buildWorkspaceChatMessagePreview(text: string) {
   const normalized = text.replace(/\s+/g, " ").trim();
   if (normalized.length <= 120) {
     return normalized;
@@ -189,7 +187,7 @@ function pushIfUnique(list: ExtractedFileTarget[], seen: Set<string>, candidate:
     return;
   }
 
-  const normalized = normalizeTarget(target);
+  const normalized = normalizeWorkspaceChatFileTarget(target);
   if (!normalized || seen.has(normalized)) {
     return;
   }
@@ -201,7 +199,7 @@ function pushIfUnique(list: ExtractedFileTarget[], seen: Set<string>, candidate:
   });
 }
 
-function extractTargetsFromMessage(text: string) {
+export function extractWorkspaceChatFileTargets(text: string) {
   const targets: ExtractedFileTarget[] = [];
   const seen = new Set<string>();
 
@@ -289,11 +287,54 @@ export function buildWorkspaceChatFileItems(messages: WorkspaceMessage[]): Works
       return;
     }
 
-    const preview = buildMessagePreview(message.text);
-    const targets = extractTargetsFromMessage(message.text);
+    const preview = buildWorkspaceChatMessagePreview(message.text);
+    const targets = extractWorkspaceChatFileTargets(message.text);
 
     targets.forEach(({ label, target }) => {
-      const normalizedTarget = normalizeTarget(target);
+      const normalizedTarget = normalizeWorkspaceChatFileTarget(target);
+      if (!normalizedTarget) {
+        return;
+      }
+
+      const category = resolveCategory(normalizedTarget);
+      if (!category) {
+        return;
+      }
+
+      itemsByTarget.set(normalizedTarget, {
+        order: messageIndex,
+        item: {
+          id: `${message.id}:${normalizedTarget}`,
+          title: resolveTitle(normalizedTarget, label),
+          target: normalizedTarget,
+          category,
+          sourceRole,
+          messageId: message.id,
+          messageTime: message.time,
+          messagePreview: preview,
+        },
+      });
+    });
+  });
+
+  return [...itemsByTarget.values()]
+    .sort((left, right) => right.order - left.order)
+    .map((entry) => entry.item);
+}
+
+export function buildWorkspaceChatFileItemsFromRenderableMessages(messages: WorkspaceRenderableMessage[]): WorkspaceChatFileItem[] {
+  const itemsByTarget = new Map<string, { item: WorkspaceChatFileItem; order: number }>();
+
+  messages.forEach((message, messageIndex) => {
+    const sourceRole = resolveSourceRole(message.role);
+    if (!sourceRole || message.render.hidden) {
+      return;
+    }
+
+    const preview = buildWorkspaceChatMessagePreview(message.render.content);
+
+    message.render.fileTargets.forEach(({ label, target }) => {
+      const normalizedTarget = normalizeWorkspaceChatFileTarget(target);
       if (!normalizedTarget) {
         return;
       }
